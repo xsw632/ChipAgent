@@ -1,0 +1,8 @@
+{
+  "name": "chip-agent",
+  "version": "0.1.0",
+  "description": "Automated Chisel-to-Verilog pipeline",
+  "metadata": {
+    "description": "Turns NL hardware descriptions into simulation-verified Verilog"
+  }
+}
