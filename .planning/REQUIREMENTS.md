@@ -93,6 +93,9 @@
 | PLUG-03 | Phase 1 | Pending |
 | PLUG-04 | Phase 1 | Pending |
 | PLUG-05 | Phase 1 | Pending |
+| BUILD-01 | Phase 1 | Pending |
+| BUILD-02 | Phase 1 | Pending |
+| BUILD-03 | Phase 1 | Pending |
 | PARSE-01 | Phase 2 | Pending |
 | PARSE-02 | Phase 2 | Pending |
 | PARSE-03 | Phase 2 | Pending |
@@ -100,30 +103,27 @@
 | GEN-02 | Phase 2 | Pending |
 | GEN-03 | Phase 2 | Pending |
 | GEN-04 | Phase 2 | Pending |
-| BUILD-01 | Phase 3 | Pending |
-| BUILD-02 | Phase 3 | Pending |
-| BUILD-03 | Phase 3 | Pending |
 | LINT-01 | Phase 3 | Pending |
 | LINT-02 | Phase 3 | Pending |
 | LINT-03 | Phase 3 | Pending |
 | LINT-04 | Phase 3 | Pending |
 | LINT-05 | Phase 3 | Pending |
-| TB-01 | Phase 3 | Pending |
-| TB-02 | Phase 3 | Pending |
-| TB-03 | Phase 3 | Pending |
-| TB-04 | Phase 3 | Pending |
-| SIM-01 | Phase 3 | Pending |
-| SIM-02 | Phase 3 | Pending |
-| SIM-03 | Phase 3 | Pending |
 | HOOK-01 | Phase 3 | Pending |
 | HOOK-02 | Phase 3 | Pending |
 | HOOK-03 | Phase 3 | Pending |
+| TB-01 | Phase 4 | Pending |
+| TB-02 | Phase 4 | Pending |
+| TB-03 | Phase 4 | Pending |
+| TB-04 | Phase 4 | Pending |
+| SIM-01 | Phase 4 | Pending |
+| SIM-02 | Phase 4 | Pending |
+| SIM-03 | Phase 4 | Pending |
 
 **Coverage:**
 - v1 requirements: 30 total
 - Mapped to phases: 30
-- Unmapped: 0 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-16*
-*Last updated: 2026-03-16 after initial definition*
+*Last updated: 2026-03-16 after roadmap creation*
