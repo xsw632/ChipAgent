@@ -54,29 +54,9 @@ All generated `.sv` and `.v` files are gitignored. They are reproducible via `sc
 
 ## Interface Specs
 
-Chisel modules follow this IO bundle convention:
+Query Context7 (`/chipsalliance/chisel`) for Chisel IO bundle syntax, port types, and directions.
 
-```scala
-class MyModule extends Module {
-  val io = IO(new Bundle {
-    val inputPort  = Input(UInt(8.W))
-    val outputPort = Output(UInt(8.W))
-    val flagOut    = Output(Bool())
-  })
-  // Implementation here
-}
-```
-
-**Port types:**
-- `UInt(n.W)` -- unsigned integer, n bits wide
-- `SInt(n.W)` -- signed integer, n bits wide
-- `Bool()` -- single-bit boolean (equivalent to `UInt(1.W)`)
-
-**Port directions:**
-- `Input(...)` -- module input
-- `Output(...)` -- module output
-
-**Verilog port naming:** Chisel wraps all ports in the `io` bundle, so Verilog ports become `io_<portName>`. For example, `io.inputPort` in Chisel becomes `io_inputPort` in the generated SystemVerilog.
+**Verilog port naming:** Chisel wraps all ports in the `io` bundle, so Verilog ports become `io_<portName>`. For example, `io.inputPort` in Chisel becomes `io_inputPort` in the generated SystemVerilog. This matters for testbench generation.
 
 ## Build Commands
 
@@ -88,29 +68,27 @@ class MyModule extends Module {
 
 **Important:** Always use the `--batch` flag with sbt in scripts to prevent interactive mode hangs.
 
-## Chisel API Rules
+## Context7 Documentation Lookup
 
-These rules are critical for correct code generation. Violating them causes compilation failures.
+When writing or modifying Chisel code, **always** query Context7 for up-to-date API usage before generating code:
 
-1. **Imports:** Use `import chisel3._` for the hardware DSL. Use `import circt.stage.ChiselStage` for Verilog emission.
+```
+Library ID: /chipsalliance/chisel
+```
 
-2. **Emission API:** Use `ChiselStage.emitSystemVerilogFile` to write SystemVerilog files. Do NOT use `emitVerilog` -- it is deprecated and removed in Chisel 7.x.
+Use `mcp__plugin_context7_context7__query-docs` with this library ID to look up modules, IO bundles, operators, emission APIs, and any Chisel construct you are unsure about. This ensures generated code matches the actual Chisel 7.x API rather than relying on stale training data.
 
-   ```scala
-   import circt.stage.ChiselStage
+## Chisel API Rules (Pitfalls)
 
-   ChiselStage.emitSystemVerilogFile(
-     new MyModule,
-     Array("--target-dir", "generated"),
-     Array("-disable-all-randomization", "-strip-debug-info")
-   )
-   ```
+These are project-specific constraints that Context7 docs won't tell you. Violating them causes compilation failures.
 
-3. **Dependency coordinates:** The correct dependency is `"org.chipsalliance" %% "chisel"`. Do NOT use `"edu.berkeley.cs" %% "chisel3"` -- that is the old, unmaintained package.
+1. **Emission API:** Use `ChiselStage.emitSystemVerilogFile` (`import circt.stage.ChiselStage`). Do NOT use `emitVerilog` -- it is deprecated and removed in Chisel 7.x. Query Context7 for exact usage.
 
-4. **firtool management:** Do NOT set `CHISEL_FIRTOOL_PATH`. The firtool binary is auto-managed by chisel's firtool-resolver. Setting this variable causes version conflicts and potential segfaults.
+2. **Dependency coordinates:** The correct dependency is `"org.chipsalliance" %% "chisel"`. Do NOT use `"edu.berkeley.cs" %% "chisel3"` -- that is the old, unmaintained package.
 
-5. **sbt batch mode:** Always pass `--batch` to sbt in scripts. Without it, sbt enters interactive mode and scripts hang indefinitely.
+3. **firtool management:** Do NOT set `CHISEL_FIRTOOL_PATH`. The firtool binary is auto-managed by chisel's firtool-resolver. Setting this variable causes version conflicts and potential segfaults.
+
+4. **sbt batch mode:** Always pass `--batch` to sbt in scripts. Without it, sbt enters interactive mode and scripts hang indefinitely.
 
 ## Pipeline Overview
 
