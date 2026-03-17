@@ -1,7 +1,7 @@
 package chipagent
 
 import chisel3._
-import circt.stage.ChiselStage
+import chisel3.stage.ChiselStage
 
 object Generate extends App {
   val targetDir = if (args.contains("--target-dir")) {
@@ -11,9 +11,21 @@ object Generate extends App {
     "../generated"
   }
 
-  ChiselStage.emitSystemVerilogFile(
-    new TrivialModule,
-    Array("--target-dir", targetDir),
-    Array("-disable-all-randomization", "-strip-debug-info")
+  val moduleName = if (args.contains("--module")) {
+    val idx = args.indexOf("--module")
+    args(idx + 1)
+  } else {
+    "TrivialModule"
+  }
+
+  val module: () => Module = moduleName match {
+    case "TrivialModule" => () => new TrivialModule
+    case "ALU"           => () => new ALU
+    case other => throw new IllegalArgumentException(s"Unknown module: $other. Available: TrivialModule, ALU")
+  }
+
+  (new ChiselStage).emitVerilog(
+    module(),
+    Array("--target-dir", targetDir)
   )
 }
