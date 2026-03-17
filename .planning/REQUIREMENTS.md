@@ -34,11 +34,11 @@
 
 ### Lint & Auto-Fix
 
-- [ ] **LINT-01**: `scripts/lint.sh` runs `verilator --lint-only` on generated Verilog
+- [x] **LINT-01**: `scripts/lint.sh` runs `verilator --lint-only` on generated Verilog
 - [ ] **LINT-02**: Lint errors trigger auto-fix loop (max 3 attempts)
 - [ ] **LINT-03**: After 3 failed attempts, pipeline stops and reports remaining errors
-- [ ] **LINT-04**: `verilator --lint-only generated/*.v` produces no ERROR output on success
-- [ ] **LINT-05**: Warnings are documented in verification report with explanations
+- [x] **LINT-04**: `verilator --lint-only generated/*.v` produces no ERROR output on success
+- [x] **LINT-05**: Warnings are documented in verification report with explanations
 
 ### Testbench Generation
 
@@ -103,11 +103,11 @@
 | GEN-02 | Phase 2 | Complete |
 | GEN-03 | Phase 2 | Complete |
 | GEN-04 | Phase 2 | Complete |
-| LINT-01 | Phase 3 | Pending |
+| LINT-01 | Phase 3 | Complete |
 | LINT-02 | Phase 3 | Pending |
 | LINT-03 | Phase 3 | Pending |
-| LINT-04 | Phase 3 | Pending |
-| LINT-05 | Phase 3 | Pending |
+| LINT-04 | Phase 3 | Complete |
+| LINT-05 | Phase 3 | Complete |
 | HOOK-01 | Phase 3 | Pending |
 | HOOK-02 | Phase 3 | Pending |
 | HOOK-03 | Phase 3 | Pending |
