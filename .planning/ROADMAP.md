@@ -12,7 +12,7 @@ ChipAgent delivers a fully automated pipeline from natural language hardware des
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Plugin Scaffold + Build Foundation** - npm plugin structure with working sbt compilation pipeline
+- [x] **Phase 1: Plugin Scaffold + Build Foundation** - npm plugin structure with working sbt compilation pipeline
 - [x] **Phase 2: NL Parsing + Chisel Generation** - LLM agents that parse hardware descriptions and generate compilable Chisel code (completed 2026-03-17)
 - [ ] **Phase 3: Lint, Auto-Fix + Hooks** - Verilator lint checking with 3-attempt auto-fix loop and hook-based automation
 - [ ] **Phase 4: Testbench, Simulation + Verification** - C++ testbench generation, simulation execution, and formatted verification reports
@@ -46,8 +46,8 @@ Plans:
 **Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 02-01-PLAN.md -- Requirement-parser and chisel-generator agent definitions with JSON spec schema and Chisel 3.6.1 templates
-- [ ] 02-02-PLAN.md -- ALU reference implementation, dynamic Generate.scala, pipeline orchestration skill, and integration test script
+- [x] 02-01-PLAN.md -- Requirement-parser and chisel-generator agent definitions with JSON spec schema and Chisel 3.6.1 templates
+- [x] 02-02-PLAN.md -- ALU reference implementation, dynamic Generate.scala, pipeline orchestration skill, and integration test script
 
 ### Phase 3: Lint, Auto-Fix + Hooks
 **Goal**: Generated Verilog passes Verilator lint with automatic error correction and hook-driven automation
