@@ -43,7 +43,32 @@ If compilation fails:
 2. Have the chisel-generator agent fix the issues in the generated Scala files
 3. Maximum 3 fix attempts. After 3 failures, stop and report the errors to the user.
 
-### Step 4 -- Verify
+### Step 4 -- Lint
+
+Run Verilator lint on the generated Verilog:
+
+1. Run `scripts/lint.sh`
+2. If lint passes (exit 0), continue to Step 5 (Verify)
+3. If lint fails (non-zero exit):
+   a. Read the error output carefully -- these are Verilog-level errors caused by Chisel source issues
+   b. Identify the Chisel source issue that caused the Verilog lint error
+   c. Use the chisel-generator agent to fix the Chisel source (NOT the generated Verilog -- never edit generated files)
+   d. The PostToolUse hook will auto-trigger compile.sh when the Scala file is written
+   e. After compile succeeds, run `scripts/lint.sh` again
+   f. Repeat up to 3 total lint attempts
+4. If lint still fails after 3 attempts, STOP the pipeline and report:
+   ```
+   LINT AUTO-FIX FAILED after 3 attempts.
+   Remaining errors:
+   <paste lint error output>
+   ```
+5. After lint passes, check `generated/lint-warnings.log`. If non-empty, note the warnings in the output:
+   ```
+   Lint passed with N warnings (suppressed/non-blocking):
+   <paste warning summary>
+   ```
+
+### Step 5 -- Verify
 
 Confirm that the `generated/` directory contains the expected `.v` or `.sv` file for the module. Report success with the path to the generated Verilog file.
 
@@ -54,7 +79,7 @@ Confirm that the `generated/` directory contains the expected `.v` or `.sv` file
 | 1 | Parse Requirements | **Active**   | Extract module name, ports, operations from NL    |
 | 2 | Generate Chisel    | **Active**   | Produce Chisel source from structured spec        |
 | 3 | Compile to Verilog | **Active**   | sbt compiles Chisel to SystemVerilog via firtool  |
-| 4 | Lint               | Planned      | Verilator lint-only check on generated Verilog    |
+| 4 | Lint               | **Active**   | Verilator lint-only check on generated Verilog    |
 | 5 | Generate Testbench | Planned      | Create C++ testbench for Verilator simulation     |
 | 6 | Simulate           | Planned      | Run Verilator simulation and collect results      |
 | 7 | Report             | Planned      | Format test results into verification report      |
@@ -76,4 +101,5 @@ Upon pipeline completion, the following artifacts are produced:
 
 - `generated/<ModuleName>.v` -- synthesizable Verilog
 - `generated/<ModuleName>.sv` -- SystemVerilog variant (when firtool is available)
+- `generated/lint-warnings.log` -- any remaining Verilator warnings with explanations
 - `sim/logs/sim_result.log` -- simulation test report (future phases)
