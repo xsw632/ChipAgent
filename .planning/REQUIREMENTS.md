@@ -23,8 +23,8 @@
 
 - [x] **GEN-01**: Agent generates valid Chisel 6.x+ Scala source from parsed module spec
 - [x] **GEN-02**: Generated Chisel follows project conventions (package, imports, IO bundle)
-- [ ] **GEN-03**: Generator creates Verilog emission entry point (Generate.scala with ChiselStage)
-- [ ] **GEN-04**: Generated code compiles successfully with sbt on first attempt (or auto-fixes)
+- [x] **GEN-03**: Generator creates Verilog emission entry point (Generate.scala with ChiselStage)
+- [x] **GEN-04**: Generated code compiles successfully with sbt on first attempt (or auto-fixes)
 
 ### Build Automation
 
@@ -101,8 +101,8 @@
 | PARSE-03 | Phase 2 | Complete |
 | GEN-01 | Phase 2 | Complete |
 | GEN-02 | Phase 2 | Complete |
-| GEN-03 | Phase 2 | Pending |
-| GEN-04 | Phase 2 | Pending |
+| GEN-03 | Phase 2 | Complete |
+| GEN-04 | Phase 2 | Complete |
 | LINT-01 | Phase 3 | Pending |
 | LINT-02 | Phase 3 | Pending |
 | LINT-03 | Phase 3 | Pending |
