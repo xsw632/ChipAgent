@@ -7,7 +7,7 @@ ChipAgent is a Claude Code plugin that turns natural language hardware descripti
 | Component          | Version   | Purpose                                      |
 |--------------------|-----------|----------------------------------------------|
 | Chisel             | 7.2.0     | Hardware construction language (Scala DSL)    |
-| Scala              | 2.13.16   | JVM language hosting Chisel                   |
+| Scala              | 2.13.17   | JVM language hosting Chisel                   |
 | sbt                | latest    | Scala build tool                              |
 | firtool            | auto      | FIRRTL-to-Verilog compiler (auto-managed)     |
 | Verilator          | 5.008+    | Verilog simulation and lint checking          |

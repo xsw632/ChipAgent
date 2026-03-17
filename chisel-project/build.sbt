@@ -4,7 +4,7 @@ lazy val root = (project in file("."))
   .settings(
     name := "chip-agent-chisel",
     version := "0.1.0",
-    scalaVersion := "2.13.16",
+    scalaVersion := "2.13.17",
     libraryDependencies ++= Seq(
       "org.chipsalliance" %% "chisel" % chiselVersion
     ),

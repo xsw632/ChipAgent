@@ -1,0 +1,13 @@
+{
+  "hooks": [
+    {
+      "type": "PostToolUse",
+      "matcher": {
+        "tool": "Write|Edit",
+        "path": "*/src/main/scala/**/*.scala"
+      },
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/compile.sh",
+      "timeout": 120000
+    }
+  ]
+}
