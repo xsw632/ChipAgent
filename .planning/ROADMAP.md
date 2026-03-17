@@ -59,10 +59,11 @@ Plans:
   3. After 3 failed fix attempts, the pipeline stops and reports remaining errors clearly
   4. Hooks in `hooks/hooks.json` trigger compilation and lint automatically at the right pipeline stages without infinite loops
   5. Any Verilator warnings that remain are documented with explanations in the verification output
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 03-01: Lint script, auto-fix loop agent, hooks configuration, and warning documentation
+- [ ] 03-01-PLAN.md -- Lint script, Verilator waiver file, and integration test
+- [ ] 03-02-PLAN.md -- Hooks migration to event-keyed format and generate.md lint stage with auto-fix loop
 
 ### Phase 4: Testbench, Simulation + Verification
 **Goal**: The pipeline produces simulation-verified Verilog with a formatted test report -- the acceptance deliverable
@@ -88,5 +89,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 |-------|----------------|--------|-----------|
 | 1. Plugin Scaffold + Build Foundation | 2/2 | Complete | 2026-03-17 |
 | 2. NL Parsing + Chisel Generation | 2/2 | Complete   | 2026-03-17 |
-| 3. Lint, Auto-Fix + Hooks | 0/1 | Not started | - |
+| 3. Lint, Auto-Fix + Hooks | 0/2 | Not started | - |
 | 4. Testbench, Simulation + Verification | 0/2 | Not started | - |
