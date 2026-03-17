@@ -31,8 +31,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- Plugin manifest, directory skeleton, .gitignore, CLAUDE.md, slash command skill, and npm package
-- [ ] 01-02-PLAN.md -- sbt project skeleton (build.sbt, Generate.scala, TrivialModule), compile/setup scripts, and hooks
+- [x] 01-01-PLAN.md -- Plugin manifest, directory skeleton, .gitignore, CLAUDE.md, slash command skill, and npm package
+- [x] 01-02-PLAN.md -- sbt project skeleton (build.sbt, Generate.scala, TrivialModule), compile/setup scripts, and hooks
 
 ### Phase 2: NL Parsing + Chisel Generation
 **Goal**: Users describe a hardware module in plain language and get valid, compilable Chisel source code
@@ -40,14 +40,14 @@ Plans:
 **Requirements**: PARSE-01, PARSE-02, PARSE-03, GEN-01, GEN-02, GEN-03, GEN-04
 **Success Criteria** (what must be TRUE):
   1. User provides a natural language ALU description and receives a structured spec with module name, ports, operations, and constraints
-  2. Agent generates Chisel 6.x+ source code that follows project conventions (correct package, imports, IO bundle)
+  2. Agent generates Chisel 3.6.1 source code that follows project conventions (correct package, imports, IO bundle)
   3. Generated Chisel compiles via sbt and produces Verilog in `generated/` without manual edits
   4. The generation pipeline handles the acceptance test description (ALU with ADD/SUB/AND/OR/XOR/SLT + zero flag)
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 02-01: Requirement-parser agent and NL-to-spec skill
-- [ ] 02-02: Chisel-generator agent, Verilog emission entry point, and compile integration
+- [ ] 02-01-PLAN.md -- Requirement-parser and chisel-generator agent definitions with JSON spec schema and Chisel 3.6.1 templates
+- [ ] 02-02-PLAN.md -- ALU reference implementation, dynamic Generate.scala, pipeline orchestration skill, and integration test script
 
 ### Phase 3: Lint, Auto-Fix + Hooks
 **Goal**: Generated Verilog passes Verilator lint with automatic error correction and hook-driven automation
@@ -86,7 +86,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Plugin Scaffold + Build Foundation | 0/2 | Planned | - |
-| 2. NL Parsing + Chisel Generation | 0/2 | Not started | - |
+| 1. Plugin Scaffold + Build Foundation | 2/2 | Complete | 2026-03-17 |
+| 2. NL Parsing + Chisel Generation | 0/2 | In Progress | - |
 | 3. Lint, Auto-Fix + Hooks | 0/1 | Not started | - |
 | 4. Testbench, Simulation + Verification | 0/2 | Not started | - |
