@@ -1,0 +1,7 @@
+`verilator_config
+
+// Chisel Module base class always emits clock and reset ports, even when
+// the module logic does not use them. These are structural signals required
+// by the Chisel/FIRRTL compilation pipeline and are not design bugs.
+lint_off -rule UNUSEDSIGNAL -file "*/generated/*" -match "Signal is not used: 'clock'"
+lint_off -rule UNUSEDSIGNAL -file "*/generated/*" -match "Signal is not used: 'reset'"
