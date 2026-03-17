@@ -35,8 +35,8 @@
 ### Lint & Auto-Fix
 
 - [x] **LINT-01**: `scripts/lint.sh` runs `verilator --lint-only` on generated Verilog
-- [ ] **LINT-02**: Lint errors trigger auto-fix loop (max 3 attempts)
-- [ ] **LINT-03**: After 3 failed attempts, pipeline stops and reports remaining errors
+- [x] **LINT-02**: Lint errors trigger auto-fix loop (max 3 attempts)
+- [x] **LINT-03**: After 3 failed attempts, pipeline stops and reports remaining errors
 - [x] **LINT-04**: `verilator --lint-only generated/*.v` produces no ERROR output on success
 - [x] **LINT-05**: Warnings are documented in verification report with explanations
 
@@ -55,9 +55,9 @@
 
 ### Hooks
 
-- [ ] **HOOK-01**: `hooks/hooks.json` defines PostToolUse hooks for pipeline automation
-- [ ] **HOOK-02**: Hooks use `${CLAUDE_PLUGIN_ROOT}` for all script paths
-- [ ] **HOOK-03**: Hook matchers are precise (no infinite loops)
+- [x] **HOOK-01**: `hooks/hooks.json` defines PostToolUse hooks for pipeline automation
+- [x] **HOOK-02**: Hooks use `${CLAUDE_PLUGIN_ROOT}` for all script paths
+- [x] **HOOK-03**: Hook matchers are precise (no infinite loops)
 
 ## v2 Requirements
 
@@ -104,13 +104,13 @@
 | GEN-03 | Phase 2 | Complete |
 | GEN-04 | Phase 2 | Complete |
 | LINT-01 | Phase 3 | Complete |
-| LINT-02 | Phase 3 | Pending |
-| LINT-03 | Phase 3 | Pending |
+| LINT-02 | Phase 3 | Complete |
+| LINT-03 | Phase 3 | Complete |
 | LINT-04 | Phase 3 | Complete |
 | LINT-05 | Phase 3 | Complete |
-| HOOK-01 | Phase 3 | Pending |
-| HOOK-02 | Phase 3 | Pending |
-| HOOK-03 | Phase 3 | Pending |
+| HOOK-01 | Phase 3 | Complete |
+| HOOK-02 | Phase 3 | Complete |
+| HOOK-03 | Phase 3 | Complete |
 | TB-01 | Phase 4 | Pending |
 | TB-02 | Phase 4 | Pending |
 | TB-03 | Phase 4 | Pending |

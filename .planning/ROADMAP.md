@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Plugin Scaffold + Build Foundation** - npm plugin structure with working sbt compilation pipeline
 - [x] **Phase 2: NL Parsing + Chisel Generation** - LLM agents that parse hardware descriptions and generate compilable Chisel code (completed 2026-03-17)
-- [ ] **Phase 3: Lint, Auto-Fix + Hooks** - Verilator lint checking with 3-attempt auto-fix loop and hook-based automation
+- [x] **Phase 3: Lint, Auto-Fix + Hooks** - Verilator lint checking with 3-attempt auto-fix loop and hook-based automation (completed 2026-03-17)
 - [ ] **Phase 4: Testbench, Simulation + Verification** - C++ testbench generation, simulation execution, and formatted verification reports
 
 ## Phase Details
@@ -59,7 +59,7 @@ Plans:
   3. After 3 failed fix attempts, the pipeline stops and reports remaining errors clearly
   4. Hooks in `hooks/hooks.json` trigger compilation and lint automatically at the right pipeline stages without infinite loops
   5. Any Verilator warnings that remain are documented with explanations in the verification output
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 03-01-PLAN.md -- Lint script, Verilator waiver file, and integration test
@@ -89,5 +89,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 |-------|----------------|--------|-----------|
 | 1. Plugin Scaffold + Build Foundation | 2/2 | Complete | 2026-03-17 |
 | 2. NL Parsing + Chisel Generation | 2/2 | Complete   | 2026-03-17 |
-| 3. Lint, Auto-Fix + Hooks | 0/2 | Not started | - |
+| 3. Lint, Auto-Fix + Hooks | 2/2 | Complete   | 2026-03-17 |
 | 4. Testbench, Simulation + Verification | 0/2 | Not started | - |
