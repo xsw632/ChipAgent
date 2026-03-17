@@ -11,6 +11,7 @@ generated/verification/
 
 # Verilator simulation artifacts
 obj_dir/
+sim/obj_dir/
 sim/logs/*.log
 
 # IDE and OS files
