@@ -74,11 +74,11 @@ Plans:
   2. ALU testbench covers all 6 operations (ADD/SUB/AND/OR/XOR/SLT) with at least 10 test cases
   3. `scripts/simulate.sh` compiles the testbench with Verilator and runs simulation to completion
   4. `sim/logs/sim_result.log` contains lines in format `[TEST N] OP: a=X b=Y | expect=Z got=W | PASS/FAIL` with a final `RESULT: PASSED X/Y tests` or `RESULT: FAILED` line
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 04-01: Testbench-generator agent, simulate script, and report formatting
-- [ ] 04-02: End-to-end acceptance test (full pipeline from NL description to PASSED report)
+- [ ] 04-01-PLAN.md -- ALU testbench, simulate script, and pipeline skill update (Steps 5-7)
+- [ ] 04-02-PLAN.md -- End-to-end acceptance test validating all Phase 4 requirements
 
 ## Progress
 
