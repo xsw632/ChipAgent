@@ -15,14 +15,14 @@
 
 ### Requirement Parsing
 
-- [ ] **PARSE-01**: User can describe a hardware module in natural language and get a structured spec
-- [ ] **PARSE-02**: Parser extracts module name, port list, operations, and constraints from NL
-- [ ] **PARSE-03**: Parser handles RV32I ALU descriptions (ADD/SUB/AND/OR/XOR/SLT + zero flag)
+- [x] **PARSE-01**: User can describe a hardware module in natural language and get a structured spec
+- [x] **PARSE-02**: Parser extracts module name, port list, operations, and constraints from NL
+- [x] **PARSE-03**: Parser handles RV32I ALU descriptions (ADD/SUB/AND/OR/XOR/SLT + zero flag)
 
 ### Chisel Generation
 
-- [ ] **GEN-01**: Agent generates valid Chisel 6.x+ Scala source from parsed module spec
-- [ ] **GEN-02**: Generated Chisel follows project conventions (package, imports, IO bundle)
+- [x] **GEN-01**: Agent generates valid Chisel 6.x+ Scala source from parsed module spec
+- [x] **GEN-02**: Generated Chisel follows project conventions (package, imports, IO bundle)
 - [ ] **GEN-03**: Generator creates Verilog emission entry point (Generate.scala with ChiselStage)
 - [ ] **GEN-04**: Generated code compiles successfully with sbt on first attempt (or auto-fixes)
 
@@ -96,11 +96,11 @@
 | BUILD-01 | Phase 1 | Complete |
 | BUILD-02 | Phase 1 | Complete |
 | BUILD-03 | Phase 1 | Complete |
-| PARSE-01 | Phase 2 | Pending |
-| PARSE-02 | Phase 2 | Pending |
-| PARSE-03 | Phase 2 | Pending |
-| GEN-01 | Phase 2 | Pending |
-| GEN-02 | Phase 2 | Pending |
+| PARSE-01 | Phase 2 | Complete |
+| PARSE-02 | Phase 2 | Complete |
+| PARSE-03 | Phase 2 | Complete |
+| GEN-01 | Phase 2 | Complete |
+| GEN-02 | Phase 2 | Complete |
 | GEN-03 | Phase 2 | Pending |
 | GEN-04 | Phase 2 | Pending |
 | LINT-01 | Phase 3 | Pending |
