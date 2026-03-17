@@ -68,9 +68,54 @@ Run Verilator lint on the generated Verilog:
    <paste warning summary>
    ```
 
-### Step 5 -- Verify
+### Step 5 -- Generate Testbench
 
-Confirm that the `generated/` directory contains the expected `.v` or `.sv` file for the module. Report success with the path to the generated Verilog file.
+After lint passes (Step 4), generate a C++ testbench for the module:
+
+1. Determine the testbench path: `sim/tb_<ModuleName>.cpp`
+2. If the testbench already exists (e.g., the ALU reference testbench at `sim/tb_ALU.cpp`), skip generation and proceed to Step 6
+3. If the testbench does not exist, generate one following the pattern in `sim/tb_ALU.cpp`:
+   - Include `"V<ModuleName>.h"` and `"verilated.h"`
+   - Define a `TestCase` struct with fields matching the module ports
+   - Create test vectors from the parsed module spec (using the operations and expected behaviors)
+   - Follow the exact output format: `[TEST N] OP: a=X b=Y | expect=Z got=W | PASS/FAIL`
+   - Include `RESULT: PASSED/FAILED X/Y tests` as the final line
+4. Write the testbench file to `sim/tb_<ModuleName>.cpp`
+
+### Step 6 -- Simulate
+
+Run `scripts/simulate.sh <ModuleName>` to compile and execute the testbench:
+
+1. Run the script and capture output
+2. If simulation fails (non-zero exit), read `sim/logs/sim_result.log` for failure details
+3. On failure, attempt to fix the testbench (NOT the Verilog -- never edit generated files) by regenerating `sim/tb_<ModuleName>.cpp` with corrected test vectors
+4. Maximum 3 simulation fix attempts. After 3 failures, STOP the pipeline and report:
+   ```
+   SIM AUTO-FIX FAILED after 3 attempts.
+   Remaining failures:
+   <paste sim_result.log content>
+   ```
+5. On success, proceed to Step 7
+
+### Step 7 -- Report
+
+Format the simulation results into a verification report:
+
+1. Read `sim/logs/sim_result.log`
+2. Count PASS/FAIL lines
+3. If lint warnings exist (from `generated/lint-warnings.log`), include them
+4. Present formatted output:
+   ```
+   === Verification Report: <ModuleName> ===
+   Verilog: generated/<ModuleName>.v
+   Testbench: sim/tb_<ModuleName>.cpp
+
+   Simulation: PASSED X/Y tests
+   [per-test results from sim_result.log]
+
+   Lint: PASSED (N warnings suppressed)
+   [warning details if any]
+   ```
 
 ## Pipeline Stages
 
@@ -80,9 +125,9 @@ Confirm that the `generated/` directory contains the expected `.v` or `.sv` file
 | 2 | Generate Chisel    | **Active**   | Produce Chisel source from structured spec        |
 | 3 | Compile to Verilog | **Active**   | sbt compiles Chisel to SystemVerilog via firtool  |
 | 4 | Lint               | **Active**   | Verilator lint-only check on generated Verilog    |
-| 5 | Generate Testbench | Planned      | Create C++ testbench for Verilator simulation     |
-| 6 | Simulate           | Planned      | Run Verilator simulation and collect results      |
-| 7 | Report             | Planned      | Format test results into verification report      |
+| 5 | Generate Testbench | **Active**   | Create C++ testbench for Verilator simulation     |
+| 6 | Simulate           | **Active**   | Run Verilator simulation and collect results      |
+| 7 | Report             | **Active**   | Format test results into verification report      |
 
 ## Input
 
@@ -102,4 +147,4 @@ Upon pipeline completion, the following artifacts are produced:
 - `generated/<ModuleName>.v` -- synthesizable Verilog
 - `generated/<ModuleName>.sv` -- SystemVerilog variant (when firtool is available)
 - `generated/lint-warnings.log` -- any remaining Verilator warnings with explanations
-- `sim/logs/sim_result.log` -- simulation test report (future phases)
+- `sim/logs/sim_result.log` -- simulation test report
