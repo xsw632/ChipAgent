@@ -11,7 +11,7 @@
 - [ ] **PLUG-02**: Plugin provides `/chip-agent:generate` slash command as pipeline entry point
 - [ ] **PLUG-03**: Plugin is installable via `npx chip-agent` or `claude --plugin-dir`
 - [ ] **PLUG-04**: CLAUDE.md defines project rules, tech stack, interface specs, file path conventions
-- [ ] **PLUG-05**: Plugin includes setup script that initializes sbt project skeleton on first use
+- [x] **PLUG-05**: Plugin includes setup script that initializes sbt project skeleton on first use
 
 ### Requirement Parsing
 
@@ -28,9 +28,9 @@
 
 ### Build Automation
 
-- [ ] **BUILD-01**: `scripts/compile.sh` runs sbt compilation and emits Verilog to `generated/`
-- [ ] **BUILD-02**: Compilation is triggered automatically after Chisel source is written
-- [ ] **BUILD-03**: Build errors are captured and reported with context for auto-fix
+- [x] **BUILD-01**: `scripts/compile.sh` runs sbt compilation and emits Verilog to `generated/`
+- [x] **BUILD-02**: Compilation is triggered automatically after Chisel source is written
+- [x] **BUILD-03**: Build errors are captured and reported with context for auto-fix
 
 ### Lint & Auto-Fix
 
@@ -92,10 +92,10 @@
 | PLUG-02 | Phase 1 | Pending |
 | PLUG-03 | Phase 1 | Pending |
 | PLUG-04 | Phase 1 | Pending |
-| PLUG-05 | Phase 1 | Pending |
-| BUILD-01 | Phase 1 | Pending |
-| BUILD-02 | Phase 1 | Pending |
-| BUILD-03 | Phase 1 | Pending |
+| PLUG-05 | Phase 1 | Complete |
+| BUILD-01 | Phase 1 | Complete |
+| BUILD-02 | Phase 1 | Complete |
+| BUILD-03 | Phase 1 | Complete |
 | PARSE-01 | Phase 2 | Pending |
 | PARSE-02 | Phase 2 | Pending |
 | PARSE-03 | Phase 2 | Pending |
