@@ -22,17 +22,44 @@ Given a plain-English description of a digital hardware module, this command orc
 
 Use the requirement-parser agent to extract a structured JSON spec from the user's description.
 
-The agent returns a JSON object with `moduleName`, `ports`, `operations`, `flags`, and `constraints`.
+The agent returns a JSON object. For simple designs: `moduleName`, `type: "simple"`, `ports`, `operations`, `flags`, and `constraints`. For complex designs: `moduleName`, `type: "complex"`, `modules[]`, and `topModule`.
 
-**Validation:** Verify the JSON is valid -- `moduleName` is PascalCase, all ports have direction/type/width, operations have opcodes. If the JSON is malformed, retry the parser once.
+**Validation:** Verify the JSON is valid -- `moduleName` is PascalCase, all ports have direction/type/width, operations have opcodes. For complex specs, verify that `topModule.submodules` matches the names in `modules[]`. If the JSON is malformed, retry the parser once.
+
+### Step 1.5 -- Confirm Spec with User
+
+Before generating code, present the parsed spec to the user for approval.
+
+**Format the spec preview:**
+- Show the module name and description
+- For **simple** specs: list all ports (name, direction, type, width) and operations
+- For **complex** specs: list each sub-module with its ports, then show the top-level wiring summary
+- Use a readable table or bulleted format, not raw JSON
+
+**Ask for confirmation** using `AskUserQuestion` with these options:
+1. **"Approve and generate"** -- proceed to Step 2 as-is
+2. **"Modify ports or operations"** -- user provides feedback; re-run the requirement-parser agent with the original description plus the user's feedback appended, then re-present the updated spec (loop back to Step 1.5)
+3. **"Simplify design"** -- for complex specs, user wants fewer modules; re-run parser with a simplification hint
+4. **"Start over"** -- user wants to re-describe; ask for new input and go back to Step 1
+
+Only proceed to Step 2 after the user selects "Approve and generate".
 
 ### Step 2 -- Generate Chisel
 
 Use the chisel-generator agent with the JSON spec to produce Chisel source files.
 
+**For simple specs (type: "simple"):**
+
 The agent writes two files:
 1. The module Scala file: `chisel-project/src/main/scala/chipagent/<ModuleName>.scala`
 2. An updated `Generate.scala` with the new module in the match statement
+
+**For complex specs (type: "complex"):**
+
+The agent writes N+1 files:
+1. One Scala file per sub-module: `chisel-project/src/main/scala/chipagent/<SubModuleName>.scala` for each entry in `modules[]`
+2. The top-level module: `chisel-project/src/main/scala/chipagent/<TopModuleName>.scala` that instantiates and wires all sub-modules
+3. An updated `Generate.scala` with the top module name (the top module pulls in sub-modules automatically)
 
 ### Step 3 -- Compile
 
@@ -82,6 +109,19 @@ After lint passes (Step 4), generate a C++ testbench for the module:
    - Include `RESULT: PASSED/FAILED X/Y tests` as the final line
 4. Write the testbench file to `sim/tb_<ModuleName>.cpp`
 
+**Complex/CPU module testbench generation (when spec.type is "complex" and spec.verification.tier is "reference-model"):**
+
+For CPU modules verified via reference model, generate a testbench that:
+1. `#include "cpu_test_template.h"` (the fixed template with encoding helpers, reference emulator, and comparison logic)
+2. `#include "V<TopModuleName>.h"` and `"verilated.h"`
+3. Load a sequence of RV32I instructions into both the DUT (via reset + instruction memory) and the reference model (via `RV32IState.mem`)
+4. For each instruction: clock the DUT one cycle, call `rv32i_step()` on the reference model, then compare `dut->io_debug_pc` and `dut->io_debug_reg_data` against the reference state using `cpu_check_reg()`
+5. Cover ~40 test vectors across all RV32I instruction categories (2-3 per instruction type): R-type (ADD, SUB, AND, OR, XOR, SLT, SLL, SRL, SRA), I-type (ADDI, ANDI, ORI, XORI, SLTI, SLLI, SRLI, SRAI), Load/Store (LW, SW), Branch (BEQ, BNE, BLT, BGE), Jump (JAL, JALR), Upper (LUI, AUIPC)
+6. Use the instruction encoding helpers (rv_add, rv_addi, etc.) from the template -- do NOT manually encode instruction bit patterns
+7. Output follows the same `[TEST N] ... PASS/FAIL` and `RESULT: PASSED/FAILED X/Y tests` format as simple testbenches
+
+The LLM generating the testbench receives the template helpers and only needs to compose test sequences, NOT implement the emulator or encoding logic.
+
 ### Step 6 -- Simulate
 
 Run `scripts/simulate.sh <ModuleName>` to compile and execute the testbench:
@@ -121,13 +161,14 @@ Format the simulation results into a verification report:
 
 | # | Stage              | Status       | Description                                      |
 |---|--------------------|--------------|--------------------------------------------------|
-| 1 | Parse Requirements | **Active**   | Extract module name, ports, operations from NL    |
-| 2 | Generate Chisel    | **Active**   | Produce Chisel source from structured spec        |
-| 3 | Compile to Verilog | **Active**   | sbt compiles Chisel to SystemVerilog via firtool  |
-| 4 | Lint               | **Active**   | Verilator lint-only check on generated Verilog    |
-| 5 | Generate Testbench | **Active**   | Create C++ testbench for Verilator simulation     |
-| 6 | Simulate           | **Active**   | Run Verilator simulation and collect results      |
-| 7 | Report             | **Active**   | Format test results into verification report      |
+| 1   | Parse Requirements | **Active**   | Extract module name, ports, operations from NL    |
+| 1.5 | Confirm Spec       | **Active**   | Present parsed spec for user approval             |
+| 2   | Generate Chisel    | **Active**   | Produce Chisel source from structured spec        |
+| 3   | Compile to Verilog | **Active**   | sbt compiles Chisel to SystemVerilog via firtool  |
+| 4   | Lint               | **Active**   | Verilator lint-only check on generated Verilog    |
+| 5   | Generate Testbench | **Active**   | Create C++ testbench for Verilator simulation     |
+| 6   | Simulate           | **Active**   | Run Verilator simulation and collect results      |
+| 7   | Report             | **Active**   | Format test results into verification report      |
 
 ## Input
 

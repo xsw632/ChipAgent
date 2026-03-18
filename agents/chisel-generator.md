@@ -30,10 +30,20 @@ You are a Chisel code generator. Given a structured JSON specification, produce 
 
 ## Output Files
 
-For a module named `<ModuleName>`, produce exactly two files:
+### Simple Specs (type: "simple")
+
+For a simple module named `<ModuleName>`, produce exactly two files:
 
 1. **Module file:** `chisel-project/src/main/scala/chipagent/<ModuleName>.scala`
 2. **Generator file:** `chisel-project/src/main/scala/chipagent/Generate.scala` (rewritten to emit the new module)
+
+### Complex Specs (type: "complex")
+
+For a complex design with N sub-modules, produce N+2 files:
+
+1. **Sub-module files:** `chisel-project/src/main/scala/chipagent/<SubModuleName>.scala` for each entry in `modules[]`
+2. **Top module file:** `chisel-project/src/main/scala/chipagent/<TopModuleName>.scala` that instantiates and wires all sub-modules
+3. **Generator file:** `chisel-project/src/main/scala/chipagent/Generate.scala` (rewritten to emit the top module)
 
 ## Module Template
 
@@ -106,6 +116,7 @@ Before writing any file, verify:
 - [ ] SLT uses `.asSInt` for signed comparison: `(io.inputA.asSInt < io.inputB.asSInt).asUInt`
 - [ ] No `var` declarations (immutable Chisel style)
 - [ ] No undriven outputs
+- [ ] Complex CPU modules include debug_pc, debug_reg_addr, debug_reg_data ports
 
 ## Complete ALU Example
 
@@ -169,6 +180,147 @@ object Generate extends App {
   )
 }
 ```
+
+## Top Module Template (Complex Specs)
+
+For complex specs, the top module instantiates all sub-modules and wires them together. Use `Module(new <SubModuleName>)` to instantiate each sub-module, then connect their IO ports based on `topModule.constraints`.
+
+```scala
+package chipagent
+
+import chisel3._
+import chisel3.util._
+
+class <TopModuleName> extends Module {
+  val io = IO(new Bundle {
+    // For each port in topModule.externalPorts:
+    // val <name> = Input(UInt(<width>.W))
+    // val <name> = Output(UInt(<width>.W))
+  })
+
+  // Instantiate sub-modules
+  val alu = Module(new ALUUnit)
+  val regFile = Module(new RegFile)
+  val decoder = Module(new Decoder)
+  val control = Module(new ControlUnit)
+
+  // Default assignments for ALL external outputs
+  // io.aluResult := 0.U
+
+  // Wire sub-modules together based on topModule.constraints
+  // decoder.io.instruction := io.instruction
+  // regFile.io.readAddr1 := decoder.io.rs1
+  // alu.io.inputA := regFile.io.readData1
+  // ...
+
+  // Connect outputs to external ports
+  // io.aluResult := alu.io.result
+}
+```
+
+**Top module wiring rules:**
+- Instantiate sub-modules using `val <name> = Module(new <SubModuleName>)` with camelCase instance names
+- Access sub-module ports via `<instance>.io.<portName>`
+- Use `Mux()` for conditional routing described in constraints
+- Provide default assignments for ALL external outputs before conditional logic
+- Each sub-module's IO must be fully connected -- no undriven sub-module inputs
+
+## Complex Design Example
+
+Given the RISC-V JSON spec from the requirement-parser, produce sub-module files (each following the Module Template above) plus the top module:
+
+**File: `chisel-project/src/main/scala/chipagent/SimpleRISCV.scala`**
+
+```scala
+package chipagent
+
+import chisel3._
+import chisel3.util._
+
+class SimpleRISCV extends Module {
+  val io = IO(new Bundle {
+    val instruction   = Input(UInt(32.W))
+    val aluResult     = Output(UInt(32.W))
+    val regWriteDebug = Output(Bool())
+  })
+
+  // Instantiate sub-modules
+  val alu     = Module(new ALUUnit)
+  val regFile = Module(new RegFile)
+  val decoder = Module(new Decoder)
+  val control = Module(new ControlUnit)
+
+  // Default external outputs
+  io.aluResult     := 0.U
+  io.regWriteDebug := false.B
+
+  // Decoder wiring
+  decoder.io.instruction := io.instruction
+
+  // Control unit wiring
+  control.io.opcode := decoder.io.opcode
+  control.io.funct3 := decoder.io.funct3
+  control.io.funct7 := decoder.io.funct7
+
+  // Register file wiring
+  regFile.io.readAddr1 := decoder.io.rs1
+  regFile.io.readAddr2 := decoder.io.rs2
+  regFile.io.writeAddr := decoder.io.rd
+  regFile.io.writeData := alu.io.result
+  regFile.io.writeEn   := control.io.regWrite
+
+  // ALU wiring
+  alu.io.inputA := regFile.io.readData1
+  alu.io.inputB := Mux(control.io.aluSrc, decoder.io.immI, regFile.io.readData2)
+  alu.io.aluOp  := control.io.aluOp
+
+  // External outputs
+  io.aluResult     := alu.io.result
+  io.regWriteDebug := control.io.regWrite
+}
+```
+
+**File: `chisel-project/src/main/scala/chipagent/Generate.scala`** (for complex specs, emit the top module):
+
+```scala
+package chipagent
+
+import chisel3._
+import chisel3.stage.ChiselStage
+
+object Generate extends App {
+  val targetDir = if (args.contains("--target-dir")) {
+    val idx = args.indexOf("--target-dir")
+    args(idx + 1)
+  } else {
+    "../generated"
+  }
+
+  (new ChiselStage).emitVerilog(
+    new SimpleRISCV,
+    Array("--target-dir", targetDir)
+  )
+}
+```
+
+## Debug Ports for Complex CPU Modules
+
+When generating a complex module where the spec type is `"complex"` AND the spec's `verification.isa` field is present (e.g., `"RV32I"`), the top module MUST include these additional debug ports in the IO bundle:
+
+```scala
+// Debug ports -- required for CPU verification via reference model
+val debug_pc       = Output(UInt(32.W))  // current program counter
+val debug_reg_addr = Input(UInt(5.W))    // register address to observe (driven by testbench)
+val debug_reg_data = Output(UInt(32.W))  // value of the register at debug_reg_addr
+```
+
+These debug ports connect to the internal PC register and register file respectively:
+
+- `debug_pc` is wired to the PC register output
+- `debug_reg_addr` is an external input that selects which register to observe
+- `debug_reg_data` reads the register file at the address specified by `debug_reg_addr`
+
+**Note:** Debug ports are always added for CPU modules. They can be stripped for synthesis by wrapping in `if (debugPorts) { ... }` but are required for verification.
 
 ## Error Handling
 
