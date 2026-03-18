@@ -5,7 +5,7 @@ milestone_name: MVP
 status: milestone_complete
 stopped_at: v1.0 milestone archived
 last_updated: "2026-03-18T05:50:02.846Z"
-last_activity: 2026-03-18 -- Phase 04 plan 02 complete, all acceptance tests passing
+last_activity: 2026-03-18 -- Quick task 1 complete: CPU testing strategy research and implementation
 progress:
   total_phases: 4
   completed_phases: 4
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-03-18)
 Phase: 4 of 4 (Testbench, Simulation + Verification)
 Plan: 2 of 2 in current phase (COMPLETE)
 Status: Complete
-Last activity: 2026-03-18 -- Phase 04 plan 02 complete, all acceptance tests passing
+Last activity: 2026-03-18 -- Quick task 1 complete: CPU testing strategy research and implementation
 
 Progress: [██████████] 100%
 
@@ -83,6 +83,8 @@ Recent decisions affecting current work:
 - [Phase 04-01]: Pipeline Steps 5-7 follow same 3-attempt auto-fix pattern as lint stage
 - [Phase 04-02]: eval-based check() helper for uniform PASS/FAIL reporting in acceptance tests
 - [Phase 04-02]: Acceptance test invokes simulate.sh live for fresh validation
+- [Quick-1-01]: Embedded C++ reference model chosen over external ISA simulator for CPU verification
+- [Quick-1-01]: Debug ports (debug_pc, debug_reg_addr, debug_reg_data) mandatory for CPU modules
 
 ### Pending Todos
 
@@ -95,6 +97,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T02:43:25.992Z
-Stopped at: Completed 04-02-PLAN.md (all phases done)
+Last session: 2026-03-18T08:45:04Z
+Stopped at: Completed quick-1-01 (CPU testing strategy)
 Resume file: None
