@@ -1,15 +1,15 @@
-val chiselVersion = "7.2.0"
+val chiselVersion = "3.6.1"
 
 lazy val root = (project in file("."))
   .settings(
     name := "chip-agent-chisel",
     version := "0.1.0",
-    scalaVersion := "2.13.17",
+    scalaVersion := "2.13.10",
     libraryDependencies ++= Seq(
-      "org.chipsalliance" %% "chisel" % chiselVersion
+      "edu.berkeley.cs" %% "chisel3" % chiselVersion
     ),
     addCompilerPlugin(
-      "org.chipsalliance" % "chisel-plugin" % chiselVersion
+      "edu.berkeley.cs" % "chisel3-plugin" % chiselVersion
         cross CrossVersion.full
     )
   )

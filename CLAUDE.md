@@ -6,10 +6,10 @@ ChipAgent is a Claude Code plugin that turns natural language hardware descripti
 
 | Component          | Version   | Purpose                                      |
 |--------------------|-----------|----------------------------------------------|
-| Chisel             | 7.2.0     | Hardware construction language (Scala DSL)    |
-| Scala              | 2.13.17   | JVM language hosting Chisel                   |
-| sbt                | latest    | Scala build tool                              |
-| firtool            | auto      | FIRRTL-to-Verilog compiler (auto-managed)     |
+| Chisel             | 3.6.1     | Hardware construction language (Scala DSL)    |
+| Scala              | 2.13.10   | JVM language hosting Chisel (managed by sbt)  |
+| sbt                | 1.10.7    | Scala build tool (pinned in build.properties) |
+| FIRRTL             | built-in  | Chisel IR compiler (+ auto-managed firtool)   |
 | Verilator          | 5.008+    | Verilog simulation and lint checking          |
 | Claude Code Plugin | 0.1.0     | Plugin packaging and slash command framework  |
 
@@ -45,7 +45,7 @@ ChipAgent/
 ## File Path Conventions
 
 - **Chisel source:** `chisel-project/src/main/scala/chipagent/` -- all Scala sources use `package chipagent`
-- **Generated output:** `generated/` -- SystemVerilog files emitted by `ChiselStage.emitSystemVerilogFile`
+- **Generated output:** `generated/` -- Verilog files emitted by `(new ChiselStage).emitVerilog`
 - **Simulation logs:** `sim/logs/` -- Verilator simulation output and test reports
 - **Build scripts:** `scripts/` -- bash scripts for compile, setup, lint, simulate
 - **Plugin config:** `.claude-plugin/` -- plugin manifest and metadata
@@ -56,13 +56,13 @@ All generated `.sv` and `.v` files are gitignored. They are reproducible via `sc
 
 Query Context7 (`/chipsalliance/chisel`) for Chisel IO bundle syntax, port types, and directions.
 
-**Verilog port naming:** Chisel wraps all ports in the `io` bundle, so Verilog ports become `io_<portName>`. For example, `io.inputPort` in Chisel becomes `io_inputPort` in the generated SystemVerilog. This matters for testbench generation.
+**Verilog port naming:** Chisel wraps all ports in the `io` bundle, so Verilog ports become `io_<portName>`. For example, `io.inputPort` in Chisel becomes `io_inputPort` in the generated Verilog. This matters for testbench generation.
 
 ## Build Commands
 
 | Command                                          | Purpose                              |
 |--------------------------------------------------|--------------------------------------|
-| `scripts/compile.sh`                             | Compile Chisel to SystemVerilog      |
+| `scripts/compile.sh`                             | Compile Chisel to Verilog            |
 | `sbt --batch "runMain chipagent.Generate"`       | Direct sbt compilation               |
 | `scripts/setup.sh`                               | First-use environment initialization |
 
@@ -76,19 +76,21 @@ When writing or modifying Chisel code, **always** query Context7 for up-to-date 
 Library ID: /chipsalliance/chisel
 ```
 
-Use `mcp__plugin_context7_context7__query-docs` with this library ID to look up modules, IO bundles, operators, emission APIs, and any Chisel construct you are unsure about. This ensures generated code matches the actual Chisel 7.x API rather than relying on stale training data.
+Use `mcp__plugin_context7_context7__query-docs` with this library ID to look up modules, IO bundles, operators, emission APIs, and any Chisel construct you are unsure about. This ensures generated code matches the actual Chisel 3.6.x API rather than relying on stale training data.
 
 ## Chisel API Rules (Pitfalls)
 
 These are project-specific constraints that Context7 docs won't tell you. Violating them causes compilation failures.
 
-1. **Emission API:** Use `ChiselStage.emitSystemVerilogFile` (`import circt.stage.ChiselStage`). Do NOT use `emitVerilog` -- it is deprecated and removed in Chisel 7.x. Query Context7 for exact usage.
+1. **Emission API:** Use `(new chisel3.stage.ChiselStage).emitVerilog` (`import chisel3.stage.ChiselStage`). Do NOT use `circt.stage.ChiselStage` or `emitSystemVerilogFile` -- those require firtool/CIRCT which is not available with Chisel 3.x. Query Context7 for exact usage.
 
-2. **Dependency coordinates:** The correct dependency is `"org.chipsalliance" %% "chisel"`. Do NOT use `"edu.berkeley.cs" %% "chisel3"` -- that is the old, unmaintained package.
+2. **Dependency coordinates:** The correct dependency is `"edu.berkeley.cs" %% "chisel3"`. Do NOT use `"org.chipsalliance" %% "chisel"` -- that is for Chisel 5.x+ which is a different version line.
 
-3. **firtool management:** Do NOT set `CHISEL_FIRTOOL_PATH`. The firtool binary is auto-managed by chisel's firtool-resolver. Setting this variable causes version conflicts and potential segfaults.
+3. **firtool is auto-managed:** Chisel 3.6.x auto-downloads firtool via firtool-resolver. Do NOT manually install or set `CHISEL_FIRTOOL_PATH`. The `emitVerilog` call produces both `.v` (FIRRTL backend) and `.sv` (firtool/CIRCT backend) files.
 
 4. **sbt batch mode:** Always pass `--batch` to sbt in scripts. Without it, sbt enters interactive mode and scripts hang indefinitely.
+
+5. **Scala version pinning:** Use Scala 2.13.10 exactly. The `chisel3-plugin` requires a `CrossVersion.full` match, so only specific Scala patch versions have published plugin artifacts. 2.13.10 is the recommended version for Chisel 3.6.x.
 
 ## Pipeline Overview
 
@@ -96,7 +98,7 @@ The `/chip-agent:generate` command executes these stages:
 
 1. **Parse Requirements** -- Extract module name, ports, operations, and constraints from natural language input
 2. **Generate Chisel** -- Produce Chisel source code from the structured specification
-3. **Compile to Verilog** -- Run sbt to compile Chisel through firtool into SystemVerilog
+3. **Compile to Verilog** -- Run sbt to compile Chisel through FIRRTL/firtool into Verilog
 4. **Lint** -- Run Verilator lint-only checks on the generated Verilog
 5. **Generate Testbench** -- Create a C++ testbench with test vectors for Verilator
 6. **Simulate** -- Compile and run the testbench, collecting pass/fail results

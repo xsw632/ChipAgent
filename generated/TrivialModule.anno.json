@@ -1,0 +1,17 @@
+[
+  {
+    "class":"firrtl.EmitCircuitAnnotation",
+    "emitter":"firrtl.VerilogEmitter"
+  },
+  {
+    "class":"firrtl.transforms.BlackBoxTargetDirAnno",
+    "targetDir":"/home/mingzhenjia/ChipAgent/generated"
+  },
+  {
+    "class":"firrtl.transforms.CombinationalPath",
+    "sink":"~TrivialModule|TrivialModule>io_out",
+    "sources":[
+      "~TrivialModule|TrivialModule>io_in"
+    ]
+  }
+]

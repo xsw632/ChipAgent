@@ -6,24 +6,23 @@ PROJECT_DIR="$PLUGIN_ROOT/chisel-project"
 OUTPUT_DIR="$PLUGIN_ROOT/generated"
 
 export SBT_OPTS="-Dsbt.supershell=false"
-unset CHISEL_FIRTOOL_PATH 2>/dev/null || true
 
 mkdir -p "$OUTPUT_DIR"
 
 LOG=$(mktemp)
 trap "rm -f $LOG" EXIT
 
-echo "Compiling Chisel to SystemVerilog..."
+echo "Compiling Chisel to Verilog..."
 cd "$PROJECT_DIR"
 
 EXIT_CODE=0
 timeout 120 sbt --batch "runMain chipagent.Generate --target-dir $OUTPUT_DIR" > "$LOG" 2>&1 || EXIT_CODE=$?
 
 if [ "$EXIT_CODE" -eq 0 ]; then
-  SV_COUNT=$(find "$OUTPUT_DIR" -maxdepth 1 -name "*.sv" 2>/dev/null | wc -l)
+  SV_COUNT=$(find "$OUTPUT_DIR" -maxdepth 1 \( -name "*.sv" -o -name "*.v" \) 2>/dev/null | wc -l)
   if [ "$SV_COUNT" -gt 0 ]; then
     echo "Compilation successful:"
-    ls "$OUTPUT_DIR"/*.sv
+    ls "$OUTPUT_DIR"/*.sv "$OUTPUT_DIR"/*.v 2>/dev/null
   else
     echo "WARNING: sbt exited 0 but no .sv files found in $OUTPUT_DIR"
     cat "$LOG"

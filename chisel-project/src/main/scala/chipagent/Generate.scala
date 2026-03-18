@@ -21,7 +21,8 @@ object Generate extends App {
   val module: () => Module = moduleName match {
     case "TrivialModule" => () => new TrivialModule
     case "ALU"           => () => new ALU
-    case other => throw new IllegalArgumentException(s"Unknown module: $other. Available: TrivialModule, ALU")
+    case "Decoder3to8"   => () => new Decoder3to8
+    case other => throw new IllegalArgumentException(s"Unknown module: $other. Available: TrivialModule, ALU, Decoder3to8")
   }
 
   (new ChiselStage).emitVerilog(

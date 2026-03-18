@@ -10,9 +10,15 @@ echo ""
 MISSING=0
 
 if command -v java >/dev/null 2>&1; then
-  echo "[OK] Java: $(java -version 2>&1 | head -1)"
+  JAVA_VER=$(java -version 2>&1 | head -1 | sed 's/.*"\([0-9]*\).*/\1/')
+  if [ "$JAVA_VER" -ge 11 ] 2>/dev/null; then
+    echo "[OK] Java: $(java -version 2>&1 | head -1)"
+  else
+    echo "ERROR: Java 11+ required, found version $JAVA_VER."
+    MISSING=1
+  fi
 else
-  echo "ERROR: JDK not found. Install JDK 17+ and ensure java is on PATH."
+  echo "ERROR: JDK not found. Install JDK 11+ and ensure java is on PATH."
   MISSING=1
 fi
 
