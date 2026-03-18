@@ -42,16 +42,16 @@
 
 ### Testbench Generation
 
-- [ ] **TB-01**: Agent generates C++ testbench with test vectors matching module operations
-- [ ] **TB-02**: Testbench includes clock handling, input driving, and output checking
-- [ ] **TB-03**: ALU testbench covers all 6 operations with at least 10 test cases
-- [ ] **TB-04**: Testbench outputs formatted log: `[TEST N] OP: a=X b=Y | expect=Z got=W | PASS/FAIL`
+- [x] **TB-01**: Agent generates C++ testbench with test vectors matching module operations
+- [x] **TB-02**: Testbench includes clock handling, input driving, and output checking
+- [x] **TB-03**: ALU testbench covers all 6 operations with at least 10 test cases
+- [x] **TB-04**: Testbench outputs formatted log: `[TEST N] OP: a=X b=Y | expect=Z got=W | PASS/FAIL`
 
 ### Simulation
 
-- [ ] **SIM-01**: `scripts/simulate.sh` compiles testbench with Verilator and runs simulation
-- [ ] **SIM-02**: Simulation produces `sim/logs/sim_result.log` in prescribed format
-- [ ] **SIM-03**: Final line of sim_result.log shows `RESULT: PASSED X/Y tests` or `RESULT: FAILED`
+- [x] **SIM-01**: `scripts/simulate.sh` compiles testbench with Verilator and runs simulation
+- [x] **SIM-02**: Simulation produces `sim/logs/sim_result.log` in prescribed format
+- [x] **SIM-03**: Final line of sim_result.log shows `RESULT: PASSED X/Y tests` or `RESULT: FAILED`
 
 ### Hooks
 
@@ -111,13 +111,13 @@
 | HOOK-01 | Phase 3 | Complete |
 | HOOK-02 | Phase 3 | Complete |
 | HOOK-03 | Phase 3 | Complete |
-| TB-01 | Phase 4 | Pending |
-| TB-02 | Phase 4 | Pending |
-| TB-03 | Phase 4 | Pending |
-| TB-04 | Phase 4 | Pending |
-| SIM-01 | Phase 4 | Pending |
-| SIM-02 | Phase 4 | Pending |
-| SIM-03 | Phase 4 | Pending |
+| TB-01 | Phase 4 | Complete |
+| TB-02 | Phase 4 | Complete |
+| TB-03 | Phase 4 | Complete |
+| TB-04 | Phase 4 | Complete |
+| SIM-01 | Phase 4 | Complete |
+| SIM-02 | Phase 4 | Complete |
+| SIM-03 | Phase 4 | Complete |
 
 **Coverage:**
 - v1 requirements: 30 total
