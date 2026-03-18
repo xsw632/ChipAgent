@@ -97,30 +97,16 @@ Run Verilator lint on the generated Verilog:
 
 ### Step 5 -- Generate Testbench
 
-After lint passes (Step 4), generate a C++ testbench for the module:
+After lint passes (Step 4), generate a C++ testbench for the module.
 
 1. Determine the testbench path: `sim/tb_<ModuleName>.cpp`
 2. If the testbench already exists (e.g., the ALU reference testbench at `sim/tb_ALU.cpp`), skip generation and proceed to Step 6
-3. If the testbench does not exist, generate one following the pattern in `sim/tb_ALU.cpp`:
-   - Include `"V<ModuleName>.h"` and `"verilated.h"`
-   - Define a `TestCase` struct with fields matching the module ports
-   - Create test vectors from the parsed module spec (using the operations and expected behaviors)
-   - Follow the exact output format: `[TEST N] OP: a=X b=Y | expect=Z got=W | PASS/FAIL`
-   - Include `RESULT: PASSED/FAILED X/Y tests` as the final line
-4. Write the testbench file to `sim/tb_<ModuleName>.cpp`
+3. If the testbench does not exist, use the testbench-generator agent with:
+   - The JSON spec from Step 1
+   - The module name (for simple: `spec.moduleName`, for complex: `spec.topModule.name`)
+   - The agent determines the testbench mode (simple vs reference-model) from the spec
 
-**Complex/CPU module testbench generation (when spec.type is "complex" and spec.verification.tier is "reference-model"):**
-
-For CPU modules verified via reference model, generate a testbench that:
-1. `#include "cpu_test_template.h"` (the fixed template with encoding helpers, reference emulator, and comparison logic)
-2. `#include "V<TopModuleName>.h"` and `"verilated.h"`
-3. Load a sequence of RV32I instructions into both the DUT (via reset + instruction memory) and the reference model (via `RV32IState.mem`)
-4. For each instruction: clock the DUT one cycle, call `rv32i_step()` on the reference model, then compare `dut->io_debug_pc` and `dut->io_debug_reg_data` against the reference state using `cpu_check_reg()`
-5. Cover ~40 test vectors across all RV32I instruction categories (2-3 per instruction type): R-type (ADD, SUB, AND, OR, XOR, SLT, SLL, SRL, SRA), I-type (ADDI, ANDI, ORI, XORI, SLTI, SLLI, SRLI, SRAI), Load/Store (LW, SW), Branch (BEQ, BNE, BLT, BGE), Jump (JAL, JALR), Upper (LUI, AUIPC)
-6. Use the instruction encoding helpers (rv_add, rv_addi, etc.) from the template -- do NOT manually encode instruction bit patterns
-7. Output follows the same `[TEST N] ... PASS/FAIL` and `RESULT: PASSED/FAILED X/Y tests` format as simple testbenches
-
-The LLM generating the testbench receives the template helpers and only needs to compose test sequences, NOT implement the emulator or encoding logic.
+The agent produces `sim/tb_<ModuleName>.cpp` following UVM-inspired C++ architecture with standardized PASS/FAIL output format. For simple/combinational modules, it generates a `TestCase` struct with test vectors and a single `eval()` loop. For CPU modules with `spec.verification.tier == "reference-model"`, it generates a reference-model testbench using `cpu_test_template.h` with instruction encoding helpers and per-instruction comparison.
 
 ### Step 6 -- Simulate
 
