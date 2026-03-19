@@ -1,187 +1,172 @@
 # Domain Pitfalls
 
-**Domain:** Automated Chisel-to-Verified-Verilog Pipeline (Claude Code Plugin)
-**Researched:** 2026-03-16
+**Domain:** ChipAgent v1.1 -- Modular Slash Commands + Workspace Isolation
+**Researched:** 2026-03-19
+**Supersedes:** v1.0 pitfalls from 2026-03-16 (those remain valid; this adds v1.1-specific pitfalls)
 
 ## Critical Pitfalls
 
-Mistakes that cause rewrites or major issues.
+Mistakes that cause rewrites or major issues during the v1.1 refactoring.
 
-### Pitfall 1: sbt Cold Start Latency
+### Pitfall 1: Breaking the Working Pipeline During Decomposition
 
-**What goes wrong:** First `sbt runMain` invocation takes 30-120 seconds to download dependencies, resolve firtool, and JIT-compile. Users (or Claude) may interpret this as a hang or failure.
+**What goes wrong:** While splitting generate.md into separate skills, the end-to-end pipeline stops working. The ALU acceptance test fails because a data flow between stages is broken.
 
-**Why it happens:** sbt/JVM startup cost is inherently high; firtool-resolver downloads the firtool binary on first run; dependency resolution hits Maven Central.
+**Why it happens:** The monolithic generate.md carries state in conversation context between stages (e.g., the JSON spec from the parser feeds into the generator). When stages become separate skills, this implicit context passing breaks. If the spec.json write/read convention is not implemented before the orchestrator is rewritten, the pipeline has no inter-stage communication.
 
-**Consequences:** Pipeline appears broken on first run; timeout in hooks/scripts; users abandon tool.
-
-**Prevention:**
-- Run `sbt update` during plugin setup / first-use initialization to pre-download all dependencies
-- Set generous timeouts in compile scripts (120s minimum for first run, 30s for subsequent)
-- Add progress indicators or status messages to scripts
-- Consider a `/chip:setup` skill that initializes the sbt project
-
-**Detection:** First compile takes >60s; error messages about connection timeouts or unresolved dependencies.
-
-### Pitfall 2: Wrong Chisel API (chisel3 vs org.chipsalliance)
-
-**What goes wrong:** Generated Chisel code uses deprecated APIs that don't exist in Chisel 7.x. Common errors: `emitVerilog is not a member of circt.stage.ChiselStage`.
-
-**Why it happens:** LLM training data includes older Chisel 3.x/5.x examples; many online tutorials still use the old artifact name `edu.berkeley.cs::chisel3`.
-
-**Consequences:** Compilation fails immediately; confusing error messages about missing members.
+**Consequences:** Regression from v1.0 working state. Users who depended on `/chip-agent:generate` have a broken tool. Debugging is difficult because the failure could be in any of 7 newly separated stages.
 
 **Prevention:**
-- Agent system prompts MUST specify: use `import chisel3._` (this is still correct for the DSL), but the build dependency is `org.chipsalliance::chisel`
-- Verilog emission MUST use `circt.stage.ChiselStage.emitSystemVerilog` or `emitSystemVerilogFile`, NOT `emitVerilog`
-- Include working code examples in the chisel-generator agent prompt
-- Include a reference `Generate.scala` file in the chisel-project template as a known-good example
+- Build workspace foundation (scripts, spec.json) BEFORE decomposing skills
+- Keep old generate.md until the orchestrator is fully tested
+- Run the ALU acceptance test after each major change
+- Implement spec-file communication first, then decompose skills
+- The old generate.md and new skills can coexist temporarily (different names)
 
-**Detection:** Compilation errors mentioning "not a member of" or "object chisel3 is not a member of package edu.berkeley.cs".
+**Detection:** ALU acceptance test fails; `workspace/<Module>/logs/sim_result.log` is empty or missing; stages report "spec.json not found."
 
-### Pitfall 3: firtool Version Mismatch
+### Pitfall 2: Hook Triggers on Non-Scala Writes
 
-**What goes wrong:** If `CHISEL_FIRTOOL_PATH` is set (or an old firtool is on PATH), it may conflict with the version Chisel expects, producing cryptic FIRRTL compilation errors or segfaults.
+**What goes wrong:** The current PostToolUse hook fires on ALL Write|Edit operations. When a testbench .cpp file is written, sbt compile is triggered unnecessarily, wasting 10-30 seconds of JVM startup.
 
-**Why it happens:** Chisel 7.x auto-manages firtool, but environment variables or PATH entries can override this. A user who previously installed firtool manually may have a stale version.
+**Why it happens:** Claude Code hook matchers match tool names (Write, Edit), not file paths. The current matcher `"Write|Edit"` catches every file type. The hook command receives the file path via stdin JSON, but the current compile.sh does not read stdin -- it just compiles unconditionally.
 
-**Consequences:** Segfaults during compilation; malformed Verilog output; FIRRTL parse errors.
-
-**Prevention:**
-- Do NOT set `CHISEL_FIRTOOL_PATH` unless absolutely necessary
-- In compile scripts, explicitly unset the variable: `unset CHISEL_FIRTOOL_PATH`
-- Document that Chisel manages firtool automatically
-- Verify firtool is NOT in PATH during plugin setup (confirmed not installed on target machine -- this is correct)
-
-**Detection:** Segfaults during sbt run; FIRRTL version mismatch errors; "unsupported annotation" errors.
-
-### Pitfall 4: Verilator Lint Errors That Cannot Be Fixed at Chisel Level
-
-**What goes wrong:** Some Verilator lint warnings/errors originate from firtool's Verilog emission style, not from the Chisel source. The lint-fixer agent loops 3 times changing Chisel code but the Verilog output remains the same.
-
-**Why it happens:** firtool generates Verilog with specific patterns (e.g., `_GEN_*` temporary signals, specific wire naming, always_comb vs always_ff style) that may trigger Verilator warnings. These cannot be changed by modifying Chisel.
-
-**Consequences:** Wasted 3 fix iterations; pipeline reports failure for an unfixable issue; user frustration.
+**Consequences:** Every testbench write triggers a 10-30 second sbt invocation that does nothing useful. Worse, if the testbench write happens during a skill that expects compile output, the timing can cause confusion.
 
 **Prevention:**
-- Use firtoolOpts like `-disable-all-randomization` and `-strip-debug-info` to reduce noisy Verilog
-- Classify lint messages as "Chisel-fixable" vs "firtool-generated"; suppress the latter with `-Wno-<WARNING>` flags
-- Allow passing Verilator warning suppressions: `verilator --lint-only -Wno-UNUSED -Wno-UNDRIVEN`
-- The lint-fixer agent should recognize when an error is in generated code it cannot control and skip it
-- Distinguish between %Error (blocking) and %Warning (non-blocking)
+- Replace direct compile.sh invocation in hooks with an auto-compile.sh wrapper
+- auto-compile.sh reads the hook's stdin JSON, extracts `tool_input.file_path`, and only invokes compile.sh for `.scala` files
+- Alternative: remove the PostToolUse hook entirely and have skills call compile.sh explicitly at the right time
 
-**Detection:** Same lint error persists across all 3 fix iterations with identical Verilator output.
+**Detection:** sbt compilation log appears after writing non-Scala files; `Compiling Chisel to Verilog...` message after writing a .cpp testbench.
 
-### Pitfall 5: Hook Event Storms
+### Pitfall 3: Workspace Path Not Passed to Generate.scala
 
-**What goes wrong:** A PostToolUse hook on Write/Edit triggers compilation, which generates new files, which triggers more hooks, creating an infinite loop.
+**What goes wrong:** compile.sh is updated to accept a target directory argument, but the argument is not correctly forwarded to sbt's `runMain` command with the `--target-dir` flag. Verilog files end up in the default `generated/` directory instead of `workspace/<Module>/generated/`.
 
-**Why it happens:** Hooks fire on ANY Write/Edit event matching the pattern. If compilation writes to a directory that matches the hook's file pattern, it re-triggers.
+**Why it happens:** Shell variable quoting issues when passing paths through `sbt --batch "runMain chipagent.Generate --target-dir $OUTPUT_DIR"`. Paths with spaces or special characters break. The current compile.sh hardcodes `OUTPUT_DIR="$PLUGIN_ROOT/generated"`.
 
-**Consequences:** Infinite loop; system hangs; excessive API usage.
+**Consequences:** Per-module workspace isolation silently fails. Files accumulate in the flat generated/ directory. Multiple modules overwrite each other's output.
 
 **Prevention:**
-- Scope hook matchers narrowly: only match writes to `src/main/scala/**/*.scala`, NOT `generated/` or `reports/`
-- Use the matcher field precisely: `"matcher": "Write|Edit"` only, and check the file path in the script
-- Better approach: do NOT use PostToolUse hooks for compilation. Instead, have the orchestrating skill explicitly call scripts at the right time. Hooks are best for simple formatting/validation, not pipeline orchestration
-- If hooks are used, the script should check the file path from stdin JSON and exit early for non-relevant paths
+- Quote all paths in sbt invocations: `--target-dir \"$OUTPUT_DIR\"`
+- Verify by checking that Verilog files appear in `workspace/<Module>/generated/` NOT in `generated/`
+- Add a validation check in compile.sh: if target-dir is specified, verify the output file exists there after compilation
+- Test with module names containing no spaces (PascalCase convention ensures this)
 
-**Detection:** Claude Code shows rapid repeated hook execution; disk I/O spikes; same files keep being overwritten.
+**Detection:** `ls workspace/<Module>/generated/` returns empty; `ls generated/` contains unexpected files from the current module.
+
+### Pitfall 4: Skill-to-Skill Invocation Semantics
+
+**What goes wrong:** The generate orchestrator skill tries to invoke sub-skills (e.g., `/chip-agent:lint ALU`) but the invocation does not work as expected. Claude may interpret the slash command literally instead of executing it, or the invocation may not pass arguments correctly.
+
+**Why it happens:** Claude Code skills are designed for user invocation (typing `/skill-name`) or model invocation (Claude deciding to use a skill based on context). A skill invoking another skill programmatically is not the same as a user typing a command. The exact mechanics depend on whether Claude treats the slash command in the skill prompt as an instruction to invoke the skill tool.
+
+**Consequences:** The orchestrator skill fails silently or generates output as if it ran the stage without actually running it. The pipeline appears to complete but produces no artifacts.
+
+**Prevention:**
+- Test skill-to-skill invocation early in development
+- The orchestrator skill should instruct Claude to "use the Skill tool to invoke /chip-agent:lint" rather than just writing the slash command as text
+- Alternative: the orchestrator skill can directly invoke the bash scripts and agents, bypassing sub-skill invocation entirely (this is simpler but loses the benefit of skill encapsulation)
+- Monitor Claude's tool usage during orchestration to verify actual skill invocations
+
+**Detection:** The orchestrator completes but `workspace/<Module>/logs/` is empty; Claude's tool usage log shows no Skill tool invocations during the pipeline.
+
+### Pitfall 5: Moving Chisel Source Into Workspace
+
+**What goes wrong:** A developer attempts to put ALU.scala into `workspace/ALU/src/` for "better isolation." sbt cannot find the source because its sourceDirectory is configured for `chisel-project/src/main/scala/chipagent/`.
+
+**Why it happens:** Natural instinct to co-locate all module files in one directory. The sbt build system is not obvious to non-Scala developers.
+
+**Consequences:** Compilation fails with "object ALU is not a member of package chipagent." Must reconfigure build.sbt or move files back.
+
+**Prevention:**
+- Document clearly: Chisel source stays in `chisel-project/src/main/scala/chipagent/`. Workspace is for OUTPUTS only.
+- Add a comment in the workspace directory convention documentation
+- ARCHITECTURE.md anti-pattern section explicitly addresses this
+
+**Detection:** `sbt compile` error: "not found: type ALU" or "object ALU is not a member of package chipagent."
 
 ## Moderate Pitfalls
 
-### Pitfall 1: sbt Interactive Mode in Non-Interactive Context
+### Pitfall 1: spec.json Schema Drift Between Parser and Consumer
 
-**What goes wrong:** sbt enters interactive shell mode when invoked without `--batch` or a specific task. Claude Code hooks and scripts cannot interact with stdin prompts.
-
-**Prevention:** Always use `sbt --batch "task"` or `sbt "task"` format. Never invoke bare `sbt` without a task argument. Set `SBT_OPTS="-Dsbt.supershell=false"` to disable the fancy progress display.
-
-### Pitfall 2: Verilator Version Limitations
-
-**What goes wrong:** Installed Verilator 5.008 (2023) lacks features or lint rules present in newer versions. Generated code may pass lint on 5.008 but fail on newer Verilator versions, or vice versa.
-
-**Prevention:** Document the target Verilator version. For the course assignment, 5.008 is the testing environment. Do not rely on features added after v5.008. The `--lint-only` and `--cc` workflows are stable across versions.
-
-### Pitfall 3: C++ Testbench Compilation Errors
-
-**What goes wrong:** LLM-generated C++ testbench has compilation errors (missing includes, wrong Verilator API usage, incorrect module port names).
+**What goes wrong:** The requirement-parser agent writes spec.json with a slightly different schema than what the chisel-generator agent expects. For example, parser uses `"type": "UInt"` but generator expects `"dataType": "UInt"`.
 
 **Prevention:**
-- Include a testbench template in the testbench-generator agent context
-- Verilator generates `V<ModuleName>.h` -- the testbench must `#include "V<ModuleName>.h"` exactly
-- Use `Verilated::commandArgs(argc, argv)` for initialization
-- Always include `verilated.h` header
-- Port names in the C++ testbench must match the Verilog output exactly (case-sensitive)
+- The spec.json schema is already defined in the requirement-parser agent (see agents/requirement-parser.md). All downstream agents must use the SAME schema.
+- Do not create a "v2" spec format without updating all consumers
+- Validate spec.json in each skill before passing to the agent
 
-### Pitfall 4: Module Port Name Mismatches Between Stages
+### Pitfall 2: obj_dir Contamination Between Modules
 
-**What goes wrong:** The module spec uses one port naming convention (e.g., `aluOp`), Chisel generates another (e.g., `io_aluOp`), and the testbench uses a third (e.g., `alu_op`).
+**What goes wrong:** Without per-module obj_dir isolation, Verilator build artifacts from Module A remain in `sim/obj_dir/` when Module B is compiled. The stale `.mk` file may cause build failures or link the wrong module.
 
 **Prevention:**
-- Chisel wraps all ports in `io` bundle, so Verilog ports become `io_<portName>`
-- The testbench generator must read the generated Verilog (or know the Chisel convention) to use correct port names
-- Establish a naming convention in the requirement-parser output that flows through all stages
-- Consider using firtoolOpt `--lowering-options=disallowPortDeclSharing` for cleaner port names
+- Use `--Mdir workspace/<Module>/sim/obj_dir/` in simulate.sh to isolate build artifacts per module
+- Clean obj_dir before each Verilator invocation if workspace isolation is not yet implemented
+- The `make -C` command must reference the module-specific obj_dir
 
-### Pitfall 5: File Path Confusion Between Plugin Root and Project Root
+### Pitfall 3: Skills Directory vs Legacy Command File Format
 
-**What goes wrong:** Scripts reference relative paths that break depending on whether Claude Code invokes them from the plugin directory or the user's project directory.
+**What goes wrong:** The existing `skills/generate.md` is a flat command file (legacy format). New skills are created as `skills/<name>/SKILL.md` (modern format). If both exist for the same command name, behavior is undefined.
 
 **Prevention:**
-- Use `${CLAUDE_PLUGIN_ROOT}` in all hook commands
-- Scripts should use `cd "$(dirname "$0")/.."` to resolve their own location
-- Document clearly: plugin root vs chisel-project root vs user's working directory
-- All generated output paths should be absolute or relative to a well-defined root
+- Delete `skills/generate.md` AFTER creating `skills/generate/SKILL.md`
+- Do not have both formats for the same command name simultaneously
+- Test with `/reload-plugins` after the transition
+
+### Pitfall 4: CLAUDE_PLUGIN_ROOT vs CLAUDE_SKILL_DIR Confusion
+
+**What goes wrong:** Skill content uses `${CLAUDE_SKILL_DIR}` expecting it to resolve to the plugin root, but it actually resolves to the skill's own directory (e.g., `skills/lint/`), not the plugin root.
+
+**Prevention:**
+- `${CLAUDE_SKILL_DIR}` resolves to the directory containing SKILL.md (e.g., `<plugin>/skills/lint/`)
+- `${CLAUDE_PLUGIN_ROOT}` resolves to the plugin root directory
+- Scripts should always use `PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"` for the plugin root
+- Skills that need to reference scripts should use `${CLAUDE_PLUGIN_ROOT}/scripts/compile.sh`, NOT `${CLAUDE_SKILL_DIR}/../../scripts/compile.sh`
 
 ## Minor Pitfalls
 
-### Pitfall 1: Scala Version Mismatch
+### Pitfall 1: Workspace Directory Not Created Before First Use
 
-**What goes wrong:** System Scala is 2.13.13 but build.sbt specifies 2.13.16. sbt downloads the correct version, but first-time resolution adds latency.
+**What goes wrong:** A skill tries to write `workspace/ALU/spec.json` but `workspace/ALU/` does not exist yet.
 
-**Prevention:** Accept this as normal sbt behavior. The build.sbt Scala version takes precedence. No action needed beyond patience on first build.
+**Prevention:** Each skill should `mkdir -p workspace/<Module>/{generated,sim/obj_dir,logs}` before writing. Or create a shared `ensure-workspace.sh` script.
 
-### Pitfall 2: Git-Ignored Artifacts Causing Confusion
+### Pitfall 2: .gitignore Not Updated for workspace/
 
-**What goes wrong:** obj_dir/, generated/, and sbt target/ directories are large and should not be committed, but developers may wonder where outputs went after a clean clone.
+**What goes wrong:** workspace/ directory with large obj_dir/ artifacts gets committed to git.
 
-**Prevention:** Include a `.gitignore` with clear entries. Add a `/chip:setup` skill that creates output directories.
+**Prevention:** Add `workspace/*/sim/obj_dir/` and `workspace/*/generated/*.fir` to `.gitignore`. Keep spec.json and sim_result.log trackable if desired.
 
-### Pitfall 3: Testbench Output Format Drift
+### Pitfall 3: Argument Parsing Inconsistency Across Scripts
 
-**What goes wrong:** sim_result.log format deviates from the prescribed `[TEST N] OP: a=X b=Y | expect=Z got=W | PASS/FAIL` pattern.
+**What goes wrong:** compile.sh uses positional args (`compile.sh MODULE TARGET_DIR`), lint.sh uses a flag (`lint.sh --dir DIR`), simulate.sh uses a different convention. Inconsistency makes skills harder to write.
 
-**Prevention:** Use printf format strings in the C++ testbench with exact format matching. Include the format specification in the testbench-generator agent prompt.
+**Prevention:** Standardize on positional arguments for simplicity: `script.sh MODULE [WORKSPACE_DIR]`. All scripts follow the same pattern. Defaults to legacy behavior when WORKSPACE_DIR is omitted.
 
-### Pitfall 4: Verilator WIDTH Warnings on Chisel-Generated Verilog
-
-**What goes wrong:** `%Warning-WIDTH` messages from Verilator on code that is functionally correct.
-
-**Prevention:** Chisel generates Verilog with automatic width inference that Verilator may flag. Use `verilator --lint-only -Wno-WIDTH` if these are false positives, or add `/* verilator lint_off WIDTH */` pragmas in a waiver file.
-
-## Phase-Specific Warnings
+## Phase-Specific Warnings (v1.1)
 
 | Phase Topic | Likely Pitfall | Mitigation |
 |-------------|---------------|------------|
-| Plugin scaffolding | Incorrect plugin.json schema or directory layout | Validate with `claude --debug`; follow exact structure from official docs |
-| Chisel project setup | First sbt invocation extremely slow (dependency download + firtool) | Pre-download dependencies; set 120s timeout |
-| Chisel code generation | LLM uses deprecated API (emitVerilog, chisel3 artifact) | Pin exact import patterns and API calls in agent system prompts |
-| FIRRTL compilation | firtool path conflict or version mismatch | Unset CHISEL_FIRTOOL_PATH; let Chisel auto-manage |
-| Verilator lint | Unfixable firtool-generated warnings treated as errors | Classify warnings; suppress firtool-style warnings with -Wno flags |
-| Auto-fix loop | Infinite retry on unfixable errors | Hard 3-attempt limit; error classification |
-| Testbench generation | Port name mismatch between Chisel io_ prefix and testbench | Read generated Verilog ports before testbench generation |
-| Simulation | Verilator compile error from C++ testbench | Include template with correct includes and API usage |
-| Hook automation | PostToolUse event storms from cascading file writes | Narrow matchers; prefer skill-driven orchestration over hooks for pipeline flow |
+| Workspace Foundation | Paths not correctly quoted in shell scripts | Test with module names like "ALU" (simple) first; avoid spaces in paths |
+| Script Parameterization | Breaking backward compatibility | Default arguments match v1.0 behavior when no args given |
+| Skill Decomposition | Skills reference wrong paths (CLAUDE_SKILL_DIR vs CLAUDE_PLUGIN_ROOT) | Use CLAUDE_PLUGIN_ROOT for all script references |
+| Orchestrator Rewrite | Skill-to-skill invocation fails silently | Test orchestrator with a single simple module before full pipeline |
+| Hook Refinement | auto-compile.sh not receiving stdin JSON correctly | Test hook wrapper independently with `echo '{"tool_input":{"file_path":"test.scala"}}' \| ./scripts/auto-compile.sh` |
+| Initialize Command | Version parsing fragile across OS variants | Test on target platform; use simple regex for version extraction |
+| Migration (generate.md -> generate/SKILL.md) | Both old and new files coexist causing conflicts | Delete old file only after new one is verified working |
 
 ## Sources
 
-- [Chisel FAQ](https://www.chisel-lang.org/docs/resources/faqs) -- Common migration issues, API changes
-- [Chisel issue #4603](https://github.com/chipsalliance/chisel/issues/4603) -- emitVerilog deprecation
-- [Chisel installation docs](https://www.chisel-lang.org/docs/installation) -- firtool auto-management, CHISEL_FIRTOOL_PATH
-- [Verilator warnings docs](https://verilator.org/guide/latest/warnings.html) -- Warning suppression flags
-- [Claude Code hooks guide](https://code.claude.com/docs/en/hooks-guide) -- Hook event behavior, stdin/exit codes
-- [CIRCT firtool segfault discussion](https://discourse.llvm.org/t/firtool-v1-114-1-segmentation-fault-with-chisel-7-0-0-rc1/86237) -- Version mismatch consequences
+- [Claude Code Skills Documentation](https://code.claude.com/docs/en/skills) -- CLAUDE_SKILL_DIR behavior, skill-to-skill invocation patterns
+- [Claude Code Hooks Documentation](https://code.claude.com/docs/en/hooks) -- Hook stdin JSON format, file_path extraction
+- [Claude Code Plugins Documentation](https://code.claude.com/docs/en/plugins) -- CLAUDE_PLUGIN_ROOT resolution, plugin directory structure
+- Existing codebase analysis: hooks.json, compile.sh, lint.sh, simulate.sh, Generate.scala
+- v1.0 ALU acceptance test flow analysis
 
 ---
-*Domain pitfalls for: ChipAgent -- Automated Chisel-to-Verified-Verilog Pipeline*
-*Researched: 2026-03-16*
+*Domain pitfalls for: ChipAgent v1.1 -- Modular Slash Commands + Workspace Isolation*
+*Researched: 2026-03-19*
+*Supersedes v1.0 pitfalls (those remain valid for the underlying pipeline; this adds v1.1-specific concerns)*
