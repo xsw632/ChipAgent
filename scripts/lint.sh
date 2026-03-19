@@ -2,6 +2,15 @@
 set -euo pipefail
 
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+# Convert MSYS/Cygwin paths to mixed-mode (C:/...) for JVM compatibility on Windows
+if command -v cygpath >/dev/null 2>&1; then
+  PLUGIN_ROOT="$(cygpath -m "$PLUGIN_ROOT")"
+fi
+if [ -z "$PLUGIN_ROOT" ]; then
+  echo "ERROR: Could not determine plugin root directory." >&2
+  echo "Set CLAUDE_PLUGIN_ROOT or run from the scripts/ directory." >&2
+  exit 1
+fi
 GENERATED_DIR="$PLUGIN_ROOT/generated"
 WAIVER_FILE="$GENERATED_DIR/chisel-warnings.vlt"
 WARNINGS_LOG="$GENERATED_DIR/lint-warnings.log"

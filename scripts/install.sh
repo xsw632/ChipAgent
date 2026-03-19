@@ -4,6 +4,15 @@ set -euo pipefail
 # Resolve source directory from script location
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Convert MSYS/Cygwin paths to mixed-mode (C:/...) for Windows compatibility
+if command -v cygpath >/dev/null 2>&1; then
+  SCRIPT_DIR="$(cygpath -m "$SCRIPT_DIR")"
+  SOURCE_DIR="$(cygpath -m "$SOURCE_DIR")"
+fi
+if [ -z "$SOURCE_DIR" ]; then
+  echo "ERROR: Could not determine source directory." >&2
+  exit 1
+fi
 
 # Target installation directory
 DEST="$HOME/.claude/plugins/chip-agent"
