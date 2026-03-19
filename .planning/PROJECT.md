@@ -24,7 +24,16 @@ A single slash command turns a natural language hardware description into lint-c
 
 ### Active
 
-(None — define in next milestone via `/gsd:new-milestone`)
+## Current Milestone: v1.1 Refine
+
+**Goal:** Decompose the monolithic generate pipeline into modular slash commands with per-module workspace isolation and environment detection.
+
+**Target features:**
+- Modular slash commands: requirement-parser, lint, testbench, simulate, debug, initialize
+- Per-module `workspace/` isolation (spec, generated Verilog, sim logs per module)
+- Hybrid spec-file communication between pipeline stages (Option C)
+- Environment detection via `/chip-agent:initialize` (sbt, Scala, Verilator versions)
+- Refactored `/chip-agent:generate` as orchestrator spawning subagents
 
 ### Out of Scope
 
@@ -63,4 +72,4 @@ Acceptance test: ALU with ADD/SUB/AND/OR/XOR/SLT + zero flag passes all 12 test 
 | Combinational eval pattern | ALU is combinational; single eval() call, no clock cycling | ✓ Good |
 
 ---
-*Last updated: 2026-03-18 after v1.0 milestone*
+*Last updated: 2026-03-19 after v1.1 milestone start*
