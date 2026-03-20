@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Refine
 status: executing
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-03-20T04:10:18Z"
-last_activity: 2026-03-20 - Completed Phase 5 Plan 1 (workspace-aware compilation)
+stopped_at: Completed 05-02-PLAN.md (Phase 5 complete)
+last_updated: "2026-03-20T04:24:38Z"
+last_activity: 2026-03-20 — Completed Phase 5 (workspace foundation - all 2 plans done)
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 4
-  completed_plans: 1
-  percent: 25
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
+  percent: 100
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-19)
 ## Current Position
 
 Phase: 5 of 8 (Workspace Foundation)
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-03-20 — Completed Plan 1 (workspace-aware compilation)
+Plan: 2 of 2 in current phase (COMPLETE)
+Status: Phase Complete
+Last activity: 2026-03-20 — Completed Phase 5 Plan 2 (workspace lint and simulate)
 
-Progress: [██░░░░░░░░] 25% (v1.1 scope)
+Progress: [██████████] 100% (Phase 5 scope)
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Progress: [██░░░░░░░░] 25% (v1.1 scope)
 | 03 | 3 | 11min | 3.7min |
 | 04 | 2 | 17min | 8.5min |
 | 05 (plan 1) | 1 | 10min | 10min |
+| 05 (plan 2) | 1 | 4min | 4min |
 
 ## Accumulated Context
 
@@ -62,6 +63,9 @@ Recent decisions affecting current work:
 - [v1.1]: 4-phase structure: Workspace Foundation -> Skill Decomposition -> Orchestrator + Initialize -> Debug
 - [05-01]: Workspace paths resolved to absolute before sbt (avoids cwd mismatch)
 - [05-01]: Used find instead of ls for file listing (avoids glob failure under set -e)
+- [05-02]: simulate.sh uses '/' detection heuristic to distinguish workspace paths from bare module names
+- [05-02]: Waiver file fallback: per-module -> global -> empty (no waiver)
+- [05-02]: Added -I$PLUGIN_ROOT/sim to CFLAGS for shared testbench headers across modes
 
 ### Pending Todos
 
@@ -82,5 +86,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-20
-Stopped at: Completed 05-01-PLAN.md
+Stopped at: Completed 05-02-PLAN.md (Phase 5 complete)
 Resume file: None
