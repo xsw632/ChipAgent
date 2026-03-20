@@ -40,6 +40,7 @@ For combinational modules (ALU, multiplexer, encoder, etc.), generate a testbenc
 ```cpp
 #include "V<ModuleName>.h"
 #include "verilated.h"
+#include "verilated_vcd_c.h"
 #include <cstdio>
 
 struct TestCase {
@@ -58,6 +59,13 @@ int main(int argc, char** argv) {
     ctx->commandArgs(argc, argv);
     V<ModuleName>* dut = new V<ModuleName>{ctx};
 
+    // VCD tracing setup
+    Verilated::traceEverOn(true);
+    VerilatedVcdC* tfp = new VerilatedVcdC;
+    dut->trace(tfp, 99);
+    tfp->open("trace.vcd");
+
+    vluint64_t sim_time = 0;
     dut->clock = 0;
     dut->reset = 0;
 
@@ -79,6 +87,10 @@ int main(int argc, char** argv) {
         // Evaluate (combinational -- single eval() call, no clock needed)
         dut->eval();
 
+        // Dump VCD at this test's timestamp
+        tfp->dump(sim_time);
+        sim_time++;
+
         // Monitor: read output
         <output_type> got = dut->io_<outputPort>;
 
@@ -98,9 +110,11 @@ int main(int argc, char** argv) {
            (pass == total) ? "PASSED" : "FAILED", pass, total);
 
     // Cleanup
+    tfp->close();
     dut->final();
     delete dut;
     delete ctx;
+    delete tfp;
 
     return (pass == total) ? 0 : 1;
 }
@@ -113,6 +127,7 @@ Given a 32-bit ALU spec with ADD, SUB, AND, OR, XOR, SLT operations, the generat
 ```cpp
 #include "VALU.h"
 #include "verilated.h"
+#include "verilated_vcd_c.h"
 #include <cstdio>
 
 struct TestCase {
@@ -126,6 +141,13 @@ int main(int argc, char** argv) {
     ctx->commandArgs(argc, argv);
     VALU* dut = new VALU{ctx};
 
+    // VCD tracing setup
+    Verilated::traceEverOn(true);
+    VerilatedVcdC* tfp = new VerilatedVcdC;
+    dut->trace(tfp, 99);
+    tfp->open("trace.vcd");
+
+    vluint64_t sim_time = 0;
     dut->clock = 0;
     dut->reset = 0;
 
@@ -164,6 +186,10 @@ int main(int argc, char** argv) {
         dut->io_b = tests[i].b;
         dut->eval();
 
+        // Dump VCD at this test's timestamp
+        tfp->dump(sim_time);
+        sim_time++;
+
         uint32_t got = dut->io_result;
         bool ok = (got == tests[i].expected);
         if (ok) pass++;
@@ -176,9 +202,11 @@ int main(int argc, char** argv) {
     printf("RESULT: %s %d/%d tests\n",
            (pass == total) ? "PASSED" : "FAILED", pass, total);
 
+    tfp->close();
     dut->final();
     delete dut;
     delete ctx;
+    delete tfp;
 
     return (pass == total) ? 0 : 1;
 }
@@ -192,20 +220,33 @@ For CPU modules verified via a reference emulator (when `spec.verification.tier 
 #include "cpu_test_template.h"
 #include "V<TopModuleName>.h"
 #include "verilated.h"
+#include "verilated_vcd_c.h"
 #include <cstdio>
 
-// Clock cycling helper -- wraps toggle-high/eval/toggle-low/eval
-void tick(V<TopModuleName>* dut) {
+// Clock cycling helper -- wraps toggle-high/eval/toggle-low/eval with VCD dump
+void tick(V<TopModuleName>* dut, VerilatedVcdC* tfp, vluint64_t& sim_time) {
     dut->clock = 1;
     dut->eval();
+    tfp->dump(sim_time);
+    sim_time++;
     dut->clock = 0;
     dut->eval();
+    tfp->dump(sim_time);
+    sim_time++;
 }
 
 int main(int argc, char** argv) {
     VerilatedContext* ctx = new VerilatedContext;
     ctx->commandArgs(argc, argv);
     V<TopModuleName>* dut = new V<TopModuleName>{ctx};
+
+    // VCD tracing setup
+    Verilated::traceEverOn(true);
+    VerilatedVcdC* tfp = new VerilatedVcdC;
+    dut->trace(tfp, 99);
+    tfp->open("trace.vcd");
+
+    vluint64_t sim_time = 0;
 
     // Initialize reference model
     RV32IState ref;
@@ -216,7 +257,7 @@ int main(int argc, char** argv) {
 
     // Reset sequence: hold reset high for 5 cycles
     dut->reset = 1;
-    for (int i = 0; i < 5; i++) tick(dut);
+    for (int i = 0; i < 5; i++) tick(dut, tfp, sim_time);
     dut->reset = 0;
 
     // Define test program using encoding helpers (NEVER manual hex)
@@ -240,7 +281,7 @@ int main(int argc, char** argv) {
         dut->io_instruction = rv32i_mem_read32(ref, ref.pc);
 
         // Step the RTL (one clock cycle)
-        tick(dut);
+        tick(dut, tfp, sim_time);
 
         // Step the reference model
         rv32i_step(ref);
@@ -258,9 +299,11 @@ int main(int argc, char** argv) {
     // Report
     cpu_test_report(result);
 
+    tfp->close();
     dut->final();
     delete dut;
     delete ctx;
+    delete tfp;
 
     return (result.fail == 0) ? 0 : 1;
 }
@@ -274,19 +317,32 @@ Below is a skeleton for a SimpleRISCV CPU testbench demonstrating reference mode
 #include "cpu_test_template.h"
 #include "VSimpleRISCV.h"
 #include "verilated.h"
+#include "verilated_vcd_c.h"
 #include <cstdio>
 
-void tick(VSimpleRISCV* dut) {
+void tick(VSimpleRISCV* dut, VerilatedVcdC* tfp, vluint64_t& sim_time) {
     dut->clock = 1;
     dut->eval();
+    tfp->dump(sim_time);
+    sim_time++;
     dut->clock = 0;
     dut->eval();
+    tfp->dump(sim_time);
+    sim_time++;
 }
 
 int main(int argc, char** argv) {
     VerilatedContext* ctx = new VerilatedContext;
     ctx->commandArgs(argc, argv);
     VSimpleRISCV* dut = new VSimpleRISCV{ctx};
+
+    // VCD tracing setup
+    Verilated::traceEverOn(true);
+    VerilatedVcdC* tfp = new VerilatedVcdC;
+    dut->trace(tfp, 99);
+    tfp->open("trace.vcd");
+
+    vluint64_t sim_time = 0;
 
     RV32IState ref;
     rv32i_init(ref);
@@ -296,7 +352,7 @@ int main(int argc, char** argv) {
 
     // Reset
     dut->reset = 1;
-    for (int i = 0; i < 5; i++) tick(dut);
+    for (int i = 0; i < 5; i++) tick(dut, tfp, sim_time);
     dut->reset = 0;
 
     // ---- Test Program ----
@@ -347,7 +403,7 @@ int main(int argc, char** argv) {
     // Execute and compare
     for (int i = 0; i < num_instructions; i++) {
         dut->io_instruction = rv32i_mem_read32(ref, ref.pc);
-        tick(dut);
+        tick(dut, tfp, sim_time);
         rv32i_step(ref);
 
         uint32_t rd = (program[i] >> 7) & 0x1F;
@@ -363,9 +419,11 @@ int main(int argc, char** argv) {
 
     cpu_test_report(result);
 
+    tfp->close();
     dut->final();
     delete dut;
     delete ctx;
+    delete tfp;
 
     return (result.fail == 0) ? 0 : 1;
 }
@@ -382,6 +440,29 @@ Rules the generated testbench MUST follow:
 5. **Exit code:** Return 0 when all tests pass, 1 when any test fails
 6. **Cleanup:** Always call `dut->final()`, `delete dut`, and `delete ctx` before returning
 7. **Headers:** Use `<cstdio>` and `printf` for output. DO NOT use `<iostream>` or `std::cout`.
+
+## VCD Tracing Conventions
+
+VCD (Value Change Dump) waveform traces are always generated by the simulation pipeline. The `--trace` flag is passed to Verilator automatically by `scripts/simulate.sh`.
+
+**Testbench VCD pattern:**
+
+1. Include `"verilated_vcd_c.h"` alongside `"verilated.h"`
+2. Call `Verilated::traceEverOn(true)` before creating the trace object
+3. Create `VerilatedVcdC* tfp`, call `dut->trace(tfp, 99)`, then `tfp->open("trace.vcd")`
+4. Call `tfp->dump(sim_time)` after each `eval()` call, incrementing `sim_time`
+5. Call `tfp->close()` before `dut->final()` to flush the VCD file
+6. Delete `tfp` after `delete ctx`
+
+**VCD file path strategy:**
+
+- Testbenches always write to `"trace.vcd"` in the current working directory
+- After simulation completes, `simulate.sh` moves `trace.vcd` to `$LOG_DIR/$MODULE.vcd` (e.g., `workspace/<Module>/sim/logs/<Module>.vcd`)
+- The debug agent finds VCD files at the canonical path `sim/logs/<Module>.vcd` within the workspace
+
+**Sequential (clocked) modules:**
+
+For reference-model testbenches using a `tick()` helper, the VCD trace pointer and sim_time counter are passed by reference to `tick()`, which dumps at both the rising and falling clock edges. This provides full clock-edge visibility in the waveform viewer.
 
 ## Test Vector Generation Rules
 
@@ -422,6 +503,8 @@ Common mistakes to avoid in generated testbenches:
 - **DO NOT** use inline clock toggling for sequential modules -- wrap in a `tick()` helper function
 - **DO NOT** forget `dut->final()` and `delete` cleanup before returning
 - **DO NOT** manually encode RV32I instructions as hex literals -- use the helpers from `cpu_test_template.h` (`rv_add`, `rv_addi`, `rv_lui`, etc.)
+- **DO NOT** forget `Verilated::traceEverOn(true)` before creating the VCD trace object -- without it, the VCD file will be empty (header only, no signal data)
+- **DO NOT** forget `tfp->close()` before `dut->final()` -- the VCD file will be truncated if not properly closed
 
 ## Error Handling
 

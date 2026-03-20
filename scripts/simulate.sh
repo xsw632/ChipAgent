@@ -55,6 +55,7 @@ mkdir -p "$LOG_DIR" "$OBJ_DIR"
 echo "Verilating $MODULE..."
 verilator --cc "$GENERATED_DIR/$MODULE.v" \
   --exe "$SIM_DIR/tb_$MODULE.cpp" \
+  --trace \
   --Mdir "$OBJ_DIR" \
   -CFLAGS "-std=c++17 -I$PLUGIN_ROOT/sim" \
   "${WAIVER_ARGS[@]}"
@@ -68,6 +69,9 @@ mkdir -p "$LOG_DIR"
 
 SIM_EXIT=0
 "$OBJ_DIR/V$MODULE" 2>&1 | tee "$LOG_DIR/sim_result.log" || SIM_EXIT=${PIPESTATUS[0]}
+
+# Move VCD trace to logs directory if generated
+[ -f trace.vcd ] && mv trace.vcd "$LOG_DIR/$MODULE.vcd"
 
 # 4. Report result
 if [ "$SIM_EXIT" -eq 0 ]; then
