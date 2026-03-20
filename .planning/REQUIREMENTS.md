@@ -63,27 +63,27 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WKSP-01 | TBD | Pending |
-| WKSP-02 | TBD | Pending |
-| WKSP-03 | TBD | Pending |
-| SKILL-01 | TBD | Pending |
-| SKILL-02 | TBD | Pending |
-| SKILL-03 | TBD | Pending |
-| SKILL-04 | TBD | Pending |
-| SKILL-05 | TBD | Pending |
-| SKILL-06 | TBD | Pending |
-| SKILL-07 | TBD | Pending |
-| SPEC-01 | TBD | Pending |
-| SPEC-02 | TBD | Pending |
-| INIT-01 | TBD | Pending |
-| INIT-02 | TBD | Pending |
-| INIT-03 | TBD | Pending |
+| WKSP-01 | Phase 5 | Pending |
+| WKSP-02 | Phase 5 | Pending |
+| WKSP-03 | Phase 5 | Pending |
+| SKILL-01 | Phase 6 | Pending |
+| SKILL-02 | Phase 6 | Pending |
+| SKILL-03 | Phase 6 | Pending |
+| SKILL-04 | Phase 6 | Pending |
+| SKILL-05 | Phase 6 | Pending |
+| SKILL-06 | Phase 7 | Pending |
+| SKILL-07 | Phase 8 | Pending |
+| SPEC-01 | Phase 6 | Pending |
+| SPEC-02 | Phase 6 | Pending |
+| INIT-01 | Phase 7 | Pending |
+| INIT-02 | Phase 7 | Pending |
+| INIT-03 | Phase 7 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 15 total
-- Mapped to phases: 0
-- Unmapped: 15 (pending roadmap)
+- Mapped to phases: 15
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-20*
-*Last updated: 2026-03-20 after initial definition*
+*Last updated: 2026-03-20 after roadmap creation*
