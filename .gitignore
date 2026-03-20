@@ -28,3 +28,6 @@ node_modules/
 
 # Per-module workspace directories (all generated, reproducible)
 workspace/
+
+# Environment detection output (machine-specific, reproducible via /chip-agent:initialize)
+.chipagent/
