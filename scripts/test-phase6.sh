@@ -42,6 +42,26 @@ check "simulate SKILL.md has name: simulate and allowed-tools with Bash" \
   'grep -q "name: simulate" "$PLUGIN_ROOT/skills/simulate/SKILL.md" && grep -q "Bash" "$PLUGIN_ROOT/skills/simulate/SKILL.md"'
 
 # --- Agent-backed skills (Plan 02) ---
+echo ""
+echo "--- Agent-backed skills ---"
+
+check "skills/requirement-parser/SKILL.md exists" \
+  'test -f "$PLUGIN_ROOT/skills/requirement-parser/SKILL.md"'
+
+check "skills/testbench/SKILL.md exists" \
+  'test -f "$PLUGIN_ROOT/skills/testbench/SKILL.md"'
+
+check "requirement-parser SKILL.md has name: requirement-parser in frontmatter" \
+  'grep -q "name: requirement-parser" "$PLUGIN_ROOT/skills/requirement-parser/SKILL.md"'
+
+check "testbench SKILL.md has name: testbench in frontmatter" \
+  'grep -q "name: testbench" "$PLUGIN_ROOT/skills/testbench/SKILL.md"'
+
+check "requirement-parser SKILL.md mentions spec.json (writes spec)" \
+  'grep -q "spec\.json" "$PLUGIN_ROOT/skills/requirement-parser/SKILL.md"'
+
+check "testbench SKILL.md reads spec.json from workspace (no conversation context dependency)" \
+  'grep -q "workspace/.*spec\.json" "$PLUGIN_ROOT/skills/testbench/SKILL.md"'
 
 echo ""
 echo "=== Results: $PASS/$TOTAL passed, $FAIL failed ==="
