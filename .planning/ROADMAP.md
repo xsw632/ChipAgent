@@ -23,7 +23,7 @@
 
 - [ ] **Phase 5: Workspace Foundation** — Per-module workspace directories and script parameterization
 - [ ] **Phase 6: Skill Decomposition** — Individual slash commands wrapping scripts and agents
-- [ ] **Phase 7: Orchestrator + Initialize** — Refactored generate pipeline and environment detection
+- [x] **Phase 7: Orchestrator + Initialize** — Refactored generate pipeline and environment detection
 - [ ] **Phase 8: Debug Command** — Failure analysis from simulation artifacts
 
 ## Phase Details
@@ -71,8 +71,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 07-01-PLAN.md — Refactored generate orchestrator skill + PostToolUse hook fix + test scaffold
-- [ ] 07-02-PLAN.md — Environment detection script + initialize skill + gitignore
+- [x] 07-01-PLAN.md — Refactored generate orchestrator skill + PostToolUse hook fix + test scaffold
+- [x] 07-02-PLAN.md — Environment detection script + initialize skill + gitignore
 
 ### Phase 8: Debug Command
 **Goal**: Users can diagnose simulation failures without manually cross-referencing artifacts
@@ -96,7 +96,7 @@ Plans:
 | 4. Testbench, Simulation + Verification | v1.0 | 2/2 | Complete | 2026-03-18 |
 | 5. Workspace Foundation | v1.1 | 1/2 | In progress | - |
 | 6. Skill Decomposition | 1/2 | In Progress|  | - |
-| 7. Orchestrator + Initialize | v1.1 | 0/2 | Not started | - |
+| 7. Orchestrator + Initialize | v1.1 | 2/2 | Complete | 2026-03-20 |
 | 8. Debug Command | v1.1 | 0/? | Not started | - |
 
 ## v1.1 Coverage
@@ -111,13 +111,13 @@ Plans:
 | SKILL-03 | Phase 6 | Pending |
 | SKILL-04 | Phase 6 | Pending |
 | SKILL-05 | Phase 6 | Pending |
-| SKILL-06 | Phase 7 | Pending |
+| SKILL-06 | Phase 7 | Complete |
 | SKILL-07 | Phase 8 | Pending |
 | SPEC-01 | Phase 6 | Pending |
 | SPEC-02 | Phase 6 | Pending |
-| INIT-01 | Phase 7 | Pending |
-| INIT-02 | Phase 7 | Pending |
-| INIT-03 | Phase 7 | Pending |
+| INIT-01 | Phase 7 | Complete |
+| INIT-02 | Phase 7 | Complete |
+| INIT-03 | Phase 7 | Complete |
 
 **Mapped: 15/15 v1.1 requirements -- no orphans**
 

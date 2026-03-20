@@ -31,9 +31,9 @@
 
 ### Environment Detection
 
-- [ ] **INIT-01**: `/chip-agent:initialize` detects local tool versions (Java, sbt, Scala, Verilator, Make, g++)
-- [ ] **INIT-02**: Initialize writes a machine-readable `.chipagent/env.json` with tool versions, paths, and capability flags (can_compile, can_lint, can_simulate)
-- [ ] **INIT-03**: Initialize updates the CLAUDE.md Tech Stack table with actually detected local versions
+- [x] **INIT-01**: `/chip-agent:initialize` detects local tool versions (Java, sbt, Scala, Verilator, Make, g++)
+- [x] **INIT-02**: Initialize writes a machine-readable `.chipagent/env.json` with tool versions, paths, and capability flags (can_compile, can_lint, can_simulate)
+- [x] **INIT-03**: Initialize updates the CLAUDE.md Tech Stack table with actually detected local versions
 
 ## v1.2 Requirements (Deferred)
 
@@ -75,9 +75,9 @@
 | SKILL-07 | Phase 8 | Pending |
 | SPEC-01 | Phase 6 | Complete |
 | SPEC-02 | Phase 6 | Complete |
-| INIT-01 | Phase 7 | Pending |
-| INIT-02 | Phase 7 | Pending |
-| INIT-03 | Phase 7 | Pending |
+| INIT-01 | Phase 7 | Complete |
+| INIT-02 | Phase 7 | Complete |
+| INIT-03 | Phase 7 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 15 total
