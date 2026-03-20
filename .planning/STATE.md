@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Refine
-status: completed
-stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-03-20T06:19:36.899Z"
-last_activity: 2026-03-20 — Completed Phase 6 Plan 2 (agent-backed skills)
+status: in-progress
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-03-20T08:58:07Z"
+last_activity: 2026-03-20 — Completed Phase 7 Plan 1 (orchestrator skill)
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
+  total_plans: 6
+  completed_plans: 5
+  percent: 83
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog with a complete test report.
-**Current focus:** Phase 6 — Skill Decomposition
+**Current focus:** Phase 7 — Orchestrator + Initialize
 
 ## Current Position
 
-Phase: 6 of 8 (Skill Decomposition)
-Plan: 2 of 2 in current phase (COMPLETE)
-Status: Phase 6 Complete
-Last activity: 2026-03-20 — Completed Phase 6 Plan 2 (agent-backed skills)
+Phase: 7 of 8 (Orchestrator + Initialize)
+Plan: 1 of 2 in current phase (COMPLETE)
+Status: In Progress
+Last activity: 2026-03-20 — Completed Phase 7 Plan 1 (orchestrator skill)
 
-Progress: [██████████] 100% (Phase 6 scope)
+Progress: [████████░░] 83% (v1.1 scope)
 
 ## Performance Metrics
 
@@ -51,6 +51,7 @@ Progress: [██████████] 100% (Phase 6 scope)
 | 05 (plan 2) | 1 | 4min | 4min |
 | 06 (plan 1) | 1 | 3min | 3min |
 | 06 (plan 2) | 1 | 5min | 5min |
+| 07 (plan 1) | 1 | 34min | 34min |
 
 ## Accumulated Context
 
@@ -73,6 +74,8 @@ Recent decisions affecting current work:
 - [06-02]: Requirement-parser skill explicitly writes spec.json to disk (agent returns JSON to conversation only)
 - [06-02]: Testbench skill reads spec.json from workspace disk path, enabling standalone invocation
 - [06-02]: Testbench output path overridden to workspace/<Module>/sim/ (not flat-mode default)
+- [07-01]: Removed PostToolUse hook entirely (orchestrator and skills call compile.sh explicitly; hook env vars unreliable)
+- [07-01]: Orchestrator calls agents/scripts directly, not via Skill tool (avoids context overhead)
 
 ### Pending Todos
 
@@ -87,11 +90,11 @@ None yet.
 
 ### Blockers/Concerns
 
-- Research gap: How does Claude invoke one skill from within another skill? (affects Phase 7 orchestrator)
-- PostToolUse hook fires on .cpp writes, triggering unnecessary sbt compilation (fix in Phase 7)
+- ~~Research gap: How does Claude invoke one skill from within another skill? (affects Phase 7 orchestrator)~~ RESOLVED: Orchestrator runs inline, calls agents/scripts directly
+- ~~PostToolUse hook fires on .cpp writes, triggering unnecessary sbt compilation (fix in Phase 7)~~ RESOLVED: Hook removed in 07-01
 
 ## Session Continuity
 
-Last session: 2026-03-20T06:12:53.735Z
-Stopped at: Completed 06-02-PLAN.md
+Last session: 2026-03-20T08:58:07Z
+Stopped at: Completed 07-01-PLAN.md
 Resume file: None
