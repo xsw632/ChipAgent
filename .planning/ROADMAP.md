@@ -68,11 +68,11 @@ Plans:
   2. `/chip-agent:initialize` detects installed versions of Java, sbt, Scala, Verilator, Make, and g++ and reports missing tools
   3. Initialize writes `.chipagent/env.json` with tool versions, paths, and capability flags (can_compile, can_lint, can_simulate)
   4. Initialize updates the CLAUDE.md Tech Stack table rows with actually detected local versions
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 07-01: TBD
-- [ ] 07-02: TBD
+- [ ] 07-01-PLAN.md — Refactored generate orchestrator skill + PostToolUse hook fix + test scaffold
+- [ ] 07-02-PLAN.md — Environment detection script + initialize skill + gitignore
 
 ### Phase 8: Debug Command
 **Goal**: Users can diagnose simulation failures without manually cross-referencing artifacts
@@ -96,7 +96,7 @@ Plans:
 | 4. Testbench, Simulation + Verification | v1.0 | 2/2 | Complete | 2026-03-18 |
 | 5. Workspace Foundation | v1.1 | 1/2 | In progress | - |
 | 6. Skill Decomposition | 1/2 | In Progress|  | - |
-| 7. Orchestrator + Initialize | v1.1 | 0/? | Not started | - |
+| 7. Orchestrator + Initialize | v1.1 | 0/2 | Not started | - |
 | 8. Debug Command | v1.1 | 0/? | Not started | - |
 
 ## v1.1 Coverage
