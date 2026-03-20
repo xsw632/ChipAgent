@@ -98,7 +98,7 @@ Plans:
 | 5. Workspace Foundation | v1.1 | 1/2 | In progress | - |
 | 6. Skill Decomposition | 1/2 | In Progress|  | - |
 | 7. Orchestrator + Initialize | v1.1 | 2/2 | Complete | 2026-03-20 |
-| 8. Debug Command | v1.1 | 0/2 | Not started | - |
+| 8. Debug Command | 1/2 | In Progress|  | - |
 
 ## v1.1 Coverage
 

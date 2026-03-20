@@ -22,7 +22,7 @@
 
 - [x] **SKILL-05**: `/chip-agent:requirement-parser` parses a natural language hardware description into a structured `spec.json` written to `workspace/<Module>/spec.json`
 - [x] **SKILL-06**: `/chip-agent:generate` (refactored) orchestrates the full pipeline by sequentially invoking sub-skills: requirement-parser → chisel-generate → compile → lint → testbench → simulate → report
-- [ ] **SKILL-07**: `/chip-agent:debug` analyzes simulation failures by cross-referencing spec.json, Chisel source, and sim_result.log to suggest targeted fixes
+- [x] **SKILL-07**: `/chip-agent:debug` analyzes simulation failures by cross-referencing spec.json, Chisel source, and sim_result.log to suggest targeted fixes
 
 ### Inter-Stage Communication
 
@@ -72,7 +72,7 @@
 | SKILL-04 | Phase 6 | Complete |
 | SKILL-05 | Phase 6 | Complete |
 | SKILL-06 | Phase 7 | Complete |
-| SKILL-07 | Phase 8 | Pending |
+| SKILL-07 | Phase 8 | Complete |
 | SPEC-01 | Phase 6 | Complete |
 | SPEC-02 | Phase 6 | Complete |
 | INIT-01 | Phase 7 | Complete |
