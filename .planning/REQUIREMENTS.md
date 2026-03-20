@@ -16,18 +16,18 @@
 - [x] **SKILL-01**: `/chip-agent:compile` compiles a named module's Chisel source to Verilog, outputting to `workspace/<Module>/generated/`
 - [x] **SKILL-02**: `/chip-agent:lint` runs Verilator lint-only on a named module's generated Verilog
 - [x] **SKILL-03**: `/chip-agent:simulate` runs Verilator simulation for a named module, producing `sim_result.log` in `workspace/<Module>/sim/logs/`
-- [ ] **SKILL-04**: `/chip-agent:testbench` generates a C++ testbench for a named module using the testbench-generator agent
+- [x] **SKILL-04**: `/chip-agent:testbench` generates a C++ testbench for a named module using the testbench-generator agent
 
 ### Modular Commands — Agent-Backed
 
-- [ ] **SKILL-05**: `/chip-agent:requirement-parser` parses a natural language hardware description into a structured `spec.json` written to `workspace/<Module>/spec.json`
+- [x] **SKILL-05**: `/chip-agent:requirement-parser` parses a natural language hardware description into a structured `spec.json` written to `workspace/<Module>/spec.json`
 - [ ] **SKILL-06**: `/chip-agent:generate` (refactored) orchestrates the full pipeline by sequentially invoking sub-skills: requirement-parser → chisel-generate → compile → lint → testbench → simulate → report
 - [ ] **SKILL-07**: `/chip-agent:debug` analyzes simulation failures by cross-referencing spec.json, Chisel source, and sim_result.log to suggest targeted fixes
 
 ### Inter-Stage Communication
 
-- [ ] **SPEC-01**: Requirement parser writes a structured JSON spec file to `workspace/<Module>/spec.json` containing module name, ports, operations, and test vectors
-- [ ] **SPEC-02**: Downstream stages (chisel-generate, testbench) read spec.json from workspace rather than depending on conversation context
+- [x] **SPEC-01**: Requirement parser writes a structured JSON spec file to `workspace/<Module>/spec.json` containing module name, ports, operations, and test vectors
+- [x] **SPEC-02**: Downstream stages (chisel-generate, testbench) read spec.json from workspace rather than depending on conversation context
 
 ### Environment Detection
 
@@ -69,12 +69,12 @@
 | SKILL-01 | Phase 6 | Complete |
 | SKILL-02 | Phase 6 | Complete |
 | SKILL-03 | Phase 6 | Complete |
-| SKILL-04 | Phase 6 | Pending |
-| SKILL-05 | Phase 6 | Pending |
+| SKILL-04 | Phase 6 | Complete |
+| SKILL-05 | Phase 6 | Complete |
 | SKILL-06 | Phase 7 | Pending |
 | SKILL-07 | Phase 8 | Pending |
-| SPEC-01 | Phase 6 | Pending |
-| SPEC-02 | Phase 6 | Pending |
+| SPEC-01 | Phase 6 | Complete |
+| SPEC-02 | Phase 6 | Complete |
 | INIT-01 | Phase 7 | Pending |
 | INIT-02 | Phase 7 | Pending |
 | INIT-03 | Phase 7 | Pending |

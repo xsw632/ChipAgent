@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Refine
-status: in-progress
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-03-20T05:55:00.000Z"
-last_activity: 2026-03-20 — Completed Phase 6 Plan 1 (script-wrapper skills)
+status: completed
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-03-20T06:12:53.738Z"
+last_activity: 2026-03-20 — Completed Phase 6 Plan 2 (agent-backed skills)
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 100
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-19)
 ## Current Position
 
 Phase: 6 of 8 (Skill Decomposition)
-Plan: 1 of 2 in current phase (COMPLETE)
-Status: In Progress
-Last activity: 2026-03-20 — Completed Phase 6 Plan 1 (script-wrapper skills)
+Plan: 2 of 2 in current phase (COMPLETE)
+Status: Phase 6 Complete
+Last activity: 2026-03-20 — Completed Phase 6 Plan 2 (agent-backed skills)
 
-Progress: [█████░░░░░] 50% (Phase 6 scope)
+Progress: [██████████] 100% (Phase 6 scope)
 
 ## Performance Metrics
 
@@ -50,6 +50,7 @@ Progress: [█████░░░░░] 50% (Phase 6 scope)
 | 05 (plan 1) | 1 | 10min | 10min |
 | 05 (plan 2) | 1 | 4min | 4min |
 | 06 (plan 1) | 1 | 3min | 3min |
+| 06 (plan 2) | 1 | 5min | 5min |
 
 ## Accumulated Context
 
@@ -69,6 +70,9 @@ Recent decisions affecting current work:
 - [05-02]: Added -I$PLUGIN_ROOT/sim to CFLAGS for shared testbench headers across modes
 - [06-01]: Runtime plugin root detection via .claude-plugin/plugin.json ancestor search (avoids non-interpolating CLAUDE_PLUGIN_ROOT)
 - [06-01]: Each skill is single-responsibility: compile does not lint, lint does not simulate
+- [06-02]: Requirement-parser skill explicitly writes spec.json to disk (agent returns JSON to conversation only)
+- [06-02]: Testbench skill reads spec.json from workspace disk path, enabling standalone invocation
+- [06-02]: Testbench output path overridden to workspace/<Module>/sim/ (not flat-mode default)
 
 ### Pending Todos
 
@@ -88,6 +92,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-20
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-03-20T06:12:53.735Z
+Stopped at: Completed 06-02-PLAN.md
 Resume file: None
