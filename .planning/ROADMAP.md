@@ -81,10 +81,11 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. `/chip-agent:debug Foo` reads spec.json, Chisel source, and sim_result.log from workspace and produces a failure analysis with targeted fix suggestions
   2. Debug output identifies which test vectors failed and maps failures back to specific spec requirements and Chisel logic
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 08-01: TBD
+- [ ] 08-01-PLAN.md — VCD trace infrastructure (simulate.sh --trace + testbench VCD hooks)
+- [ ] 08-02-PLAN.md — Debug command (VCD parser + debug-analyzer agent + debug skill)
 
 ## Progress
 
@@ -97,7 +98,7 @@ Plans:
 | 5. Workspace Foundation | v1.1 | 1/2 | In progress | - |
 | 6. Skill Decomposition | 1/2 | In Progress|  | - |
 | 7. Orchestrator + Initialize | v1.1 | 2/2 | Complete | 2026-03-20 |
-| 8. Debug Command | v1.1 | 0/? | Not started | - |
+| 8. Debug Command | v1.1 | 0/2 | Not started | - |
 
 ## v1.1 Coverage
 
