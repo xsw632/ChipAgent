@@ -13,9 +13,9 @@
 
 ### Modular Commands — Script Wrappers
 
-- [ ] **SKILL-01**: `/chip-agent:compile` compiles a named module's Chisel source to Verilog, outputting to `workspace/<Module>/generated/`
-- [ ] **SKILL-02**: `/chip-agent:lint` runs Verilator lint-only on a named module's generated Verilog
-- [ ] **SKILL-03**: `/chip-agent:simulate` runs Verilator simulation for a named module, producing `sim_result.log` in `workspace/<Module>/sim/logs/`
+- [x] **SKILL-01**: `/chip-agent:compile` compiles a named module's Chisel source to Verilog, outputting to `workspace/<Module>/generated/`
+- [x] **SKILL-02**: `/chip-agent:lint` runs Verilator lint-only on a named module's generated Verilog
+- [x] **SKILL-03**: `/chip-agent:simulate` runs Verilator simulation for a named module, producing `sim_result.log` in `workspace/<Module>/sim/logs/`
 - [ ] **SKILL-04**: `/chip-agent:testbench` generates a C++ testbench for a named module using the testbench-generator agent
 
 ### Modular Commands — Agent-Backed
@@ -66,9 +66,9 @@
 | WKSP-01 | Phase 5 | In Progress |
 | WKSP-02 | Phase 5 | In Progress |
 | WKSP-03 | Phase 5 | Complete |
-| SKILL-01 | Phase 6 | Pending |
-| SKILL-02 | Phase 6 | Pending |
-| SKILL-03 | Phase 6 | Pending |
+| SKILL-01 | Phase 6 | Complete |
+| SKILL-02 | Phase 6 | Complete |
+| SKILL-03 | Phase 6 | Complete |
 | SKILL-04 | Phase 6 | Pending |
 | SKILL-05 | Phase 6 | Pending |
 | SKILL-06 | Phase 7 | Pending |

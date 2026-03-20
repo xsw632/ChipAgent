@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Refine
-status: completed
-stopped_at: Completed 05-02-PLAN.md (Phase 5 complete)
-last_updated: "2026-03-20T04:36:20.512Z"
-last_activity: 2026-03-20 — Completed Phase 5 Plan 2 (workspace lint and simulate)
+status: in-progress
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-03-20T05:55:00.000Z"
+last_activity: 2026-03-20 — Completed Phase 6 Plan 1 (script-wrapper skills)
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
   percent: 100
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog with a complete test report.
-**Current focus:** Phase 5 — Workspace Foundation
+**Current focus:** Phase 6 — Skill Decomposition
 
 ## Current Position
 
-Phase: 5 of 8 (Workspace Foundation)
-Plan: 2 of 2 in current phase (COMPLETE)
-Status: Phase Complete
-Last activity: 2026-03-20 — Completed Phase 5 Plan 2 (workspace lint and simulate)
+Phase: 6 of 8 (Skill Decomposition)
+Plan: 1 of 2 in current phase (COMPLETE)
+Status: In Progress
+Last activity: 2026-03-20 — Completed Phase 6 Plan 1 (script-wrapper skills)
 
-Progress: [██████████] 100% (Phase 5 scope)
+Progress: [█████░░░░░] 50% (Phase 6 scope)
 
 ## Performance Metrics
 
@@ -49,6 +49,7 @@ Progress: [██████████] 100% (Phase 5 scope)
 | 04 | 2 | 17min | 8.5min |
 | 05 (plan 1) | 1 | 10min | 10min |
 | 05 (plan 2) | 1 | 4min | 4min |
+| 06 (plan 1) | 1 | 3min | 3min |
 
 ## Accumulated Context
 
@@ -66,6 +67,8 @@ Recent decisions affecting current work:
 - [05-02]: simulate.sh uses '/' detection heuristic to distinguish workspace paths from bare module names
 - [05-02]: Waiver file fallback: per-module -> global -> empty (no waiver)
 - [05-02]: Added -I$PLUGIN_ROOT/sim to CFLAGS for shared testbench headers across modes
+- [06-01]: Runtime plugin root detection via .claude-plugin/plugin.json ancestor search (avoids non-interpolating CLAUDE_PLUGIN_ROOT)
+- [06-01]: Each skill is single-responsibility: compile does not lint, lint does not simulate
 
 ### Pending Todos
 
@@ -86,5 +89,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-20
-Stopped at: Completed 05-02-PLAN.md (Phase 5 complete)
+Stopped at: Completed 06-01-PLAN.md
 Resume file: None
