@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-03-19)
 Phase: 7 of 8 (Orchestrator + Initialize)
 Plan: 2 of 2 in current phase (COMPLETE)
 Status: Phase Complete
-Last activity: 2026-03-20 — Completed Phase 7 Plan 2 (environment detection + initialize skill)
+Last activity: 2026-03-20 - Completed quick task 3: refactor generate to chisel-only, rename workflow to auto-toolchain, simplify CLAUDE.md
 
 Progress: [██████████] 100% (v1.1 scope)
 
@@ -97,6 +97,7 @@ None yet.
 |---|-------------|------|--------|-----------|
 | 1 | Research and document testing strategies for complex modules in chip-agent | 2026-03-18 | 21053b0 | [1-research-and-document-testing-strategies](./quick/1-research-and-document-testing-strategies/) |
 | 2 | Create testbench-generator agent with UVM-inspired C++ architecture | 2026-03-18 | f933650 | [2-create-testbench-generator-agent-with-uv](./quick/2-create-testbench-generator-agent-with-uv/) |
+| 3 | Refactor generate to chisel-only, rename workflow to auto-toolchain, simplify CLAUDE.md | 2026-03-20 | 7af147d | [3-refactor-generate-to-chisel-only-rename-](./quick/3-refactor-generate-to-chisel-only-rename-/) |
 
 ### Blockers/Concerns
 
