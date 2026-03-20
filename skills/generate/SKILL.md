@@ -1,6 +1,6 @@
 ---
 name: generate
-description: Turn a natural language hardware description into simulation-verified Verilog. Orchestrates the full pipeline: parse, generate, compile, lint, testbench, simulate, report.
+description: Turn a natural language hardware description into Chisel source files. Parses requirements, confirms spec, and generates Scala code (no compile/lint/sim).
 disable-model-invocation: true
 allowed-tools:
   - Bash
@@ -13,9 +13,9 @@ allowed-tools:
 
 # chip-agent:generate
 
-Turn a natural language hardware description into simulation-verified Verilog.
+Turn a natural language hardware description into Chisel source files.
 
-Given a plain-English description of a digital hardware module, this command orchestrates a multi-stage pipeline that produces lint-clean, simulation-verified SystemVerilog output.
+Given a plain-English description of a digital hardware module, this command parses the requirements, confirms the spec with the user, and generates Chisel Scala source code. It does NOT compile, lint, or simulate -- use `/chip-agent:workflow` for the full pipeline.
 
 ## Usage
 
@@ -90,115 +90,6 @@ The agent writes N+1 files:
 2. The top-level module: `chisel-project/src/main/scala/chipagent/<TopModuleName>.scala` that instantiates and wires all sub-modules
 3. An updated `Generate.scala` with the top module name (the top module pulls in sub-modules automatically)
 
-### Step 3 -- Compile
-
-Run the compilation script EXPLICITLY with the workspace path:
-
-```
-<plugin-root>/scripts/compile.sh workspace/<ModuleName>
-```
-
-Do NOT rely on the PostToolUse hook for compilation. The orchestrator calls compile.sh directly.
-
-If compilation fails:
-1. Read the error output from the build log
-2. Follow the chisel-generator agent rules (`agents/chisel-generator.md`) to fix the issues in the generated Scala files
-3. Re-run `<plugin-root>/scripts/compile.sh workspace/<ModuleName>` after fixing
-4. Maximum 3 fix attempts. After 3 failures, stop and report the errors to the user:
-   ```
-   COMPILE AUTO-FIX FAILED after 3 attempts.
-   Remaining errors:
-   <paste compile error output>
-   ```
-
-### Step 4 -- Lint
-
-Run Verilator lint on the generated Verilog with the workspace path:
-
-```
-<plugin-root>/scripts/lint.sh workspace/<ModuleName>
-```
-
-If lint passes (exit 0), continue to Step 5.
-
-If lint fails (non-zero exit):
-1. Read the error output carefully -- these are Verilog-level errors caused by Chisel source issues
-2. Identify the Chisel source issue that caused the Verilog lint error
-3. Follow the chisel-generator agent rules (`agents/chisel-generator.md`) to fix the Chisel source (NOT the generated Verilog -- never edit generated files)
-4. Re-run `<plugin-root>/scripts/compile.sh workspace/<ModuleName>` after fixing
-5. Re-run `<plugin-root>/scripts/lint.sh workspace/<ModuleName>` after compile succeeds
-6. Repeat up to 3 total lint attempts
-
-If lint still fails after 3 attempts, STOP the pipeline and report:
-```
-LINT AUTO-FIX FAILED after 3 attempts.
-Remaining errors:
-<paste lint error output>
-```
-
-After lint passes, check `workspace/<ModuleName>/generated/lint-warnings.log`. If non-empty, note the warnings:
-```
-Lint passed with N warnings (suppressed/non-blocking):
-<paste warning summary>
-```
-
-### Step 5 -- Generate Testbench
-
-After lint passes (Step 4), generate a C++ testbench for the module.
-
-1. Determine the testbench path: `workspace/<ModuleName>/sim/tb_<ModuleName>.cpp`
-2. If the testbench already exists at that path, skip generation and proceed to Step 6
-3. If the testbench does not exist, read the testbench-generator agent definition at `agents/testbench-generator.md` (relative to plugin root) and follow its rules with the spec from `workspace/<ModuleName>/spec.json`
-4. Write the testbench to `workspace/<ModuleName>/sim/tb_<ModuleName>.cpp` (workspace path, not flat sim/)
-
-Ensure the directory exists first:
-```
-mkdir -p workspace/<ModuleName>/sim
-```
-
-The agent produces a C++ testbench following UVM-inspired architecture with standardized PASS/FAIL output format. For simple/combinational modules, it generates a `TestCase` struct with test vectors and a single `eval()` loop. For CPU modules with `spec.verification.tier == "reference-model"`, it generates a reference-model testbench using `cpu_test_template.h` with instruction encoding helpers and per-instruction comparison.
-
-### Step 6 -- Simulate
-
-Run the simulation script with the workspace path:
-
-```
-<plugin-root>/scripts/simulate.sh workspace/<ModuleName>
-```
-
-If simulation fails (non-zero exit):
-1. Read `workspace/<ModuleName>/sim/logs/sim_result.log` for failure details
-2. Attempt to fix the testbench (NOT the Verilog -- never edit generated files) by regenerating `workspace/<ModuleName>/sim/tb_<ModuleName>.cpp` with corrected test vectors
-3. Re-run `<plugin-root>/scripts/simulate.sh workspace/<ModuleName>` after fixing
-4. Maximum 3 simulation fix attempts. After 3 failures, STOP the pipeline and report:
-   ```
-   SIM AUTO-FIX FAILED after 3 attempts.
-   Remaining failures:
-   <paste sim_result.log content>
-   ```
-
-On success, proceed to Step 7.
-
-### Step 7 -- Report
-
-Format the simulation results into a verification report:
-
-1. Read `workspace/<ModuleName>/sim/logs/sim_result.log`
-2. Count PASS/FAIL lines
-3. If lint warnings exist (from `workspace/<ModuleName>/generated/lint-warnings.log`), include them
-4. Present formatted output:
-   ```
-   === Verification Report: <ModuleName> ===
-   Verilog: workspace/<ModuleName>/generated/<ModuleName>.v
-   Testbench: workspace/<ModuleName>/sim/tb_<ModuleName>.cpp
-
-   Simulation: PASSED X/Y tests
-   [per-test results from sim_result.log]
-
-   Lint: PASSED (N warnings suppressed)
-   [warning details if any]
-   ```
-
 ## Pipeline Stages
 
 | # | Stage              | Description                                      |
@@ -206,11 +97,6 @@ Format the simulation results into a verification report:
 | 1   | Parse Requirements | Extract module name, ports, operations from NL    |
 | 1.5 | Confirm Spec       | Present parsed spec for user approval             |
 | 2   | Generate Chisel    | Produce Chisel source from structured spec        |
-| 3   | Compile to Verilog | sbt compiles Chisel to SystemVerilog via firtool  |
-| 4   | Lint               | Verilator lint-only check on generated Verilog    |
-| 5   | Generate Testbench | Create C++ testbench for Verilator simulation     |
-| 6   | Simulate           | Run Verilator simulation and collect results      |
-| 7   | Report             | Format test results into verification report      |
 
 ## Input
 
@@ -225,11 +111,8 @@ A natural language description of a digital hardware module. The description sho
 
 ## Output
 
-Upon pipeline completion, the following artifacts are produced:
+Upon completion, the following artifacts are produced:
 
 - `workspace/<ModuleName>/spec.json` -- structured JSON specification
-- `workspace/<ModuleName>/generated/<ModuleName>.v` -- synthesizable Verilog
-- `workspace/<ModuleName>/generated/<ModuleName>.sv` -- SystemVerilog variant (when firtool is available)
-- `workspace/<ModuleName>/generated/lint-warnings.log` -- any remaining Verilator warnings with explanations
-- `workspace/<ModuleName>/sim/tb_<ModuleName>.cpp` -- C++ Verilator testbench
-- `workspace/<ModuleName>/sim/logs/sim_result.log` -- simulation test report
+- `chisel-project/src/main/scala/chipagent/<ModuleName>.scala` -- Chisel source file(s)
+- `chisel-project/src/main/scala/chipagent/Generate.scala` -- updated with new module entry
