@@ -53,12 +53,11 @@ Plans:
   3. `/chip-agent:simulate Foo` runs the full Verilator simulation and produces `workspace/Foo/sim/logs/sim_result.log`
   4. `/chip-agent:requirement-parser` writes a structured `spec.json` to `workspace/<Module>/spec.json` containing module name, ports, operations, and test vectors
   5. `/chip-agent:testbench Foo` reads `spec.json` from workspace and generates a C++ testbench (no conversation context dependency)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 06-01: TBD
-- [ ] 06-02: TBD
-- [ ] 06-03: TBD
+- [ ] 06-01-PLAN.md — Script-wrapper skills (compile, lint, simulate) + test scaffold
+- [ ] 06-02-PLAN.md — Agent-backed skills (requirement-parser, testbench) + spec.json communication
 
 ### Phase 7: Orchestrator + Initialize
 **Goal**: The generate command orchestrates sub-skills end-to-end, and users can detect their local toolchain before first use
@@ -96,7 +95,7 @@ Plans:
 | 3. Lint, Auto-Fix + Hooks | v1.0 | 3/3 | Complete | 2026-03-17 |
 | 4. Testbench, Simulation + Verification | v1.0 | 2/2 | Complete | 2026-03-18 |
 | 5. Workspace Foundation | v1.1 | 1/2 | In progress | - |
-| 6. Skill Decomposition | v1.1 | 0/? | Not started | - |
+| 6. Skill Decomposition | v1.1 | 0/2 | Not started | - |
 | 7. Orchestrator + Initialize | v1.1 | 0/? | Not started | - |
 | 8. Debug Command | v1.1 | 0/? | Not started | - |
 
