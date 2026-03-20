@@ -12,20 +12,48 @@ if [ -z "$PLUGIN_ROOT" ]; then
   exit 1
 fi
 PROJECT_DIR="$PLUGIN_ROOT/chisel-project"
-OUTPUT_DIR="$PLUGIN_ROOT/generated"
+
+# --- Workspace-aware path resolution ---
+WORKSPACE_ARG="${1:-}"
+if [ -n "$WORKSPACE_ARG" ]; then
+  case "$WORKSPACE_ARG" in
+    /*) WORKSPACE_DIR="$WORKSPACE_ARG" ;;
+    *)  WORKSPACE_DIR="$PLUGIN_ROOT/$WORKSPACE_ARG" ;;
+  esac
+  MODULE=$(basename "$WORKSPACE_DIR")
+  OUTPUT_DIR="$WORKSPACE_DIR/generated"
+else
+  OUTPUT_DIR="$PLUGIN_ROOT/generated"
+  MODULE=""
+fi
 
 export SBT_OPTS="-Dsbt.supershell=false"
 
 mkdir -p "$OUTPUT_DIR"
+if [ -n "$MODULE" ]; then
+  mkdir -p "$WORKSPACE_DIR/generated" "$WORKSPACE_DIR/sim/logs"
+fi
 
-LOG=$(mktemp)
-trap "rm -f $LOG" EXIT
+LOG=$(mktemp 2>/dev/null || echo "${TEMP:-/tmp}/chipagent-compile-$$.log")
+trap "rm -f \"$LOG\"" EXIT
 
 echo "Compiling Chisel to Verilog..."
 cd "$PROJECT_DIR"
 
 EXIT_CODE=0
-timeout 120 sbt --batch "runMain chipagent.Generate --target-dir $OUTPUT_DIR" > "$LOG" 2>&1 || EXIT_CODE=$?
+# Use GNU timeout if available; skip on Windows where timeout.exe is a different command
+if command -v gtimeout >/dev/null 2>&1; then
+  TIMEOUT_CMD="gtimeout 120"
+elif timeout --version >/dev/null 2>&1; then
+  TIMEOUT_CMD="timeout 120"
+else
+  TIMEOUT_CMD=""
+fi
+if [ -n "$MODULE" ]; then
+  $TIMEOUT_CMD sbt --batch "runMain chipagent.Generate --module $MODULE --target-dir $OUTPUT_DIR" > "$LOG" 2>&1 || EXIT_CODE=$?
+else
+  $TIMEOUT_CMD sbt --batch "runMain chipagent.Generate --target-dir $OUTPUT_DIR" > "$LOG" 2>&1 || EXIT_CODE=$?
+fi
 
 if [ "$EXIT_CODE" -eq 0 ]; then
   SV_COUNT=$(find "$OUTPUT_DIR" -maxdepth 1 \( -name "*.sv" -o -name "*.v" \) 2>/dev/null | wc -l)

@@ -25,3 +25,6 @@ sim/logs/*.log
 
 # Node.js
 node_modules/
+
+# Per-module workspace directories (all generated, reproducible)
+workspace/
