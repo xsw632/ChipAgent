@@ -59,7 +59,7 @@ if [ "$EXIT_CODE" -eq 0 ]; then
   SV_COUNT=$(find "$OUTPUT_DIR" -maxdepth 1 \( -name "*.sv" -o -name "*.v" \) 2>/dev/null | wc -l)
   if [ "$SV_COUNT" -gt 0 ]; then
     echo "Compilation successful:"
-    ls "$OUTPUT_DIR"/*.sv "$OUTPUT_DIR"/*.v 2>/dev/null
+    find "$OUTPUT_DIR" -maxdepth 1 \( -name "*.sv" -o -name "*.v" \) -print
   else
     echo "WARNING: sbt exited 0 but no .sv files found in $OUTPUT_DIR"
     cat "$LOG"
