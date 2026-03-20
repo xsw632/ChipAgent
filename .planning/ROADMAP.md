@@ -24,7 +24,7 @@
 - [ ] **Phase 5: Workspace Foundation** — Per-module workspace directories and script parameterization
 - [ ] **Phase 6: Skill Decomposition** — Individual slash commands wrapping scripts and agents
 - [x] **Phase 7: Orchestrator + Initialize** — Refactored generate pipeline and environment detection
-- [ ] **Phase 8: Debug Command** — Failure analysis from simulation artifacts
+- [x] **Phase 8: Debug Command** — Failure analysis from simulation artifacts (completed 2026-03-20)
 
 ## Phase Details
 
@@ -98,7 +98,7 @@ Plans:
 | 5. Workspace Foundation | v1.1 | 1/2 | In progress | - |
 | 6. Skill Decomposition | 1/2 | In Progress|  | - |
 | 7. Orchestrator + Initialize | v1.1 | 2/2 | Complete | 2026-03-20 |
-| 8. Debug Command | 1/2 | In Progress|  | - |
+| 8. Debug Command | 2/2 | Complete   | 2026-03-20 | - |
 
 ## v1.1 Coverage
 
