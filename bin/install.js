@@ -22,9 +22,15 @@ if (!existsSync(skillsDir)) {
 
 mkdirSync(COMMANDS_DEST, { recursive: true });
 let skillCount = 0;
-for (const f of readdirSync(skillsDir)) {
-  if (f.endsWith(".md")) {
-    cpSync(join(skillsDir, f), join(COMMANDS_DEST, f));
+for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
+  if (entry.isDirectory()) {
+    const skillFile = join(skillsDir, entry.name, "SKILL.md");
+    if (existsSync(skillFile)) {
+      cpSync(skillFile, join(COMMANDS_DEST, entry.name + ".md"));
+      skillCount++;
+    }
+  } else if (entry.name.endsWith(".md")) {
+    cpSync(join(skillsDir, entry.name), join(COMMANDS_DEST, entry.name));
     skillCount++;
   }
 }

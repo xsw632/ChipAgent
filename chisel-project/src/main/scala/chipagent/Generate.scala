@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.stage.ChiselStage
 
 object Generate extends App {
-  val targetDir = if (args.contains("--target-dir")) {
+  val targetDir = if (args.contains("--target-dir") && args.indexOf("--target-dir") + 1 < args.length && args(args.indexOf("--target-dir") + 1).nonEmpty) {
     val idx = args.indexOf("--target-dir")
     args(idx + 1)
   } else {
