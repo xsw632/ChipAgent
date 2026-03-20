@@ -9,7 +9,7 @@
 
 - [ ] **WKSP-01**: Each generated module gets its own `workspace/<ModuleName>/` directory containing spec, generated Verilog, and simulation artifacts
 - [ ] **WKSP-02**: Scripts (compile.sh, lint.sh, simulate.sh) accept optional workspace path arguments while defaulting to v1.0 flat directory layout
-- [ ] **WKSP-03**: `workspace/` directory and per-module `obj_dir/` artifacts are gitignored
+- [x] **WKSP-03**: `workspace/` directory and per-module `obj_dir/` artifacts are gitignored
 
 ### Modular Commands — Script Wrappers
 
@@ -63,9 +63,9 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WKSP-01 | Phase 5 | Pending |
-| WKSP-02 | Phase 5 | Pending |
-| WKSP-03 | Phase 5 | Pending |
+| WKSP-01 | Phase 5 | In Progress |
+| WKSP-02 | Phase 5 | In Progress |
+| WKSP-03 | Phase 5 | Complete |
 | SKILL-01 | Phase 6 | Pending |
 | SKILL-02 | Phase 6 | Pending |
 | SKILL-03 | Phase 6 | Pending |

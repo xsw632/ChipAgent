@@ -40,7 +40,7 @@
 **Plans**: 2 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — Workspace-aware compile.sh + gitignore + verification script
+- [x] 05-01-PLAN.md — Workspace-aware compile.sh + gitignore + verification script
 - [ ] 05-02-PLAN.md — Workspace-aware lint.sh + simulate.sh + full verification
 
 ### Phase 6: Skill Decomposition
@@ -95,7 +95,7 @@ Plans:
 | 2. NL Parsing + Chisel Generation | v1.0 | 2/2 | Complete | 2026-03-17 |
 | 3. Lint, Auto-Fix + Hooks | v1.0 | 3/3 | Complete | 2026-03-17 |
 | 4. Testbench, Simulation + Verification | v1.0 | 2/2 | Complete | 2026-03-18 |
-| 5. Workspace Foundation | v1.1 | 0/2 | Planned | - |
+| 5. Workspace Foundation | v1.1 | 1/2 | In progress | - |
 | 6. Skill Decomposition | v1.1 | 0/? | Not started | - |
 | 7. Orchestrator + Initialize | v1.1 | 0/? | Not started | - |
 | 8. Debug Command | v1.1 | 0/? | Not started | - |
@@ -104,9 +104,9 @@ Plans:
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WKSP-01 | Phase 5 | Pending |
-| WKSP-02 | Phase 5 | Pending |
-| WKSP-03 | Phase 5 | Pending |
+| WKSP-01 | Phase 5 | In Progress |
+| WKSP-02 | Phase 5 | In Progress |
+| WKSP-03 | Phase 5 | Complete |
 | SKILL-01 | Phase 6 | Pending |
 | SKILL-02 | Phase 6 | Pending |
 | SKILL-03 | Phase 6 | Pending |
