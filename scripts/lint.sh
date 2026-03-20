@@ -11,9 +11,27 @@ if [ -z "$PLUGIN_ROOT" ]; then
   echo "Set CLAUDE_PLUGIN_ROOT or run from the scripts/ directory." >&2
   exit 1
 fi
-GENERATED_DIR="$PLUGIN_ROOT/generated"
-WAIVER_FILE="$GENERATED_DIR/chisel-warnings.vlt"
+# --- Workspace-aware path resolution ---
+WORKSPACE_ARG="${1:-}"
+if [ -n "$WORKSPACE_ARG" ]; then
+  case "$WORKSPACE_ARG" in
+    /*) WORKSPACE_DIR="$WORKSPACE_ARG" ;;
+    *)  WORKSPACE_DIR="$PLUGIN_ROOT/$WORKSPACE_ARG" ;;
+  esac
+  GENERATED_DIR="$WORKSPACE_DIR/generated"
+else
+  GENERATED_DIR="$PLUGIN_ROOT/generated"
+fi
 WARNINGS_LOG="$GENERATED_DIR/lint-warnings.log"
+
+# Waiver file: prefer per-module, fall back to global
+if [ -f "$GENERATED_DIR/chisel-warnings.vlt" ]; then
+  WAIVER_FILE="$GENERATED_DIR/chisel-warnings.vlt"
+elif [ -f "$PLUGIN_ROOT/generated/chisel-warnings.vlt" ]; then
+  WAIVER_FILE="$PLUGIN_ROOT/generated/chisel-warnings.vlt"
+else
+  WAIVER_FILE=""
+fi
 
 # Find all .v files
 V_FILES=$(find "$GENERATED_DIR" -maxdepth 1 -name "*.v" 2>/dev/null)
@@ -24,7 +42,7 @@ fi
 
 # Build waiver args
 WAIVER_ARGS=()
-if [ -f "$WAIVER_FILE" ]; then
+if [ -n "$WAIVER_FILE" ] && [ -f "$WAIVER_FILE" ]; then
   WAIVER_ARGS=("$WAIVER_FILE")
 fi
 
