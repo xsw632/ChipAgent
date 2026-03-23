@@ -1,5 +1,25 @@
 # Milestones
 
+## v1.1 Refine (Shipped: 2026-03-23)
+
+**Phases completed:** 4 phases, 8 plans, 13 tasks
+
+**Key accomplishments:**
+- Per-module workspace isolation (`workspace/<Module>/`) with workspace-aware compile, lint, and simulate scripts (backward-compatible with v1.0 flat layout)
+- Five modular slash commands (`/compile`, `/lint`, `/simulate`, `/requirement-parser`, `/testbench`) decomposing the monolithic pipeline
+- Refactored `/chip-agent:generate` orchestrator calling agents/scripts directly with workspace paths; removed PostToolUse hook
+- Environment detection via `/chip-agent:initialize` producing `.chipagent/env.json` with tool versions and capability flags
+- VCD waveform trace generation integrated into simulation pipeline for debug signal analysis
+- `/chip-agent:debug` command with Python VCD parser and debug-analyzer agent for structured failure diagnosis
+
+**Stats:**
+- Timeline: 1 day (2026-03-20)
+- Commits: 40 (59 files changed, 6,956 insertions, 366 deletions)
+- LOC: ~2,106 (scripts, skills, agents)
+- Git range: feat(05-01) → feat(08-02) + 3 quick tasks
+
+---
+
 ## v1.0 MVP (Shipped: 2026-03-18)
 
 **Phases completed:** 4 phases, 9 plans, 0 tasks

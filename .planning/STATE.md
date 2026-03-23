@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Refine
-status: completed
-stopped_at: Completed 08-02-PLAN.md
-last_updated: "2026-03-20T12:12:03.901Z"
-last_activity: 2026-03-20 — Completed Phase 7 Plan 2 (environment detection + initialize skill)
+status: milestone_complete
+stopped_at: "Milestone v1.1 archived"
+last_updated: "2026-03-23T05:44:00.000Z"
+last_activity: "2026-03-23 — Completed v1.1 milestone archival"
 progress:
   total_phases: 4
   completed_phases: 4
@@ -18,78 +18,45 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-19)
+See: .planning/PROJECT.md (updated 2026-03-23)
 
 **Core value:** A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog with a complete test report.
-**Current focus:** Phase 7 — Orchestrator + Initialize
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 7 of 8 (Orchestrator + Initialize)
-Plan: 2 of 2 in current phase (COMPLETE)
-Status: Phase Complete
-Last activity: 2026-03-20 - Completed quick task 3: refactor generate to chisel-only, rename workflow to auto-toolchain, simplify CLAUDE.md
+Phase: 8 of 8 (all complete)
+Plan: All plans complete
+Status: Milestone v1.1 Shipped
+Last activity: 2026-03-23 - Archived v1.1 milestone
 
 Progress: [██████████] 100% (v1.1 scope)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9 (v1.0) + 2 quick tasks
-- Average duration: ~6min/plan (v1.0)
-- Total execution time: ~55 min (v1.0)
+- v1.0: 9 plans in ~55 min (~6min/plan)
+- v1.1: 8 plans in ~77 min (~10min/plan)
+- Quick tasks: 3
 
-**By Phase (v1.0):**
+**By Phase (v1.1):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 2 | 15min | 7.5min |
-| 02 | 2 | 12min | 6min |
-| 03 | 3 | 11min | 3.7min |
-| 04 | 2 | 17min | 8.5min |
-| 05 (plan 1) | 1 | 10min | 10min |
-| 05 (plan 2) | 1 | 4min | 4min |
-| 06 (plan 1) | 1 | 3min | 3min |
-| 06 (plan 2) | 1 | 5min | 5min |
-| 07 (plan 1) | 1 | 34min | 34min |
-| 07 (plan 2) | 1 | 12min | 12min |
-| Phase 07 P02 | 12 | 2 tasks | 3 files |
-| Phase 08 P01 | 5min | 1 tasks | 2 files |
-| Phase 08 P02 | 4min | 2 tasks | 3 files |
+| 05 | 2 | 14min | 7min |
+| 06 | 2 | 8min | 4min |
+| 07 | 2 | 46min | 23min |
+| 08 | 2 | 9min | 4.5min |
 
 ## Accumulated Context
 
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- [v1.1]: Spec-file communication (Option C) chosen over conversation context passing
-- [v1.1]: Chisel sources stay in chisel-project/src/ (sbt constraint); only outputs go to workspace/
-- [v1.1]: Skills wrap existing agents (agents = "how", skills = "when/where")
-- [v1.1]: 4-phase structure: Workspace Foundation -> Skill Decomposition -> Orchestrator + Initialize -> Debug
-- [05-01]: Workspace paths resolved to absolute before sbt (avoids cwd mismatch)
-- [05-01]: Used find instead of ls for file listing (avoids glob failure under set -e)
-- [05-02]: simulate.sh uses '/' detection heuristic to distinguish workspace paths from bare module names
-- [05-02]: Waiver file fallback: per-module -> global -> empty (no waiver)
-- [05-02]: Added -I$PLUGIN_ROOT/sim to CFLAGS for shared testbench headers across modes
-- [06-01]: Runtime plugin root detection via .claude-plugin/plugin.json ancestor search (avoids non-interpolating CLAUDE_PLUGIN_ROOT)
-- [06-01]: Each skill is single-responsibility: compile does not lint, lint does not simulate
-- [06-02]: Requirement-parser skill explicitly writes spec.json to disk (agent returns JSON to conversation only)
-- [06-02]: Testbench skill reads spec.json from workspace disk path, enabling standalone invocation
-- [06-02]: Testbench output path overridden to workspace/<Module>/sim/ (not flat-mode default)
-- [07-01]: Removed PostToolUse hook entirely (orchestrator and skills call compile.sh explicitly; hook env vars unreliable)
-- [07-01]: Orchestrator calls agents/scripts directly, not via Skill tool (avoids context overhead)
-- [07-02]: jq with heredoc fallback for JSON assembly (portability without sacrificing formatting)
-- [07-02]: grep -oE (POSIX extended regex) for version extraction (portable across macOS/Linux)
-- [Phase 07]: jq with heredoc fallback for JSON assembly (portability without sacrificing formatting)
-- [Phase 07]: grep -oE (POSIX extended regex) for version extraction (portable across macOS/Linux)
-- [Phase 08]: Testbenches write trace.vcd in CWD; simulate.sh relocates to $LOG_DIR/$MODULE.vcd
-- [Phase 08]: VCD parser uses only Python stdlib for zero-install portability
 
 ### Pending Todos
 
-None yet.
+None.
 
 ### Quick Tasks Completed
 
@@ -101,11 +68,10 @@ None yet.
 
 ### Blockers/Concerns
 
-- ~~Research gap: How does Claude invoke one skill from within another skill? (affects Phase 7 orchestrator)~~ RESOLVED: Orchestrator runs inline, calls agents/scripts directly
-- ~~PostToolUse hook fires on .cpp writes, triggering unnecessary sbt compilation (fix in Phase 7)~~ RESOLVED: Hook removed in 07-01
+All resolved.
 
 ## Session Continuity
 
-Last session: 2026-03-20T12:06:39.343Z
-Stopped at: Completed 08-02-PLAN.md
+Last session: 2026-03-23
+Stopped at: Milestone v1.1 archived
 Resume file: None
