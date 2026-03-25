@@ -1,0 +1,19 @@
+{
+  "name": "chip-agent",
+  "version": "0.1.0",
+  "description": "Claude Code plugin: NL to simulation-verified Verilog",
+  "bin": {
+    "chip-agent": "./bin/install.js"
+  },
+  "files": [
+    "bin/",
+    ".claude-plugin/",
+    "skills/",
+    "agents/",
+    "hooks/",
+    "scripts/",
+    "CLAUDE.md"
+  ],
+  "keywords": ["claude-code", "plugin", "chisel", "verilog", "hardware"],
+  "license": "MIT"
+}
