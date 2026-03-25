@@ -3,7 +3,9 @@
 # Detects installed tool versions and writes .chipagent/env.json
 # Do NOT use set -e -- missing tools produce "installed: false", not crashes
 
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+# Use shared path resolution (non-fatal: continues with empty PLUGIN_ROOT if unavailable)
+source "$(dirname "$0")/_common.sh" 2>/dev/null || true
+PLUGIN_ROOT="${PLUGIN_ROOT:-}"
 OUTPUT_DIR="$PLUGIN_ROOT/.chipagent"
 OUTPUT_FILE="$OUTPUT_DIR/env.json"
 

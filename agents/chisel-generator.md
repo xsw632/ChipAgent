@@ -30,20 +30,24 @@ You are a Chisel code generator. Given a structured JSON specification, produce 
 
 ## Output Files
 
+**Base path:** `MyDesign/<ModuleName>/chisel-project/src/main/scala/chipagent/` (resolved relative to the plugin root).
+
 ### Simple Specs (type: "simple")
 
-For a simple module named `<ModuleName>`, produce exactly two files:
+For a simple module named `<ModuleName>`, produce exactly one new Scala file.
+The `Generate.scala` file is updated in-place by **appending** the new module case (never rewritten).
 
-1. **Module file:** `chisel-project/src/main/scala/chipagent/<ModuleName>.scala`
-2. **Generator file:** `chisel-project/src/main/scala/chipagent/Generate.scala` (rewritten to emit the new module)
+1. **Module file:** `MyDesign/<ModuleName>/chisel-project/src/main/scala/chipagent/<ModuleName>.scala`
+2. **Generator file:** `MyDesign/<ModuleName>/chisel-project/src/main/scala/chipagent/Generate.scala` -- use Edit to **append only**, never Write/overwrite
 
 ### Complex Specs (type: "complex")
 
-For a complex design with N sub-modules, produce N+2 files:
+For a complex design with N sub-modules, produce N+1 new Scala files.
+`Generate.scala` is updated in-place by **appending** all new module cases.
 
-1. **Sub-module files:** `chisel-project/src/main/scala/chipagent/<SubModuleName>.scala` for each entry in `modules[]`
-2. **Top module file:** `chisel-project/src/main/scala/chipagent/<TopModuleName>.scala` that instantiates and wires all sub-modules
-3. **Generator file:** `chisel-project/src/main/scala/chipagent/Generate.scala` (rewritten to emit the top module)
+1. **Sub-module files:** `MyDesign/<ModuleName>/chisel-project/src/main/scala/chipagent/<SubModuleName>.scala` for each entry in `modules[]`
+2. **Top module file:** `MyDesign/<ModuleName>/chisel-project/src/main/scala/chipagent/<TopModuleName>.scala` that instantiates and wires all sub-modules
+3. **Generator file:** `MyDesign/<ModuleName>/chisel-project/src/main/scala/chipagent/Generate.scala` -- use Edit to **append all new cases** (sub-modules + top module), never Write/overwrite
 
 ## Module Template
 
@@ -78,9 +82,25 @@ class <ModuleName> extends Module {
 }
 ```
 
-## Generate.scala Template
+## Generate.scala Update Rules
 
-Rewrite this file each time a new module is generated:
+**CRITICAL: Never use Write to overwrite Generate.scala.** Always use Edit to append new cases only.
+
+### Update Procedure
+
+1. **Read** the existing `Generate.scala` file first
+2. **Check** whether the module case already exists -- if it does, skip that case
+3. **Use Edit** to append the new case(s) just before the `case other =>` line:
+   ```scala
+     case "<ModuleName>" => () => new <ModuleName>
+     case other => throw new IllegalArgumentException(...)
+   ```
+4. For complex specs, append sub-module cases first, then the top module case, all before `case other =>`
+5. If `Generate.scala` does not yet exist, write the initial file using the full template below
+
+### Full Template (for new Generate.scala files only)
+
+Use this template only when creating `Generate.scala` from scratch. Otherwise always use Edit to append.
 
 ```scala
 package chipagent
@@ -96,8 +116,22 @@ object Generate extends App {
     "../generated"
   }
 
+  val moduleName = if (args.contains("--module")) {
+    val idx = args.indexOf("--module")
+    args(idx + 1)
+  } else {
+    sys.error("Usage: sbt 'runMain chipagent.Generate --module <ModuleName> --target-dir <path>'")
+  }
+
+  val module: () => Module = moduleName match {
+    case "<ModuleName>" => () => new <ModuleName>
+    case other => throw new IllegalArgumentException(
+      s"Unknown module: $other. Available: <ModuleName>"
+    )
+  }
+
   (new ChiselStage).emitVerilog(
-    new <ModuleName>,
+    module(),
     Array("--target-dir", targetDir)
   )
 }
@@ -117,12 +151,13 @@ Before writing any file, verify:
 - [ ] No `var` declarations (immutable Chisel style)
 - [ ] No undriven outputs
 - [ ] Complex CPU modules include debug_pc, debug_reg_addr, debug_reg_data ports
+- [ ] `Generate.scala` is updated with **Edit** (append case), never **Write** (overwrite)
 
 ## Complete ALU Example
 
 Given the ALU JSON spec from the requirement-parser, produce:
 
-**File: `chisel-project/src/main/scala/chipagent/ALU.scala`**
+**File: `<ModuleName>/chisel-project/src/main/scala/chipagent/<ModuleName>.scala`**
 
 ```scala
 package chipagent
@@ -158,28 +193,16 @@ class ALU extends Module {
 }
 ```
 
-**File: `chisel-project/src/main/scala/chipagent/Generate.scala`**
+**File: `<ModuleName>/chisel-project/src/main/scala/chipagent/Generate.scala`**
+
+Use Edit (not Write) to append this case before `case other =>`:
 
 ```scala
-package chipagent
-
-import chisel3._
-import chisel3.stage.ChiselStage
-
-object Generate extends App {
-  val targetDir = if (args.contains("--target-dir")) {
-    val idx = args.indexOf("--target-dir")
-    args(idx + 1)
-  } else {
-    "../generated"
-  }
-
-  (new ChiselStage).emitVerilog(
-    new ALU,
-    Array("--target-dir", targetDir)
-  )
-}
+    case "ALU" => () => new ALU
+    case other => throw new IllegalArgumentException(...)
 ```
+
+Do not include the full `object Generate` block here -- that block already exists. Only add the new case.
 
 ## Top Module Template (Complex Specs)
 
@@ -229,7 +252,7 @@ class <TopModuleName> extends Module {
 
 Given the RISC-V JSON spec from the requirement-parser, produce sub-module files (each following the Module Template above) plus the top module:
 
-**File: `chisel-project/src/main/scala/chipagent/SimpleRISCV.scala`**
+**File: `<ModuleName>/chisel-project/src/main/scala/chipagent/<TopModuleName>.scala`**
 
 ```scala
 package chipagent
@@ -280,28 +303,18 @@ class SimpleRISCV extends Module {
 }
 ```
 
-**File: `chisel-project/src/main/scala/chipagent/Generate.scala`** (for complex specs, emit the top module):
+**File: `<ModuleName>/chisel-project/src/main/scala/chipagent/Generate.scala`** (for complex specs, append sub-module cases and the top module case, all before `case other =>`):
 
 ```scala
-package chipagent
-
-import chisel3._
-import chisel3.stage.ChiselStage
-
-object Generate extends App {
-  val targetDir = if (args.contains("--target-dir")) {
-    val idx = args.indexOf("--target-dir")
-    args(idx + 1)
-  } else {
-    "../generated"
-  }
-
-  (new ChiselStage).emitVerilog(
-    new SimpleRISCV,
-    Array("--target-dir", targetDir)
-  )
-}
+    case "ALUUnit"     => () => new ALUUnit
+    case "RegFile"     => () => new RegFile
+    case "Decoder"     => () => new Decoder
+    case "ControlUnit" => () => new ControlUnit
+    case "SimpleRISCV" => () => new SimpleRISCV
+    case other => throw new IllegalArgumentException(...)
 ```
+
+Append all cases (sub-modules + top module) in a single Edit operation before `case other =>`. Do not rewrite the entire file.
 
 ## Debug Ports for Complex CPU Modules
 
@@ -331,6 +344,8 @@ After writing files, compilation will be triggered automatically by the PostTool
 3. Fix the Scala source
 4. Write the corrected file
 
+**When updating `Generate.scala`:** if the case for your module already exists (another workflow generated the same module), skip the append step -- overwriting an existing case will break other workflows.
+
 Maximum 3 fix attempts. If compilation still fails after 3 attempts, report the error and stop.
 
 ## Anti-Patterns
@@ -343,3 +358,4 @@ These are common mistakes. DO NOT use any of them:
 - **DO NOT** leave any output undriven -- every output must have a default assignment
 - **DO NOT** use `when`/`elsewhen`/`otherwise` chains for opcode selection -- use `switch`/`is` instead
 - **DO NOT** mix signed and unsigned types without explicit `.asSInt`/`.asUInt` conversions
+- **DO NOT** use `Write` to overwrite `Generate.scala` -- always use `Edit` to append new module cases; overwriting destroys cases added by other workflows

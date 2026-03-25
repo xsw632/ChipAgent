@@ -10,10 +10,10 @@ Claude Code plugin that turns natural language hardware descriptions into simula
 | Component          | Version   | Purpose                                      |
 |--------------------|-----------|----------------------------------------------|
 | Chisel             | 3.6.1     | Hardware construction language (Scala DSL)    |
-| Scala              | 2.13.10   | JVM language hosting Chisel (managed by sbt)  |
+| Scala              | 2.12.12 (project pins 2.13.10 in build.sbt) | JVM language hosting Chisel (managed by sbt) |
 | sbt                | 1.10.7    | Scala build tool (pinned in build.properties) |
 | FIRRTL             | built-in  | Chisel IR compiler (+ auto-managed firtool)   |
-| Verilator          | 5.008+    | Verilog simulation and lint checking          |
+| Verilator          | 5.046     | Verilog simulation and lint checking          |
 | Claude Code Plugin | 0.1.0     | Plugin packaging and slash command framework  |
 
 ## Directory Structure
@@ -23,26 +23,48 @@ ChipAgent/
   .claude-plugin/plugin.json
   skills/
     generate/SKILL.md          # /chip-agent:generate (Chisel-only)
-    workflow/SKILL.md          # /chip-agent:workflow (full pipeline)
+    workflow/SKILL.md         # /chip-agent:workflow (full pipeline)
   agents/
+    requirement-parser.md      # Parses NL → JSON spec
+    chisel-generator.md        # Generates Chisel source from spec
+    testbench-generator.md    # Generates C++ testbench
+    project-init.md           # Creates per-module project folder
   scripts/
     compile.sh, setup.sh, lint.sh, simulate.sh
-  chisel-project/
+  chisel-project/              # Shared: all module Scala source lives here
     build.sbt
     src/main/scala/chipagent/
       Generate.scala
-  generated/                   # Emitted Verilog (gitignored)
-  sim/logs/
+      ALU8.scala, ALU4.scala, ...  # module source files
+  MyDesign/                    # Project container (all generated modules)
+  ├── ALU8/                    # Per-module project folder (example)
+  │   ├── chisel-project/      # symlink → ../../chisel-project
+  │   └── workspace/
+  │       ├── generated/       # compiled Verilog output
+  │       ├── sim/
+  │       │   ├── tb_ALU8.cpp
+  │       │   └── logs/
+  │       │       ├── sim_result.log
+  │       │       └── ALU8.vcd
+  │       └── spec.json
+  ├── ALU4/
+  │   ├── chisel-project/      # symlink → ../../chisel-project
+  │   └── workspace/
+  └── PriorityEncoder4/
+      ├── chisel-project/
+      └── workspace/
   package.json
 ```
+
+**Per-module project structure:** All modules live inside the `MyDesign/` container folder. Each module gets its own sub-folder (PascalCase, e.g. `MyDesign/ALU8/`). Inside, `chisel-project/` is a symlink to `../../chisel-project`, keeping all Scala source in one shared directory. The `workspace/` subdirectory holds generated artifacts unique to that module.
 
 ## Build Commands
 
 | Command                                          | Purpose                              |
 |--------------------------------------------------|--------------------------------------|
-| `scripts/compile.sh`                             | Compile Chisel to Verilog            |
-| `sbt --batch "runMain chipagent.Generate"`       | Direct sbt compilation               |
-| `scripts/setup.sh`                               | First-use environment initialization |
+| `scripts/compile.sh <ModuleName>`                 | Compile Chisel to Verilog            |
+| `sbt --batch "runMain chipagent.Generate"`        | Direct sbt compilation               |
+| `scripts/setup.sh`                               | First-use environment initialization  |
 
 ## Chisel API Rules
 
@@ -59,5 +81,5 @@ Query Context7 (`/chipsalliance/chisel`) for up-to-date Chisel API usage before 
 
 ## Commands
 
-- `/chip-agent:generate <description>` -- Produces Chisel source files only (steps 1-2). No compilation or verification.
-- `/chip-agent:workflow <description>` -- Runs the full 7-step pipeline: parse, generate, compile, lint, testbench, simulate, report. Each stage feeds into the next; failures stop the pipeline with context for debugging.
+- `/chip-agent:generate <description>` -- Produces Chisel source files only (steps 0-2). No compilation or verification.
+- `/chip-agent:workflow <description>` -- Runs the full 8-step pipeline: init project, parse, confirm, generate, compile, lint, testbench, simulate, report. Each stage feeds into the next; failures stop the pipeline with context for debugging.

@@ -15,7 +15,7 @@ allowed-tools:
 
 Turn a natural language hardware description into Chisel source files.
 
-Given a plain-English description of a digital hardware module, this command parses the requirements, confirms the spec with the user, and generates Chisel Scala source code. It does NOT compile, lint, or simulate -- use `/chip-agent:workflow` for the full pipeline.
+Given a plain-English description of a digital hardware module, this command parses the requirements, confirms the spec, and generates Chisel Scala source code. It does NOT compile, lint, or simulate -- use `/chip-agent:workflow` for the full pipeline.
 
 ## Usage
 
@@ -35,6 +35,51 @@ Given a plain-English description of a digital hardware module, this command par
 
 ## Pipeline
 
+### Step 0 -- Initialize Project Folder
+
+After the module name is determined from the spec (Step 1), run the project-init subagent to set up the per-module project structure inside the `MyDesign/` container.
+
+**Bash commands to execute:**
+
+```bash
+PLUGIN_ROOT="<plugin-root>"   # e.g. /home/aa/snap/ChipAgent-main
+CONTAINER="MyDesign"          # all projects live inside this folder
+MODULE="<ModuleName>"         # e.g. ALU8
+PROJECT_DIR="$PLUGIN_ROOT/$CONTAINER/$MODULE"
+WORKSPACE_DIR="$PROJECT_DIR/workspace"
+
+# Create MyDesign container if it doesn't exist
+mkdir -p "$PLUGIN_ROOT/$CONTAINER"
+# Create project folder and workspace
+mkdir -p "$WORKSPACE_DIR/generated" "$WORKSPACE_DIR/sim/logs"
+# Symlink chisel-project (three levels up from MyDesign/<Module>/)
+rm -f "$PROJECT_DIR/chisel-project"
+ln -s "../../chisel-project" "$PROJECT_DIR/chisel-project"
+
+echo "Project initialized: $PROJECT_DIR"
+```
+
+**Project folder structure:**
+```
+<plugin-root>/
+├── chisel-project/              ← shared, all module source lives here
+├── MyDesign/                   ← project container
+│   ├── ALU8/
+│   │   ├── chisel-project/   ← symlink → ../../chisel-project
+│   │   └── workspace/
+│   │       ├── generated/
+│   │       ├── sim/
+│   │       └── spec.json
+│   ├── ALU4/
+│   │   ├── chisel-project/   ← symlink → ../../chisel-project
+│   │   └── workspace/
+│   └── PriorityEncoder4/
+│       ├── chisel-project/
+│       └── workspace/
+```
+
+If the project folder already exists inside `MyDesign/`, skip creation and continue.
+
 ### Step 1 -- Parse Requirements
 
 Read the requirement-parser agent definition at `agents/requirement-parser.md` (relative to plugin root) and follow its rules to extract a structured JSON spec from the user's hardware description (`$ARGUMENTS`).
@@ -43,14 +88,11 @@ The agent returns a JSON object. For simple designs: `moduleName`, `type: "simpl
 
 **Validation:** Verify the JSON is valid -- `moduleName` is PascalCase, all ports have direction/type/width, operations have opcodes. For complex specs, verify that `topModule.submodules` matches the names in `modules[]`. If the JSON is malformed, retry the parser once.
 
-**Create workspace directory** after parsing succeeds:
-```
-mkdir -p workspace/<ModuleName>/generated workspace/<ModuleName>/sim/logs
-```
+**Step 0 MUST run first** to create the project folder before writing spec.json.
 
 **Write spec to disk** using the Write tool:
 ```
-workspace/<ModuleName>/spec.json
+MyDesign/<ModuleName>/workspace/spec.json
 ```
 
 The requirement-parser agent returns JSON to conversation only -- it does NOT write files. This step MUST capture the JSON and write it to disk so that all downstream steps can read it.
@@ -80,23 +122,24 @@ Read the chisel-generator agent definition at `agents/chisel-generator.md` (rela
 **For simple specs (type: "simple"):**
 
 The agent writes two files:
-1. The module Scala file: `chisel-project/src/main/scala/chipagent/<ModuleName>.scala`
+1. The module Scala file: `MyDesign/<ModuleName>/chisel-project/src/main/scala/chipagent/<ModuleName>.scala`
 2. An updated `Generate.scala` with the new module in the match statement
 
 **For complex specs (type: "complex"):**
 
 The agent writes N+1 files:
-1. One Scala file per sub-module: `chisel-project/src/main/scala/chipagent/<SubModuleName>.scala` for each entry in `modules[]`
-2. The top-level module: `chisel-project/src/main/scala/chipagent/<TopModuleName>.scala` that instantiates and wires all sub-modules
+1. One Scala file per sub-module: `MyDesign/<ModuleName>/chisel-project/src/main/scala/chipagent/<SubModuleName>.scala` for each entry in `modules[]`
+2. The top-level module: `MyDesign/<ModuleName>/chisel-project/src/main/scala/chipagent/<TopModuleName>.scala` that instantiates and wires all sub-modules
 3. An updated `Generate.scala` with the top module name (the top module pulls in sub-modules automatically)
 
 ## Pipeline Stages
 
 | # | Stage              | Description                                      |
 |---|--------------------|--------------------------------------------------|
-| 1   | Parse Requirements | Extract module name, ports, operations from NL    |
-| 1.5 | Confirm Spec       | Present parsed spec for user approval             |
-| 2   | Generate Chisel    | Produce Chisel source from structured spec        |
+| 0  | Initialize Project | Create per-module folder with symlink + workspace |
+| 1  | Parse Requirements | Extract module name, ports, operations from NL    |
+| 1.5| Confirm Spec       | Present parsed spec for user approval             |
+| 2  | Generate Chisel    | Produce Chisel source from structured spec        |
 
 ## Input
 
@@ -111,8 +154,8 @@ A natural language description of a digital hardware module. The description sho
 
 ## Output
 
-Upon completion, the following artifacts are produced:
+Upon completion, the following artifacts are produced in `MyDesign/<ModuleName>/`:
 
-- `workspace/<ModuleName>/spec.json` -- structured JSON specification
+- `workspace/spec.json` -- structured JSON specification
 - `chisel-project/src/main/scala/chipagent/<ModuleName>.scala` -- Chisel source file(s)
 - `chisel-project/src/main/scala/chipagent/Generate.scala` -- updated with new module entry

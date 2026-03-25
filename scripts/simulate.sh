@@ -1,36 +1,53 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-# Convert MSYS/Cygwin paths to mixed-mode (C:/...) for JVM compatibility on Windows
-if command -v cygpath >/dev/null 2>&1; then
-  PLUGIN_ROOT="$(cygpath -m "$PLUGIN_ROOT")"
-fi
-if [ -z "$PLUGIN_ROOT" ]; then
+source "$(dirname "$0")/_common.sh"
+if [ -n "$_COMMON_INIT_FAILED" ]; then
   echo "ERROR: Could not determine plugin root directory." >&2
   echo "Set CLAUDE_PLUGIN_ROOT or run from the scripts/ directory." >&2
   exit 1
 fi
-# --- Workspace-aware path resolution ---
+
+# --- Path resolution ---
+# Three modes supported:
+#   1. Bare module name (e.g. ALU8)              → MyDesign/<Module>/workspace/...
+#   2. MyDesign/<Module> explicit path            → MyDesign/<Module>/workspace/...
+#   3. workspace/<Module> old path (compat)       → workspace/<Module>/sim/...
 ARG="${1:-}"
-if [[ "$ARG" == */* ]]; then
-  # Workspace mode: argument is a path like workspace/Foo
-  case "$ARG" in
-    /*) WORKSPACE_DIR="$ARG" ;;
-    *)  WORKSPACE_DIR="$PLUGIN_ROOT/$ARG" ;;
-  esac
-  MODULE=$(basename "$WORKSPACE_DIR")
-  GENERATED_DIR="$WORKSPACE_DIR/generated"
-  SIM_DIR="$WORKSPACE_DIR/sim"
-  LOG_DIR="$WORKSPACE_DIR/sim/logs"
-  OBJ_DIR="$WORKSPACE_DIR/sim/obj_dir"
+if [ -n "$ARG" ]; then
+  if [[ "$ARG" == "workspace/"* ]]; then
+    # Mode 3: old workspace/ path (backward compat)
+    case "$ARG" in
+      /*) WORKSPACE_DIR="$ARG" ;;
+      *)  WORKSPACE_DIR="$PLUGIN_ROOT/$ARG" ;;
+    esac
+    MODULE=$(basename "$WORKSPACE_DIR")
+    GENERATED_DIR="$WORKSPACE_DIR/generated"
+    SIM_DIR="$WORKSPACE_DIR/sim"
+    LOG_DIR="$SIM_DIR/logs"
+    OBJ_DIR="$SIM_DIR/obj_dir"
+  else
+    # Mode 1 or 2: bare name or MyDesign/<Module>
+    if [[ "$ARG" == */* ]]; then
+      # Explicit path like MyDesign/ALU8
+      case "$ARG" in
+        /*) BASE="$ARG" ;;
+        *)  BASE="$PLUGIN_ROOT/$ARG" ;;
+      esac
+    else
+      # Bare module name → MyDesign/<Module>
+      BASE="$PLUGIN_ROOT/MyDesign/$ARG"
+    fi
+    MODULE=$(basename "$ARG")
+    GENERATED_DIR="$BASE/workspace/generated"
+    SIM_DIR="$BASE/workspace/sim"
+    LOG_DIR="$SIM_DIR/logs"
+    OBJ_DIR="$SIM_DIR/obj_dir"
+  fi
 else
-  # v1.0 mode: argument is a bare module name
-  MODULE="${ARG:-ALU}"
-  GENERATED_DIR="$PLUGIN_ROOT/generated"
-  SIM_DIR="$PLUGIN_ROOT/sim"
-  LOG_DIR="$SIM_DIR/logs"
-  OBJ_DIR="$SIM_DIR/obj_dir"
+  echo "Usage: simulate.sh <ModuleName>" >&2
+  echo "  e.g.  simulate.sh ALU8           (→ MyDesign/ALU8/)" >&2
+  echo "  (workspace/ALU8 also accepted for backward compat)" >&2
+  exit 1
 fi
 
 # Waiver file: prefer per-module, fall back to global
