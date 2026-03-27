@@ -3,4 +3,6 @@
 人性化：所有generate和workflow都在mydesign目录下，头一次生成会创建mydesign,可以避免文件覆盖和多项目混乱的问题
 3.26
 测试乘法器生成，相较于加法器选择器等会有warning,故尝试添加warning-explanation,暂时命名为EX-WAR,，，/chip-agent:warningExp
+3.27
+加了个hooks,仿真失败debug用，等/debug测试好就能用了吧大概
 
