@@ -50,6 +50,12 @@ ChipAgent/
 ├── skills/                    # Slash command definitions
 │   ├── workflow/SKILL.md      #   /chip-agent:workflow (full pipeline)
 │   ├── generate/SKILL.md      #   /chip-agent:generate (Chisel only)
+│   ├── compile/SKILL.md
+│   ├── initialize/SKILL.md
+│   ├── lint/SKILL.md
+│   ├── requirement-parser/SKILL.md
+│   ├── simulate/SKILL.md
+│   ├── testbench/SKILL.md
 │   └── debug/SKILL.md         #   /chip-agent:debug (failure analysis)
 ├── agents/                    # Subagent definitions
 │   ├── requirement-parser.md  #   NL → structured spec
