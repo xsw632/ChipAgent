@@ -22,7 +22,8 @@ object Generate extends App {
     case "TrivialModule" => () => new TrivialModule
     case "ALU"           => () => new ALU
     case "Decoder3to8"   => () => new Decoder3to8
-    case other => throw new IllegalArgumentException(s"Unknown module: $other. Available: TrivialModule, ALU, Decoder3to8")
+    case "Counter8"    => () => new Counter8
+    case other => throw new IllegalArgumentException(s"Unknown module: $other. Available: TrivialModule, ALU, Decoder3to8, Counter8")
   }
 
   (new ChiselStage).emitVerilog(
