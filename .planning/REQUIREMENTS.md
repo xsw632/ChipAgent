@@ -9,8 +9,8 @@ Requirements for RTL-to-GDS milestone. Each maps to roadmap phases.
 
 ### Environment
 
-- [ ] **ENV-01**: `/chip-agent:initialize` detects Yosys, OpenROAD, KLayout versions and nangate45 PDK path in env.json
-- [ ] **ENV-02**: Pre-flight PDK validation script checks liberty, LEF, and GDS files exist before running PnR
+- [x] **ENV-01**: `/chip-agent:initialize` detects Yosys, OpenROAD, KLayout versions and nangate45 PDK path in env.json
+- [x] **ENV-02**: Pre-flight PDK validation script checks liberty, LEF, and GDS files exist before running PnR
 
 ### Synthesis
 
@@ -68,8 +68,8 @@ Requirements for RTL-to-GDS milestone. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ENV-01 | Phase 9 | Pending |
-| ENV-02 | Phase 9 | Pending |
+| ENV-01 | Phase 9 | Complete |
+| ENV-02 | Phase 9 | Complete |
 | SYN-01 | Phase 10 | Pending |
 | SYN-02 | Phase 9 | Complete |
 | SYN-03 | Phase 10 | Pending |
