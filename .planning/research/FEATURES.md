@@ -1,211 +1,226 @@
-# Feature Landscape
+# Feature Landscape: RTL-to-GDS
 
-**Domain:** Modular slash commands, workspace isolation, and environment detection for a Claude Code EDA plugin
-**Researched:** 2026-03-19
-**Milestone:** v1.1 (Refine -- decompose monolithic pipeline into modular commands)
+**Domain:** EDA physical design automation (synthesis + place-and-route)
+**Project:** ChipAgent v1.1.2
+**Researched:** 2026-03-31
+**Confidence:** HIGH -- features derived from verified ORFS GCD flow on nangate45, existing codebase analysis, and ASIC design workflow knowledge
 
-## Context
+## Scope
 
-v1.0 shipped a monolithic `/chip-agent:generate` pipeline that runs all 7 stages sequentially in a single conversation turn. v1.1 decomposes this into standalone slash commands, adds per-module workspace isolation, and introduces environment detection. This feature landscape covers ONLY the new v1.1 features -- v1.0 capabilities (NL parsing, Chisel generation, compilation, lint, testbench, simulation, reporting) are already built and working.
+Features required for a `/chip-agent:pnr` slash command that takes verified RTL Verilog (output of the existing pipeline) through Yosys synthesis and OpenROAD place-and-route to produce DEF, gate-level Verilog, and timing/power/area reports on nangate45.
+
+---
 
 ## Table Stakes
 
-Features users expect from a multi-command plugin with per-module workspace isolation. Missing = the refactoring feels incomplete or the UX regresses from v1.0.
+Features users expect. Missing any of these and the PnR command feels broken or unusable.
 
-| Feature | Why Expected | Complexity | Depends On (existing) | Notes |
-|---------|--------------|------------|----------------------|-------|
-| Standalone slash commands for each pipeline stage | The entire point of v1.1. Users must be able to run `/chip-agent:lint` or `/chip-agent:simulate` independently without invoking the full pipeline. | Med | Existing agents, scripts | Each of the 7 pipeline stages (parse, generate-chisel, compile, lint, testbench, simulate, report) becomes its own skill. Not all need their own agent -- lint, compile, simulate are thin wrappers around existing scripts. |
-| Refactored `/chip-agent:generate` as orchestrator | The existing end-to-end flow must keep working unchanged from a user perspective. Internally, `generate` delegates to sub-skills rather than inlining all logic. | Med | All standalone commands | Generate skill becomes a sequencer that invokes sub-skills in order. Must preserve the 3-attempt auto-fix retry logic for both lint and simulation stages. |
-| `/chip-agent:initialize` environment detection | First-run experience. Users need to know whether their system can run the pipeline before wasting time on a module that will fail at compile. Existing `setup.sh` does parts of this but only runs at install time and also downloads dependencies. | Low | None (greenfield) | Detects Java, sbt, Scala, Verilator, Make, g++ versions and paths. Reports missing or incompatible tools with install guidance. Should be idempotent and fast (no side effects -- detection only, not installation). |
-| Per-module workspace isolation | When generating multiple modules (ALU, RegFile, Decoder), their artifacts must not collide. The current flat `generated/` and `sim/` directories cannot handle sequential multi-module work without manual cleanup. | High | compile.sh, lint.sh, simulate.sh | Requires `workspace/<ModuleName>/` structure with spec, generated, sim subdirectories. All scripts must accept workspace path parameters or environment variables. This is the highest-complexity table-stakes item because it touches every script. |
-| Spec file as inter-stage contract (Hybrid Option C) | Pipeline stages need to communicate structured data (module name, ports, operations). Currently this data lives only in conversation context, which breaks when running commands standalone. PROJECT.md specifies "Hybrid spec-file communication" as a target. | Med | Workspace isolation, requirement-parser agent | JSON spec file written to `workspace/<ModuleName>/spec.json`. Downstream stages (generate-chisel, testbench, debug) read it from disk rather than depending on conversation history. Simple stages (compile, lint, simulate) do not need the spec -- they work on files directly. |
-| Help and command discoverability | Users must know what commands are available and what arguments they accept. | Low | Skill frontmatter | Claude Code provides this natively via `/` autocomplete when skills have good `description` and `argument-hint` frontmatter fields. No custom help command needed -- the platform handles discovery. Each skill's description should be clear enough that Claude can also invoke it automatically when relevant. |
-| Consistent error reporting across commands | Each standalone command must produce clear, structured error output that a user (or the orchestrator generate skill) can act on. When lint fails, the output must be parseable to determine what to fix. | Low | All commands | Standardize on: exit code 0 = pass, non-zero = fail. Stdout contains structured results. Already partially done in v1.0 scripts. Formalize the convention across all skills and scripts. |
-| Backward-compatible workspace layout | The existing flat `generated/` and `sim/` directories must still work for users who invoke the old-style pipeline without explicitly naming a workspace. | Low | Workspace isolation | Default workspace for unnamed modules falls back to the legacy flat structure. A `--workspace` argument or module name triggers the per-module isolation. Ensures v1.0 muscle memory still works. |
+| # | Feature | Why Expected | Complexity | Depends On |
+|---|---------|-------------|------------|------------|
+| TS-01 | **SDC auto-generation from Verilog** | Users (NL-to-Verilog users) do not know SDC format. The pipeline must generate constraints automatically by detecting clock ports in the compiled Verilog. Sequential modules get `create_clock`; combinational modules get `set_max_delay` with a virtual clock. | Low | Existing `workspace/generated/<Module>.v` |
+| TS-02 | **Yosys synthesis to gate-level netlist** | The core value: RTL to gates. Must read liberty, read Verilog, run `synth -top -flatten`, `dfflibmap` (sequential), `abc`, tie/buffer insertion, and write `synth.v`. | Med | TS-01 (SDC for ABC timing-driven synthesis) |
+| TS-03 | **Synthesis report parsing** | Users need to know if synthesis succeeded and what it produced. Parse `synth_stat.txt` for cell count, area estimate, and `synth_check.txt` for warnings/errors. Display in Claude-readable summary. | Low | TS-02 |
+| TS-04 | **OpenROAD floorplan initialization** | Physical design starts here. `initialize_floorplan` with utilization (default 55%), aspect ratio 1.0, site name, track definitions. | Med | TS-02 (needs synth.v) |
+| TS-05 | **IO pin placement** | Pins must be placed on routing layers for the design to be routable. `place_pins` on metal5 (horizontal) and metal6 (vertical) per nangate45 convention. | Low | TS-04 |
+| TS-06 | **Power distribution network** | Design is non-functional without VDD/VSS. Source the platform's `grid_strategy-M1-M4-M7.tcl` and run `pdngen`. | Low | TS-04 |
+| TS-07 | **Global + detailed placement** | Core PnR. `global_placement` with density control, parasitic estimation, buffer/timing repair, then `detailed_placement` with violation check. | Med | TS-06 |
+| TS-08 | **CTS for sequential modules** | Any module with a real clock needs clock tree synthesis. Skip automatically for combinational modules (zero propagated clocks). Buffer list from nangate45. | Med | TS-07 |
+| TS-09 | **Global + detailed routing** | Completes physical implementation. Layer constraints from `fastroute.tcl`, DRC report from detailed routing. | Med | TS-08 |
+| TS-10 | **Filler cell insertion** | Required for DRC-clean layout. Insert fill cells (X1 through X32) after routing. | Low | TS-09 |
+| TS-11 | **Timing report (STA)** | The primary PPA metric. `report_checks` with min/max paths, plus WNS and TNS summaries. Users need to know if timing is met. | Low | TS-09 |
+| TS-12 | **Power report** | Second PPA metric. `report_power` showing internal, switching, and leakage breakdown. | Low | TS-09 |
+| TS-13 | **Area report** | Third PPA metric. `report_design_area` for total and utilization. | Low | TS-09 |
+| TS-14 | **DEF + gate-level Verilog export** | The primary output artifacts. `write_def` and `write_verilog` to `workspace/pnr/results/`. | Low | TS-09 |
+| TS-15 | **Workspace directory structure** | All PnR artifacts in `workspace/pnr/` with `results/` and `reports/` subdirs. Follows existing workspace isolation pattern. | Low | Existing workspace convention |
+| TS-16 | **Pre-flight validation** | Before running PnR, verify: (a) `workspace/generated/<Module>.v` exists, (b) Yosys is installed, (c) OpenROAD is installed, (d) nangate45 PDK is locatable. Fail fast with actionable error if any missing. | Low | Existing env detection |
+| TS-17 | **Stage-level error handling** | Each stage (SDC gen, synthesis, floorplan, placement, CTS, routing, reports) must capture stderr/stdout, detect failure, and report which stage failed with diagnostic context. Pipeline stops on first failure. | Med | All stages |
+| TS-18 | **PnR summary report** | Final formatted report analogous to the simulation verification report. Shows: module name, synthesis stats (cells, area), timing (WNS/TNS, met/violated), power, area, output file paths. | Low | TS-11, TS-12, TS-13 |
+| TS-19 | **`/chip-agent:pnr` slash command** | The entry point. Skill definition with `SKILL.md`, accepted arguments (`<ModuleName>`), pipeline steps, allowed tools. Follows existing skill conventions. | Med | All above |
+
+---
 
 ## Differentiators
 
-Features that set the plugin apart from manual EDA workflows. Not expected, but valuable.
+Features that elevate ChipAgent beyond "just runs scripts." Not expected, but meaningfully valuable.
 
-| Feature | Value Proposition | Complexity | Depends On | Notes |
-|---------|-------------------|------------|------------|-------|
-| Intelligent module name routing | When a user says `/chip-agent:lint ALU`, the plugin automatically resolves the module name to its workspace path, finds the Verilog files, and runs lint. No explicit path arguments needed. | Med | Workspace isolation, spec file | Scan `workspace/*/spec.json` to resolve module names. Fall back to asking if ambiguous (multiple workspaces or no match). |
-| Spec-aware failure recovery | When lint or simulation fails, the orchestrator re-reads the spec from disk and only re-invokes the failing stage plus its downstream stages, rather than restarting from NL parsing. | Med | Spec file contract | The testbench-generator agent reads `spec.json` from the workspace. The orchestrator tracks which stages succeeded and resumes from the first failure. |
-| Machine-readable environment capability output | `/chip-agent:initialize` writes an `env.json` with structured tool versions and boolean capabilities (can_compile, can_lint, can_simulate). Other commands can read it to gracefully degrade (e.g., skip lint if Verilator is not found, with a warning). | Low | Initialize command | JSON file at project root (`.chipagent/env.json` or `workspace/env.json`). Simple schema: tool name, version, path, satisfies-minimum boolean. |
-| Incremental build skip | Skip sbt compilation entirely if the Chisel source file has not changed since the last successful build (comparing file modification times). sbt already does incremental compilation internally, but the JVM startup alone takes 5-10 seconds -- skipping the entire invocation saves real time. | Med | Workspace isolation | Compare `.scala` source mtime against `generated/*.v` mtime. If Verilog is newer, skip `compile.sh`. This is a script-level optimization, not application-level caching. |
-| Module registry listing | `/chip-agent:list` scans workspaces and shows all modules with their current verification status (parsed, compiled, lint-passed, sim-passed) based on which artifacts exist on disk. | Low | Workspace isolation | Filesystem presence IS the status: `spec.json` = parsed, `*.v` = compiled, `lint-warnings.log` = lint-ran, `sim_result.log` = simulated. No database or state file needed. |
-| Debug failure analysis | `/chip-agent:debug <ModuleName>` reads simulation failure logs and cross-references them with the spec and Chisel source to suggest targeted fixes, linking Verilator error output back to the original specification. | Med | Workspace isolation, simulation logs | New agent that reads `workspace/<Module>/sim/logs/sim_result.log`, the spec, and the Chisel source. Produces a diagnosis with specific fix suggestions. |
-| Parallel multi-module linting | When the workspace contains multiple completed modules, lint all of them concurrently rather than sequentially. | Low | Workspace isolation, lint command | Each module's Verilog is in its own `workspace/<Module>/generated/` directory. Lint runs are independent and can execute in parallel. |
+| # | Feature | Value Proposition | Complexity | Depends On |
+|---|---------|-------------------|------------|------------|
+| DF-01 | **spec.json-driven SDC enrichment** | If `spec.json` contains `clock_period_ns`, use it instead of the 2.0ns default. Lets users influence timing targets through the natural language spec ("500MHz clock") without touching SDC directly. | Low | TS-01, existing spec.json |
+| DF-02 | **Combinational vs sequential auto-detection** | Automatically detect whether the module has a clock port and adjust the entire flow: SDC template, `dfflibmap` inclusion, CTS skip. Zero user configuration needed. This is already baked into the table stakes but explicitly calling it out as a differentiator because most EDA flows require the user to specify this. | Low | TS-01, TS-02, TS-08 |
+| DF-03 | **Timing failure diagnosis** | When WNS is negative (timing violated), parse the critical path from `timing.rpt` and present it in plain English: "Timing violated by X ns on path from port A through N cells to port B. Consider relaxing the clock period or reducing combinational depth." | Med | TS-11 |
+| DF-04 | **DRC violation summary** | Parse `route_drc.rpt` and summarize violations by type (short, spacing, width). If zero violations, say so explicitly. If violations exist, flag as warning (common for academic PDKs). | Low | TS-09 |
+| DF-05 | **Cell usage analysis** | Parse `cell_usage.rpt` to show the most-used standard cells and total cell count. Gives users insight into what the synthesizer chose. | Low | TS-09 |
+| DF-06 | **Congestion reporting** | Parse `congestion.rpt` and flag if any region exceeds density threshold. Useful for understanding routing difficulty. | Low | TS-09 |
+| DF-07 | **Environment detection for PnR tools** | Extend `detect-env.sh` and `env.json` with Yosys, OpenROAD, KLayout presence/version and nangate45 PDK path. Add `can_synthesize` and `can_pnr` capability flags. `/chip-agent:initialize` gains PnR awareness. | Med | Existing detect-env.sh |
+| DF-08 | **SPEF parasitic extraction** | Run OpenRCX to extract parasitics, write SPEF, and use it for final STA. Makes timing reports more accurate (post-route vs estimated). Already in the Tcl flow but calling it out as a differentiator because many quick flows skip this. | Low | TS-09 |
+| DF-09 | **Synthesis auto-retry on failure** | If Yosys synthesis fails (e.g., undefined module, unsupported construct), parse the error, attempt to diagnose (common: Chisel generates `$` prefixed internal signals, `FIRRTL_RAND` macros), and suggest fixes. Up to 3 attempts, matching the existing lint auto-fix pattern. | High | TS-02 |
+
+---
 
 ## Anti-Features
 
-Features to explicitly NOT build in v1.1. These are tempting but counterproductive.
+Features to explicitly NOT build in v1.1.2.
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| Custom help command | Claude Code already provides `/` autocomplete, skill descriptions, and argument hints. Building a custom `/chip-agent:help` duplicates platform functionality and adds maintenance burden. | Write clear `description` and `argument-hint` frontmatter for each skill. Let Claude Code's native discovery handle the rest. |
-| GUI or web dashboard | Out of scope per PROJECT.md constraints. CLI-only through Claude Code. A dashboard adds enormous complexity without matching the conversational workflow. | Use structured terminal output with clear formatting. The report stage already produces a clean text summary. |
-| Cross-module dependency graph | Tracking inter-module dependencies ("RegFile depends on ALU") across workspaces is build-system territory (FuseSoC, Chipyard). ChipAgent generates modules; sbt handles Scala-level compilation dependencies. | Let sbt resolve Scala compilation dependencies naturally. Top modules pull in sub-modules via Chisel's `Module(new SubModule)` syntax. Document this rather than reimplementing it. |
-| Persistent state machine across sessions | Tracking "ALU is at lint stage, RegFile is at simulate stage" introduces cross-session state management. Claude Code conversations are stateless between sessions. Persisted state creates synchronization problems. | Use filesystem presence as implicit state: `spec.json` exists = parsed, `*.v` exists = compiled, `sim_result.log` exists = simulated. The filesystem IS the state machine. No database, no state file, no synchronization bugs. |
-| Interactive step-by-step pipeline mode | Pausing at every stage for confirmation (beyond the existing Step 1.5 spec confirmation) adds friction without value. The 3-attempt auto-fix already handles most failures automatically. | Keep the confirm-once-then-run-to-completion pattern from v1.0. Standalone commands provide manual control when users want to inspect intermediate results. |
-| Plugin self-update mechanism | npm handles updates via `npm update chip-agent`. Building custom update logic reinvents package management. | Bump `version` in `plugin.json` and `package.json`. npm distribution handles the rest. |
-| File watch / auto-re-run mode | Automatically re-running pipeline stages when source files change sounds useful but creates infinite loops with the existing PostToolUse hook (this nearly happened in v1.0 with the compile hook). | Keep explicit invocation via slash commands. The existing PostToolUse hook on Write/Edit for compile.sh is the right level of automation -- it triggers on agent-written files, not on all file changes. |
-| Sophisticated caching (hash-based, content-addressable) | sbt already has incremental compilation. Verilator compilation is fast (seconds). Adding a hash-based cache layer adds complexity far exceeding the time savings. | Use simple file mtime comparison for skip-if-unchanged checks. If the output file exists and is newer than the input, skip the stage. No cache invalidation logic needed. |
-| Agent teams / parallel pipeline stages | Claude Code supports agent teams, but the pipeline stages are inherently sequential (compile before lint, lint before simulate). Parallelizing independent modules is simple shell-level parallelism, not agent-team orchestration. | For multi-module parallelism, use simple script-level `&` or `parallel`. Save agent teams for genuinely independent analytical tasks. |
+| **GDS export** | KLayout is not installed. Adding a KLayout dependency changes the install story significantly. DEF + reports deliver the core PPA value. | Scope to DEF output. Document GDS as a follow-up requiring KLayout. |
+| **Multi-PDK support** | Only nangate45 is available and verified. Adding sky130 or ASAP7 requires testing each platform's config files, liberty models, and Tcl scripts. | Hardcode nangate45. Design scripts so PDK path is a variable (future-proofing), but only support one PDK now. |
+| **Clock period optimization loop** | Automatically binary-searching for the best achievable clock period is computationally expensive (each PnR run takes 30-120 seconds) and adds complexity. | Use a conservative default (2.0ns). Let users specify via spec.json if they want tighter timing. |
+| **Floorplan GUI or visual feedback** | No GUI in Claude Code. Visual floorplan/placement feedback requires an image renderer or external viewer. | Report numeric area/utilization. DEF files can be opened in external viewers (OpenROAD GUI, KLayout) by the user. |
+| **Incremental PnR / ECO flow** | Engineering change orders require design database persistence between sessions, which is out of scope for a stateless slash command. | Always run full flow from scratch. Each PnR invocation is idempotent. |
+| **Custom floorplan constraints** | Macro placement, blockages, pin assignment constraints are advanced features that require domain expertise. | Use auto-floorplan with utilization-based sizing. Pin placement is automatic. |
+| **Multi-corner STA** | nangate45 only ships typical corner. Multi-corner analysis requires additional liberty files (fast, slow) which are not available. | Single-corner (typical) STA only. |
+| **Power intent (UPF/CPF)** | Power domains, voltage islands, and retention are SoC-level concerns beyond single-module scope. | Single power domain (VDD/VSS) only. |
+| **Formal equivalence checking** | Verifying gate-level netlist matches RTL requires a formal tool (e.g., Conformal, Formality). Out of scope. | Rely on Yosys synthesis correctness. Users can run their own verification. |
+| **Extending `/chip-agent:workflow` with PnR** | PnR is slow (30-120s), optional, and conceptually separate from verification. Bolting it onto workflow makes the existing fast path slower and more fragile. | Separate `/chip-agent:pnr` command. Users run it after verification passes. |
+| **Hierarchical synthesis** | ChipAgent modules are small (under 10K gates typically). Hierarchy adds complexity for no benefit at this scale. | Always flatten with `synth -flatten`. |
+| **Macro support (SRAMs, hard IPs)** | Generated modules are standard-cell-only combinational/sequential blocks. No memory compilers or hard IP. | Skip macro placement entirely. |
+| **Interactive OpenROAD GUI** | CLI-only plugin with no display server assumption. | Text reports only. Users open DEF in external viewers if needed. |
+| **IR drop analysis** | Requires additional power grid analysis setup. Not critical for academic/demonstration flow. | Omit `analyze_power_grid`. PDN generation is sufficient. |
+
+---
 
 ## Feature Dependencies
 
 ```
-/chip-agent:initialize  (no dependencies -- runs independently, writes env.json)
+Pre-flight validation (TS-16)
+    |
+    v
+SDC auto-generation (TS-01)
+    |
+    +-- spec.json clock enrichment (DF-01)
+    |
+    v
+Yosys synthesis (TS-02)
+    |
+    +-- Synth report parsing (TS-03)
+    +-- Synth auto-retry (DF-09)
+    |
+    v
+Floorplan init (TS-04)
+    |
+    +-- IO pin placement (TS-05)
+    +-- PDN (TS-06)
+    |
+    v
+Placement (TS-07)
+    |
+    v
+CTS (TS-08) -- skipped if combinational
+    |
+    v
+Routing (TS-09)
+    |
+    +-- Filler cells (TS-10)
+    +-- SPEF extraction (DF-08)
+    +-- DRC summary (DF-04)
+    +-- Congestion report (DF-06)
+    |
+    v
+Reports (TS-11 timing, TS-12 power, TS-13 area)
+    |
+    +-- Timing failure diagnosis (DF-03)
+    +-- Cell usage analysis (DF-05)
+    |
+    v
+Export (TS-14 DEF + Verilog)
+    |
+    v
+PnR summary report (TS-18)
+    |
+    v
+Slash command (TS-19)
 
-Workspace Isolation Convention (directory structure + script parameter changes)
-  |
-  +-- Spec File Contract (spec.json as inter-stage communication)
-  |     |
-  |     +-- /chip-agent:parse  (NL input -> spec.json in workspace)
-  |     |     |
-  |     |     +-- /chip-agent:generate-chisel  (spec.json -> .scala source)
-  |     |           |
-  |     |           +-- /chip-agent:compile  (.scala -> .v in workspace/generated/)
-  |     |                 |
-  |     |                 +-- /chip-agent:lint  (.v files -> lint pass/fail)
-  |     |                 |
-  |     |                 +-- /chip-agent:testbench  (spec.json + .v -> .cpp testbench)
-  |     |                       |
-  |     |                       +-- /chip-agent:simulate  (.v + .cpp -> sim_result.log)
-  |     |                             |
-  |     |                             +-- /chip-agent:report  (sim_result.log -> formatted output)
-  |     |
-  |     +-- /chip-agent:debug  (spec.json + sim_result.log -> diagnosis)
-  |
-  +-- /chip-agent:list  (scans workspace directories -> module status table)
-
-/chip-agent:generate  (orchestrator -- invokes the full chain above sequentially)
-  Depends on: ALL standalone commands
-  Preserves: Step 1.5 user confirmation, 3-attempt auto-fix for lint and sim
+Parallel/independent:
+  - Workspace structure (TS-15) -- created at pipeline start
+  - Stage-level error handling (TS-17) -- cross-cutting, built into each script
+  - Environment detection (DF-07) -- can be built independently
 ```
 
-Critical path for implementation: Workspace Isolation -> Spec File Contract -> Script Parameterization -> Standalone Skills -> Orchestrator Refactor.
+All PnR stages are strictly sequential: each stage requires the previous stage's output in memory (single OpenROAD session). Synthesis must complete before PnR begins. SDC must exist before synthesis.
 
-## Workspace Directory Structure
-
-Based on research of EDA workspace isolation patterns (FuseSoC build trees with separate `work_root`, Chipyard per-generator directory layout, Verilator `--Mdir` for per-module build isolation):
-
-```
-workspace/
-  <ModuleName>/                    # Per-module isolation boundary
-    spec.json                      # Inter-stage contract (JSON from parser)
-    generated/                     # Verilog output (--target-dir per module)
-      <ModuleName>.v
-      <ModuleName>.sv
-      chisel-warnings.vlt          # Verilator waiver file if needed
-      lint-warnings.log
-    sim/                           # Simulation artifacts
-      tb_<ModuleName>.cpp          # C++ testbench
-      obj_dir/                     # Verilator build (isolated via --Mdir)
-        V<ModuleName>              # Simulation binary
-        V<ModuleName>.mk
-      logs/
-        sim_result.log             # Verification results
-```
-
-Key design decisions:
-- **Chisel source stays in `chisel-project/src/main/scala/chipagent/`** because sbt compilation requires a single project root with a single `build.sbt`. Cannot split Scala sources across workspace directories. The workspace is for outputs and metadata, not Scala source.
-- **`generated/` uses `--target-dir workspace/<Module>/generated/`** to isolate Verilog output per module, overriding the default flat `generated/` directory.
-- **`sim/obj_dir/` uses `--Mdir workspace/<Module>/sim/obj_dir/`** to isolate Verilator build artifacts per module, preventing `V<ModuleName>.mk` collisions.
-- **Cleanup is `rm -rf workspace/<ModuleName>/`** -- simple and complete. No partial cleanup needed.
-- **Legacy compatibility**: When no module name is specified, fall back to the existing flat `generated/` and `sim/` directories. This preserves v1.0 behavior for simple single-module workflows.
-
-## Slash Command Naming
-
-Based on Claude Code plugin conventions (kebab-case names, `plugin-name:command-name` namespacing for plugins, skills as directories with `SKILL.md`):
-
-| Command | Skill Path | Purpose | Needs Agent | disable-model-invocation |
-|---------|-----------|---------|-------------|--------------------------|
-| `/chip-agent:initialize` | `skills/initialize/SKILL.md` | Environment detection and validation | No | true (manual only) |
-| `/chip-agent:parse` | `skills/parse/SKILL.md` | NL description to JSON spec | Yes (requirement-parser) | true |
-| `/chip-agent:generate-chisel` | `skills/generate-chisel/SKILL.md` | JSON spec to Chisel source | Yes (chisel-generator) | true |
-| `/chip-agent:compile` | `skills/compile/SKILL.md` | Chisel to Verilog via sbt | No (script wrapper) | true |
-| `/chip-agent:lint` | `skills/lint/SKILL.md` | Verilator lint check | No (script wrapper) | true |
-| `/chip-agent:testbench` | `skills/testbench/SKILL.md` | Generate C++ testbench | Yes (testbench-generator) | true |
-| `/chip-agent:simulate` | `skills/simulate/SKILL.md` | Run Verilator simulation | No (script wrapper) | true |
-| `/chip-agent:report` | `skills/report/SKILL.md` | Format verification report | No (text formatting) | true |
-| `/chip-agent:generate` | `skills/generate/SKILL.md` | Full pipeline orchestrator | Yes (delegates to above) | true |
-| `/chip-agent:debug` | `skills/debug/SKILL.md` | Analyze simulation failures | Yes (new debug agent) | true |
-| `/chip-agent:list` | `skills/list/SKILL.md` | Show workspace modules | No (filesystem scan) | true |
-
-All commands use `disable-model-invocation: true` because they have side effects (running builds, writing files) and should only be invoked explicitly by the user or by the orchestrator skill. Claude should not autonomously decide to compile or simulate.
-
-Migration note: The existing `skills/generate.md` (flat file in the legacy commands format) should migrate to `skills/generate/SKILL.md` (directory with SKILL.md) to follow the recommended skills format and support future addition of supporting files (e.g., pipeline stage templates, reference documentation).
-
-## Environment Detection Feature Spec
-
-`/chip-agent:initialize` detects and reports system readiness without installing anything.
-
-| Check | Detection Method | Required For | Minimum Version |
-|-------|-----------------|-------------|-----------------|
-| Java JDK | `java -version 2>&1` | Compilation | 11+ |
-| sbt | `sbt --version 2>&1` or read `project/build.properties` | Compilation | 1.10+ |
-| Scala | Read `build.sbt` scalaVersion setting (managed by sbt) | Compilation | 2.13.10 exactly |
-| Verilator | `verilator --version 2>&1` | Lint + simulation | 5.008+ |
-| Make | `make --version 2>&1` | Simulation (builds Verilator model) | Any |
-| g++ / C++ compiler | `g++ --version 2>&1` or `c++ --version 2>&1` | Simulation (compiles testbench) | C++17 support |
-| firtool | Auto-managed by Chisel 3.6.x firtool-resolver | Informational only | N/A |
-
-Output: Human-readable summary to stdout AND structured JSON to `.chipagent/env.json`:
-
-```json
-{
-  "timestamp": "2026-03-19T12:00:00Z",
-  "tools": {
-    "java":      { "found": true, "version": "17.0.2", "path": "/usr/bin/java",      "satisfies": true },
-    "sbt":       { "found": true, "version": "1.10.7", "path": "/usr/bin/sbt",       "satisfies": true },
-    "scala":     { "found": true, "version": "2.13.10", "source": "build.sbt",       "satisfies": true },
-    "verilator": { "found": true, "version": "5.024",  "path": "/usr/bin/verilator", "satisfies": true },
-    "make":      { "found": true, "version": "4.3",    "path": "/usr/bin/make",      "satisfies": true },
-    "gpp":       { "found": true, "version": "11.4.0", "path": "/usr/bin/g++",       "satisfies": true }
-  },
-  "capabilities": {
-    "can_compile": true,
-    "can_lint": true,
-    "can_simulate": true
-  },
-  "overall": "ready"
-}
-```
-
-Compared to the existing `setup.sh`: initialize is detection-only (no `sbt update`, no dependency download). It runs in seconds, not minutes. `setup.sh` remains available for actual first-time installation but is separate from detection.
+---
 
 ## MVP Recommendation
 
-Prioritize for v1.1 in this order (based on dependency chain):
+### Must have for v1.1.2 launch (19 features):
 
-1. **Workspace isolation directory structure + script parameterization** -- Foundation for everything else. Without per-module isolation, standalone commands have nowhere to read/write without collisions. Update `compile.sh`, `lint.sh`, `simulate.sh` to accept workspace path arguments.
-2. **Spec file as inter-stage contract** -- Required for standalone commands to work without conversation context. The parser writes `spec.json`; the generator and testbench agents read it.
-3. **Standalone slash commands (script-wrappers first)** -- Start with compile, lint, simulate, report (thin wrappers around parameterized scripts). Then add parse, generate-chisel, testbench (agent-backed, more complex).
-4. **Refactored `/chip-agent:generate` orchestrator** -- Once standalone commands work individually, refactor the generate skill to delegate to them in sequence. Verify the full pipeline still passes the ALU acceptance test.
-5. **`/chip-agent:initialize` environment detection** -- Low complexity, high first-run value. Can be built independently and in parallel with items 1-4.
+All 19 table stakes features (TS-01 through TS-19). These form the minimal complete pipeline from verified Verilog to DEF + reports. Omitting any single one leaves the pipeline broken or unusable:
+- Without SDC (TS-01): synthesis has no timing target
+- Without any PnR stage (TS-04 through TS-10): no physical implementation
+- Without reports (TS-11 through TS-13): users get artifacts but no insight
+- Without error handling (TS-17): failures are silent or cryptic
+- Without pre-flight (TS-16): users hit confusing tool-not-found errors deep in the flow
 
-Defer to v1.2+:
-- **`/chip-agent:list` module registry**: Nice-to-have, not critical for pipeline function. Simple filesystem scan.
-- **`/chip-agent:debug` failure analysis**: Valuable but requires significant prompt engineering for root-cause mapping.
-- **Incremental build skip**: sbt already handles incremental compilation internally. The wrapper optimization saves 5-10 seconds of JVM startup -- a polish item.
-- **Intelligent module name routing**: Requires workspace scanning conventions to stabilize first.
-- **Workspace archival**: Useful for CI integration but not for the primary interactive workflow.
+### Include in v1.1.2 (high-value, low-cost differentiators):
+
+1. **DF-01** (spec.json clock enrichment) -- trivial to add during SDC generation, one `grep` of spec.json
+2. **DF-02** (combinational auto-detection) -- already designed into the table stakes, costs nothing extra
+3. **DF-04** (DRC violation summary) -- simple file parsing, already generated by detailed_route
+4. **DF-07** (environment detection) -- extends existing detect-env.sh pattern, needed for pre-flight anyway
+5. **DF-08** (SPEF extraction) -- already in the OpenROAD Tcl flow, just do not remove it
+
+### Defer to v1.2+:
+
+- **DF-03** (timing failure diagnosis) -- valuable but requires OpenSTA report parsing logic; add after core flow is stable
+- **DF-05** (cell usage analysis) -- nice-to-have, low priority
+- **DF-06** (congestion reporting) -- nice-to-have, low priority
+- **DF-09** (synthesis auto-retry) -- high complexity, uncertain failure modes; add after observing real synthesis failures in the wild
+
+---
+
+## Phase Structure Recommendation
+
+Based on feature dependencies, the implementation should follow this order:
+
+**Phase 1: Infrastructure** (TS-15, TS-16, DF-07)
+- Workspace directory creation (`pnr/results/`, `pnr/reports/`)
+- Extend detect-env.sh for Yosys, OpenROAD, nangate45
+- Pre-flight validation function
+- Rationale: Everything else depends on directories existing and tools being available
+
+**Phase 2: Synthesis Pipeline** (TS-01, TS-02, TS-03, DF-01)
+- SDC generation script with clock auto-detection and spec.json enrichment
+- Yosys synthesis script with nangate45 liberty
+- Synthesis report parsing
+- Rationale: Must work before PnR can begin; independently testable with just Yosys
+
+**Phase 3: Place-and-Route Pipeline** (TS-04 through TS-10, TS-14, DF-08)
+- Single OpenROAD Tcl script covering floorplan through routing and export
+- Combinational/sequential auto-handling (CTS skip)
+- SPEF extraction
+- DEF + gate-level Verilog export
+- Rationale: Single script, single OpenROAD session; test end-to-end with a known module
+
+**Phase 4: Reports and Command** (TS-11 through TS-13, TS-17, TS-18, TS-19, DF-04)
+- Report generation (timing, power, area, DRC)
+- Stage-level error handling across all scripts
+- PnR summary report formatting
+- `/chip-agent:pnr` skill definition and orchestration
+- Rationale: Reports and the command tie everything together; error handling is best added once the happy path works
+
+---
+
+## Complexity Budget
+
+| Complexity | Count | Features |
+|------------|-------|----------|
+| Low | 14 | TS-01, TS-03, TS-05, TS-06, TS-10, TS-11, TS-12, TS-13, TS-14, TS-15, TS-16, DF-01, DF-04, DF-08 |
+| Medium | 9 | TS-02, TS-04, TS-07, TS-08, TS-09, TS-17, TS-18, TS-19, DF-07 |
+| High | 1 | DF-09 (deferred) |
+
+Total estimated effort: comparable to v1.1 Phase 5+6 (workspace isolation + skill decomposition). The OpenROAD Tcl is largely mechanical -- the complexity is in error handling and the synthesis script's interaction with Chisel-generated Verilog quirks.
+
+---
 
 ## Sources
 
-- [Claude Code Plugins Reference](https://code.claude.com/docs/en/plugins-reference) -- Official plugin directory structure, skill format, namespacing with `plugin-name:command-name`, `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_DATA}` environment variables, hook event types (HIGH confidence)
-- [Claude Code Skills Documentation](https://code.claude.com/docs/en/skills) -- Skill frontmatter (`disable-model-invocation`, `allowed-tools`, `argument-hint`, `context: fork`), naming conventions (kebab-case), supporting files in skill directories, `$ARGUMENTS` substitution (HIGH confidence)
-- [Command Line Interface Guidelines](https://clig.dev/) -- CLI subcommand design best practices: verb-noun structure, consistent flags, discoverability (HIGH confidence)
-- [FuseSoC Documentation](https://fusesoc.readthedocs.io/en/stable/user/overview.html) -- EDA workspace isolation via build trees copied to separate directories, EDAM metadata as tool-agnostic interface between stages (HIGH confidence)
-- [Verilator Documentation -- Verilating](https://verilator.org/guide/latest/verilating.html) -- `--Mdir` for per-module build isolation, `--prefix` for naming control, `--binary`/`--exe` build modes (HIGH confidence)
-- [Chipyard Documentation](https://chipyard.readthedocs.io/en/stable/Customization/Incorporating-Verilog-Blocks.html) -- Per-generator project directory layout with separate `build.sbt` and source trees (MEDIUM confidence)
-- [Edalize EDA Tool Abstraction](https://github.com/olofk/edalize) -- `work_root` workspace isolation pattern, setup/build/run stage separation (MEDIUM confidence)
-- [Enforcing JVM Version in SBT](https://www.baeldung.com/scala/sbt-enforcing-jvm-version) -- Java version detection via `sys.props`, build-level enforcement patterns (MEDIUM confidence)
-- [Claude Code Customization Guide](https://alexop.dev/posts/claude-code-customization-guide-claudemd-skills-subagents/) -- Community patterns for organizing skills, agents, and hooks in plugins (MEDIUM confidence)
+- **ORFS GCD example:** Verified locally on nangate45 (2026-03-31) -- all 7 stages produce expected artifacts
+- **Existing codebase:** `scripts/compile.sh`, `scripts/simulate.sh`, `scripts/detect-env.sh`, `skills/workflow/SKILL.md`, `agents/requirement-parser.md` -- patterns for script conventions, error handling, and skill structure
+- **STACK.md research:** Concurrent research (2026-03-31) with verified tool versions, PDK file inventory, and Tcl script specifications
+- **PROJECT.md:** v1.1.2 milestone definition and constraints
+- **ASIC design workflow knowledge:** Standard RTL-to-GDS flow stages, SDC conventions, OpenSTA report format (HIGH confidence -- well-established domain)
 
 ---
-*Feature landscape for: ChipAgent v1.1 -- Modular Slash Commands, Workspace Isolation, Environment Detection*
-*Researched: 2026-03-19*
-*Supersedes: v1.0 feature landscape from 2026-03-16*
+*Feature research for: ChipAgent v1.1.2 -- RTL-to-GDS via Yosys + OpenROAD*
+*Researched: 2026-03-31*
