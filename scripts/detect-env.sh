@@ -70,6 +70,38 @@ GPP_INSTALLED="$TOOL_INSTALLED"
 GPP_VERSION="$TOOL_VERSION"
 GPP_PATH="$TOOL_PATH"
 
+detect_tool "yosys" "yosys" "yosys --version 2>&1 | head -1" '[0-9]+\.[0-9]+(\+[0-9]+)?'
+YOSYS_INSTALLED="$TOOL_INSTALLED"
+YOSYS_VERSION="$TOOL_VERSION"
+YOSYS_PATH="$TOOL_PATH"
+
+detect_tool "openroad" "openroad" "openroad -version 2>&1 | head -1" '[0-9]+Q[0-9]'
+OPENROAD_INSTALLED="$TOOL_INSTALLED"
+OPENROAD_VERSION="$TOOL_VERSION"
+OPENROAD_PATH="$TOOL_PATH"
+
+detect_tool "klayout" "klayout" "klayout -v 2>&1 | head -1" '[0-9]+\.[0-9]+\.[0-9]+'
+KLAYOUT_INSTALLED="$TOOL_INSTALLED"
+KLAYOUT_VERSION="$TOOL_VERSION"
+KLAYOUT_PATH="$TOOL_PATH"
+
+# Detect nangate45 PDK
+NANGATE45_INSTALLED="false"
+NANGATE45_DIR=""
+NANGATE45_CANDIDATES=(
+  "${NANGATE45_DIR_OVERRIDE:-}"
+  "${ORFS_DIR:-}/flow/platforms/nangate45"
+  "$HOME/OpenROAD-flow-scripts/flow/platforms/nangate45"
+  "/opt/OpenROAD-flow-scripts/flow/platforms/nangate45"
+)
+for candidate in "${NANGATE45_CANDIDATES[@]}"; do
+  if [ -n "$candidate" ] && [ -f "$candidate/lib/NangateOpenCellLibrary_typical.lib" ]; then
+    NANGATE45_INSTALLED="true"
+    NANGATE45_DIR="$candidate"
+    break
+  fi
+done
+
 # Compute capability flags
 CAN_COMPILE="false"
 CAN_LINT="false"
@@ -85,6 +117,22 @@ fi
 
 if [ "$VERILATOR_INSTALLED" = "true" ] && [ "$MAKE_INSTALLED" = "true" ] && [ "$GPP_INSTALLED" = "true" ]; then
   CAN_SIMULATE="true"
+fi
+
+CAN_SYNTHESIZE="false"
+CAN_PNR="false"
+CAN_GDS="false"
+
+if [ "$YOSYS_INSTALLED" = "true" ] && [ "$NANGATE45_INSTALLED" = "true" ]; then
+  CAN_SYNTHESIZE="true"
+fi
+
+if [ "$OPENROAD_INSTALLED" = "true" ] && [ "$NANGATE45_INSTALLED" = "true" ]; then
+  CAN_PNR="true"
+fi
+
+if [ "$KLAYOUT_INSTALLED" = "true" ] && [ "$NANGATE45_INSTALLED" = "true" ] && [ -f "$NANGATE45_DIR/gds/NangateOpenCellLibrary.gds" ]; then
+  CAN_GDS="true"
 fi
 
 # Get timestamp
@@ -116,6 +164,20 @@ if command -v jq >/dev/null 2>&1; then
     --argjson can_compile "$CAN_COMPILE" \
     --argjson can_lint "$CAN_LINT" \
     --argjson can_simulate "$CAN_SIMULATE" \
+    --argjson yosys_installed "$YOSYS_INSTALLED" \
+    --arg yosys_version "$YOSYS_VERSION" \
+    --arg yosys_path "$YOSYS_PATH" \
+    --argjson openroad_installed "$OPENROAD_INSTALLED" \
+    --arg openroad_version "$OPENROAD_VERSION" \
+    --arg openroad_path "$OPENROAD_PATH" \
+    --argjson klayout_installed "$KLAYOUT_INSTALLED" \
+    --arg klayout_version "$KLAYOUT_VERSION" \
+    --arg klayout_path "$KLAYOUT_PATH" \
+    --argjson nangate45_installed "$NANGATE45_INSTALLED" \
+    --arg nangate45_path "$NANGATE45_DIR" \
+    --argjson can_synthesize "$CAN_SYNTHESIZE" \
+    --argjson can_pnr "$CAN_PNR" \
+    --argjson can_gds "$CAN_GDS" \
     '{
       detected_at: $detected_at,
       tools: {
@@ -124,12 +186,28 @@ if command -v jq >/dev/null 2>&1; then
         scala:     { installed: $scala_installed,     version: $scala_version,     path: $scala_path },
         verilator: { installed: $verilator_installed, version: $verilator_version, path: $verilator_path },
         make:      { installed: $make_installed,      version: $make_version,      path: $make_path },
-        gpp:       { installed: $gpp_installed,       version: $gpp_version,       path: $gpp_path }
+        gpp:       { installed: $gpp_installed,       version: $gpp_version,       path: $gpp_path },
+        yosys:     { installed: $yosys_installed,     version: $yosys_version,     path: $yosys_path },
+        openroad:  { installed: $openroad_installed,  version: $openroad_version,  path: $openroad_path },
+        klayout:   { installed: $klayout_installed,   version: $klayout_version,   path: $klayout_path }
+      },
+      pdk: {
+        nangate45: {
+          installed: $nangate45_installed,
+          path: $nangate45_path,
+          liberty: "lib/NangateOpenCellLibrary_typical.lib",
+          tech_lef: "lef/NangateOpenCellLibrary.tech.lef",
+          cell_lef: "lef/NangateOpenCellLibrary.macro.mod.lef",
+          gds: "gds/NangateOpenCellLibrary.gds"
+        }
       },
       capabilities: {
-        can_compile:  $can_compile,
-        can_lint:     $can_lint,
-        can_simulate: $can_simulate
+        can_compile:    $can_compile,
+        can_lint:       $can_lint,
+        can_simulate:   $can_simulate,
+        can_synthesize: $can_synthesize,
+        can_pnr:        $can_pnr,
+        can_gds:        $can_gds
       }
     }' > "$OUTPUT_FILE"
 else
@@ -142,12 +220,28 @@ else
     "scala":     { "installed": $SCALA_INSTALLED, "version": "$SCALA_VERSION", "path": "$SCALA_PATH" },
     "verilator": { "installed": $VERILATOR_INSTALLED, "version": "$VERILATOR_VERSION", "path": "$VERILATOR_PATH" },
     "make":      { "installed": $MAKE_INSTALLED, "version": "$MAKE_VERSION", "path": "$MAKE_PATH" },
-    "gpp":       { "installed": $GPP_INSTALLED, "version": "$GPP_VERSION", "path": "$GPP_PATH" }
+    "gpp":       { "installed": $GPP_INSTALLED, "version": "$GPP_VERSION", "path": "$GPP_PATH" },
+    "yosys":     { "installed": $YOSYS_INSTALLED, "version": "$YOSYS_VERSION", "path": "$YOSYS_PATH" },
+    "openroad":  { "installed": $OPENROAD_INSTALLED, "version": "$OPENROAD_VERSION", "path": "$OPENROAD_PATH" },
+    "klayout":   { "installed": $KLAYOUT_INSTALLED, "version": "$KLAYOUT_VERSION", "path": "$KLAYOUT_PATH" }
+  },
+  "pdk": {
+    "nangate45": {
+      "installed": $NANGATE45_INSTALLED,
+      "path": "$NANGATE45_DIR",
+      "liberty": "lib/NangateOpenCellLibrary_typical.lib",
+      "tech_lef": "lef/NangateOpenCellLibrary.tech.lef",
+      "cell_lef": "lef/NangateOpenCellLibrary.macro.mod.lef",
+      "gds": "gds/NangateOpenCellLibrary.gds"
+    }
   },
   "capabilities": {
-    "can_compile":  $CAN_COMPILE,
-    "can_lint":     $CAN_LINT,
-    "can_simulate": $CAN_SIMULATE
+    "can_compile":    $CAN_COMPILE,
+    "can_lint":       $CAN_LINT,
+    "can_simulate":   $CAN_SIMULATE,
+    "can_synthesize": $CAN_SYNTHESIZE,
+    "can_pnr":        $CAN_PNR,
+    "can_gds":        $CAN_GDS
   }
 }
 ENDJSON
@@ -201,6 +295,30 @@ else
   echo "g++:        [MISSING]"
 fi
 
+if [ "$YOSYS_INSTALLED" = "true" ]; then
+  echo "Yosys:      [OK] $YOSYS_VERSION"
+else
+  echo "Yosys:      [MISSING]"
+fi
+
+if [ "$OPENROAD_INSTALLED" = "true" ]; then
+  echo "OpenROAD:   [OK] $OPENROAD_VERSION"
+else
+  echo "OpenROAD:   [MISSING]"
+fi
+
+if [ "$KLAYOUT_INSTALLED" = "true" ]; then
+  echo "KLayout:    [OK] $KLAYOUT_VERSION"
+else
+  echo "KLayout:    [MISSING]"
+fi
+
+if [ "$NANGATE45_INSTALLED" = "true" ]; then
+  echo "PDK:        [OK] nangate45 ($NANGATE45_DIR)"
+else
+  echo "PDK:        [MISSING] nangate45"
+fi
+
 echo ""
 echo "Capabilities:"
 if [ "$CAN_COMPILE" = "true" ]; then
@@ -214,9 +332,24 @@ else
   echo "  Lint:     NO"
 fi
 if [ "$CAN_SIMULATE" = "true" ]; then
-  echo "  Simulate: YES"
+  echo "  Simulate:   YES"
 else
-  echo "  Simulate: NO"
+  echo "  Simulate:   NO"
+fi
+if [ "$CAN_SYNTHESIZE" = "true" ]; then
+  echo "  Synthesize: YES"
+else
+  echo "  Synthesize: NO"
+fi
+if [ "$CAN_PNR" = "true" ]; then
+  echo "  PnR:        YES"
+else
+  echo "  PnR:        NO"
+fi
+if [ "$CAN_GDS" = "true" ]; then
+  echo "  GDS:        YES"
+else
+  echo "  GDS:        NO"
 fi
 
 echo ""
