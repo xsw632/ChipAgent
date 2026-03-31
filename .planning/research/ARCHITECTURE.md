@@ -1,619 +1,572 @@
-# Architecture Patterns
+# Architecture: RTL-to-GDS Integration
 
-**Domain:** Modular Slash Commands + Workspace Isolation for ChipAgent v1.1
-**Researched:** 2026-03-19
-**Confidence:** HIGH (based on official Claude Code docs, existing codebase analysis, verified plugin mechanics)
+**Project:** ChipAgent v1.1.2
+**Researched:** 2026-03-31
+**Overall confidence:** HIGH (based on verified ORFS installation, nangate45 platform files, and existing codebase analysis)
 
-## Current Architecture (v1.0 Baseline)
+## Recommendation: Option 1 -- Standalone Tcl Scripts Calling Yosys/OpenROAD Directly
 
-Before defining the target architecture, here is what exists today and what each component does.
+**Generate self-contained Tcl scripts per module, invoke `yosys` and `openroad` directly from bash wrapper scripts.** Use ORFS platform files (LEF, LIB, GDS, tech configs) in-place but do not use the ORFS Makefile.
 
-### Current Component Map
+### Rationale
+
+1. **ORFS complexity is unnecessary for our modules.** ORFS synth.tcl is 249 lines handling hierarchical synthesis, memory mocking, operator wrapping, DFF legalization with multiple strategies, and adder mapping. Chisel-generated modules are small, flat, and single-clock -- a 30-line Yosys script suffices.
+
+2. **ORFS Makefile imposes rigid directory structure.** It creates `results/$PLATFORM/$DESIGN_NAME/$FLOW_VARIANT/` under WORK_HOME. This conflicts with ChipAgent's `workspace/pnr/` convention and would produce deeply nested paths like `workspace/pnr/results/nangate45/ALU8/base/1_synth.odb`.
+
+3. **ORFS env var surface area is massive.** The Makefile and Tcl scripts consume 50+ environment variables (SYNTH_HIERARCHICAL, SYNTH_GUT, SYNTH_MOCK_LARGE_MEMORIES, etc.). Misconfiguring any one causes silent wrong behavior or cryptic Tcl errors.
+
+4. **Standalone Tcl gives full control** over output paths, error messages, and stage sequencing. The generated Tcl persists in `workspace/pnr/` as a debuggable artifact.
+
+5. **Platform files are the real value in ORFS.** The nangate45 directory contains LEF, LIB, GDS, timing constraints, routing configs, and RC extraction rules. These are data files consumed by read commands -- no ORFS Makefile needed to use them.
+
+### Why Not ORFS Makefile (Option 2)
+
+- ORFS is designed for production tapeouts with complex designs. Its 47 Tcl scripts handle edge cases irrelevant to Chisel-generated small modules.
+- The Makefile's stage caching (via .odb files) adds value for iterative design, but ChipAgent runs the full flow once per `/chip-agent:pnr` invocation.
+- Makefile errors are hard for Claude to parse and present actionable guidance.
+- ORFS updates could break our wrapper scripts without warning.
+
+### Why Not Hybrid (Option 3)
+
+- Worst of both worlds: still depends on ORFS platform directory structure, but loses Makefile's dependency tracking.
+- No clear boundary between "our code" and "ORFS code".
+
+---
+
+## Component Architecture
+
+### New Components
+
+| Component | Type | Location | Responsibility |
+|-----------|------|----------|----------------|
+| `synth.sh` | Script | `scripts/synth.sh` | Generate Yosys Tcl, run synthesis |
+| `pnr.sh` | Script | `scripts/pnr.sh` | Generate OpenROAD Tcl, run full PnR |
+| `sdc-generator.md` | Agent | `agents/sdc-generator.md` | Generate SDC constraints from spec.json |
+| `pnr-reporter.md` | Agent | `agents/pnr-reporter.md` | Parse reports into human-readable summary |
+| `pnr/SKILL.md` | Skill | `skills/pnr/SKILL.md` | `/chip-agent:pnr` slash command orchestrator |
+
+### Modified Components
+
+| Component | Change |
+|-----------|--------|
+| `scripts/detect-env.sh` | Add yosys, openroad detection; detect ORFS platform path |
+| `agents/project-init.md` | Create `workspace/pnr/` subdirectories |
+| `.chipagent/env.json` | Add `can_synthesize`, `can_pnr` capabilities; `orfs_platform_dir` path |
+
+### Unchanged Components
+
+All existing scripts (compile.sh, lint.sh, simulate.sh), skills (generate, workflow, compile, lint, simulate, debug), and agents (requirement-parser, chisel-generator, testbench-generator, debug-analyzer) remain untouched.
+
+---
+
+## Directory Structure
+
+### Per-Module Workspace Extension
 
 ```
-ChipAgent/                         (PLUGIN_ROOT)
-  .claude-plugin/plugin.json       Plugin manifest (name: chip-agent)
-  skills/
-    generate.md                    Monolithic skill = /chip-agent:generate
-  agents/
-    requirement-parser.md          NL -> JSON spec
-    chisel-generator.md            JSON spec -> Chisel Scala source
-    testbench-generator.md         JSON spec -> C++ testbench
-  hooks/
-    hooks.json                     PostToolUse: Write|Edit -> compile.sh
-  scripts/
-    compile.sh                     sbt -> generated/ (flat)
-    lint.sh                        verilator --lint-only on generated/*.v
-    simulate.sh                    verilator --cc --exe -> sim/obj_dir/
-    setup.sh                       Check prerequisites, pre-download deps
-  chisel-project/
-    build.sbt                      Chisel 3.6.1, Scala 2.13.10
-    src/main/scala/chipagent/
-      Generate.scala               Match on module name, emit to --target-dir
-      ALU.scala                    Example module
-      Decoder3to8.scala            Example module
-      TrivialModule.scala          Verification module
-  generated/                       FLAT -- all .v, .fir, .anno.json files
-  sim/
-    tb_ALU.cpp                     FLAT -- all testbenches
-    tb_Decoder3to8.cpp
-    obj_dir/                       Verilator build artifacts (shared)
+MyDesign/<Module>/workspace/
+  generated/            # (existing) Chisel-compiled Verilog
+  sim/                  # (existing) simulation artifacts
     logs/
-      sim_result.log               SINGLE file -- last module's results only
-```
-
-### Current Problems Driving v1.1
-
-| Problem | Impact | Root Cause |
-|---------|--------|------------|
-| Monolithic generate.md (170 lines) | All 7 pipeline stages in one prompt; wastes context on stages not currently executing | No skill decomposition |
-| Flat generated/ directory | ALU.v and Decoder3to8.v collide; lint-warnings.log is overwritten per run | No per-module output isolation |
-| Single sim_result.log | Only records last module's simulation; no history | No per-module sim isolation |
-| shared obj_dir/ | Verilator build artifacts from Module A pollute Module B's build | Single obj_dir path |
-| Generate.scala hardcodes modules | match statement requires manual editing for each new module | No dynamic module discovery |
-| No environment detection | setup.sh checks versions but results are not persisted or used by skills | No /initialize command |
-| Hook triggers compile on ALL writes | Writing a testbench .cpp triggers sbt compile (wasteful) | Matcher too broad (Write\|Edit) |
-
-## Recommended Architecture (v1.1 Target)
-
-### Architecture Diagram
-
-```
-User invokes /chip-agent:generate "8-bit ALU with ADD, SUB"
-    |
-    v
-[Skill: generate/SKILL.md]  (orchestrator -- thin, spawns subagents)
-    |
-    |--- spawns ---> [Skill: requirement-parser] --- returns JSON spec
-    |                     |
-    |      (spec written to workspace/<Module>/spec.json)
-    |
-    |--- user confirms spec (AskUserQuestion) ---
-    |
-    |--- spawns ---> [Skill: chisel-generate]
-    |                     |
-    |      (reads workspace/<Module>/spec.json)
-    |      (writes chisel-project/src/main/scala/chipagent/<Module>.scala)
-    |      (updates Generate.scala)
-    |
-    |--- hook auto-triggers compile.sh --module <Module> --target-dir workspace/<Module>/generated/
-    |
-    |--- invokes ---> /chip-agent:lint <Module>
-    |                     |
-    |      (reads workspace/<Module>/generated/*.v)
-    |      (writes workspace/<Module>/lint-warnings.log)
-    |
-    |--- invokes ---> /chip-agent:testbench <Module>
-    |                     |
-    |      (reads workspace/<Module>/spec.json + generated/<Module>.v)
-    |      (writes workspace/<Module>/sim/tb_<Module>.cpp)
-    |
-    |--- invokes ---> /chip-agent:simulate <Module>
-    |                     |
-    |      (writes workspace/<Module>/sim/obj_dir/, sim_result.log)
-    |
-    v
-Report (reads workspace/<Module>/sim/sim_result.log)
-```
-
-### New Component Map
-
-```
-ChipAgent/                                (PLUGIN_ROOT)
-  .claude-plugin/plugin.json              Plugin manifest
-  skills/
-    generate/
-      SKILL.md                            /chip-agent:generate -- orchestrator
-    requirement-parser/
-      SKILL.md                            /chip-agent:requirement-parser
-    chisel-generate/
-      SKILL.md                            /chip-agent:chisel-generate
-    lint/
-      SKILL.md                            /chip-agent:lint
-    testbench/
-      SKILL.md                            /chip-agent:testbench
-    simulate/
-      SKILL.md                            /chip-agent:simulate
-    initialize/
-      SKILL.md                            /chip-agent:initialize
-  agents/
-    requirement-parser.md                 (UNCHANGED -- subagent definition)
-    chisel-generator.md                   (UNCHANGED -- subagent definition)
-    testbench-generator.md                (UNCHANGED -- subagent definition)
-  hooks/
-    hooks.json                            (MODIFIED -- narrower matcher)
-  scripts/
-    compile.sh                            (MODIFIED -- accepts --module flag)
-    lint.sh                               (MODIFIED -- accepts module workspace path)
-    simulate.sh                           (MODIFIED -- accepts module workspace path)
-    setup.sh                              (UNCHANGED)
-    initialize.sh                         (NEW -- writes env.json)
-  chisel-project/                         (build.sbt and project/ UNCHANGED)
-    src/main/scala/chipagent/
-      Generate.scala                      (MODIFIED -- dynamic module, target-dir)
-      ALU.scala                           (UNCHANGED -- existing modules stay)
-      Decoder3to8.scala                   (UNCHANGED)
-      TrivialModule.scala                 (UNCHANGED)
-  workspace/                              (NEW -- per-module isolation root)
-    <ModuleName>/
-      spec.json                           Parsed requirement spec
-      generated/                          Module's Verilog output
-        <ModuleName>.v
-        <ModuleName>.fir
-      sim/
-        tb_<ModuleName>.cpp               Module's testbench
-        obj_dir/                           Module's Verilator build
-      logs/
-        sim_result.log                    Module's simulation results
-        lint-warnings.log                 Module's lint warnings
-  generated/                              (KEPT for backward compat, gitignored)
-  sim/                                    (KEPT for backward compat)
-```
-
-### Component Boundaries
-
-| Component | Type | Status | Responsibility | Communicates With |
-|-----------|------|--------|---------------|-------------------|
-| `skills/generate/SKILL.md` | Skill | MODIFIED | Thin orchestrator: captures NL description, invokes sub-skills in sequence, handles error/retry logic | All other skills via invocation |
-| `skills/requirement-parser/SKILL.md` | Skill | NEW | Accepts NL description, delegates to requirement-parser agent, writes spec.json to workspace | requirement-parser agent, workspace/ |
-| `skills/chisel-generate/SKILL.md` | Skill | NEW | Reads spec.json, delegates to chisel-generator agent, writes .scala files | chisel-generator agent, workspace/ |
-| `skills/lint/SKILL.md` | Skill | NEW | Runs lint.sh on module's generated/ dir, reports results | scripts/lint.sh, workspace/ |
-| `skills/testbench/SKILL.md` | Skill | NEW | Reads spec.json + .v file, delegates to testbench-generator agent | testbench-generator agent, workspace/ |
-| `skills/simulate/SKILL.md` | Skill | NEW | Runs simulate.sh on module's workspace, reports results | scripts/simulate.sh, workspace/ |
-| `skills/initialize/SKILL.md` | Skill | NEW | Detects tool versions, writes workspace/env.json | scripts/initialize.sh |
-| `agents/requirement-parser.md` | Agent | UNCHANGED | Parses NL into JSON spec | Invoked by requirement-parser skill |
-| `agents/chisel-generator.md` | Agent | UNCHANGED | Generates Chisel source from JSON spec | Invoked by chisel-generate skill |
-| `agents/testbench-generator.md` | Agent | UNCHANGED | Generates C++ testbench from spec + Verilog | Invoked by testbench skill |
-| `hooks/hooks.json` | Hook | MODIFIED | PostToolUse on .scala Write/Edit only | scripts/compile.sh |
-| `scripts/compile.sh` | Script | MODIFIED | Accepts --module and --target-dir flags | sbt, Generate.scala |
-| `scripts/lint.sh` | Script | MODIFIED | Accepts path to module's generated/ dir | verilator |
-| `scripts/simulate.sh` | Script | MODIFIED | Accepts path to module's workspace/ | verilator |
-| `scripts/initialize.sh` | Script | NEW | Checks sbt, Scala, Java, Verilator versions; writes JSON | Invoked by initialize skill |
-| `chisel-project/.../Generate.scala` | Scala | MODIFIED | Accepts --module and --target-dir from CLI args | sbt runMain |
-| `workspace/<Module>/spec.json` | Data | NEW | Spec file as inter-stage communication contract | Read by all downstream skills |
-| `workspace/<Module>/` | Directory | NEW | Per-module isolation boundary | All pipeline stages |
-
-### Data Flow Between Separate Commands
-
-When pipeline stages are separate slash commands, they need a shared communication mechanism. The spec.json file in `workspace/<Module>/` serves as this contract.
-
-```
-/chip-agent:requirement-parser "8-bit ALU..."
-    |
-    | WRITES: workspace/ALU/spec.json
-    |
-    v
-/chip-agent:chisel-generate ALU
-    |
-    | READS:  workspace/ALU/spec.json
-    | WRITES: chisel-project/src/main/scala/chipagent/ALU.scala
-    |         chisel-project/src/main/scala/chipagent/Generate.scala
-    |
-    | HOOK TRIGGERS: compile.sh --module ALU --target-dir workspace/ALU/generated
-    |
-    | PRODUCES: workspace/ALU/generated/ALU.v
-    |
-    v
-/chip-agent:lint ALU
-    |
-    | READS:  workspace/ALU/generated/ALU.v
-    | WRITES: workspace/ALU/logs/lint-warnings.log
-    |
-    v
-/chip-agent:testbench ALU
-    |
-    | READS:  workspace/ALU/spec.json
-    |         workspace/ALU/generated/ALU.v
-    | WRITES: workspace/ALU/sim/tb_ALU.cpp
-    |
-    v
-/chip-agent:simulate ALU
-    |
-    | READS:  workspace/ALU/generated/ALU.v
-    |         workspace/ALU/sim/tb_ALU.cpp
-    | WRITES: workspace/ALU/sim/obj_dir/ (build artifacts)
-    |         workspace/ALU/logs/sim_result.log
-    |
-    v
-Report (inline in generate orchestrator)
-    |
-    | READS:  workspace/ALU/logs/sim_result.log
-    |         workspace/ALU/logs/lint-warnings.log
-```
-
-**Key principle:** Each skill reads from workspace/, writes to workspace/. The module name is the partition key. No skill needs to know where other skills' output goes -- they all follow the `workspace/<Module>/` convention.
-
-## Detailed Design Decisions
-
-### 1. How to Split generate.md Into Multiple Skill Files
-
-**Decision:** Convert skills/ from flat files to skill directories with SKILL.md.
-
-**Current state:** `skills/generate.md` is a flat command file (170 lines), which is the legacy format. Claude Code merged commands and skills into a unified system where `skills/<name>/SKILL.md` is the canonical format.
-
-**Target state:** Seven skill directories, each with a SKILL.md file.
-
-**Sharing common logic:** Skills do NOT share code the way traditional software modules do. Instead:
-
-1. **Agents provide reusable capability.** The requirement-parser, chisel-generator, and testbench-generator agents remain unchanged in `agents/`. Multiple skills can invoke the same agent.
-2. **Scripts provide reusable operations.** compile.sh, lint.sh, simulate.sh are invoked by multiple skills. Scripts are the "shared library" equivalent.
-3. **Workspace conventions provide shared state.** All skills read/write from `workspace/<Module>/` using the same directory structure. The spec.json schema IS the interface contract.
-4. **The generate skill is a thin orchestrator.** It invokes sub-skills in sequence but does not contain their logic. It handles retry counts, error aggregation, and user confirmation.
-
-**Skill decomposition table:**
-
-| Skill | Frontmatter | Content Focus |
-|-------|-------------|---------------|
-| generate | `disable-model-invocation: true` | Sequential invocation of sub-skills, retry logic, user confirmation |
-| requirement-parser | `disable-model-invocation: true` | Accept NL, spawn parser agent, validate JSON, write spec.json |
-| chisel-generate | `disable-model-invocation: true` | Read spec.json, spawn generator agent, validate Scala output |
-| lint | `disable-model-invocation: true` | Run lint.sh with workspace path, report results |
-| testbench | `disable-model-invocation: true` | Read spec.json, spawn testbench agent, validate output |
-| simulate | `disable-model-invocation: true` | Run simulate.sh with workspace path, report results |
-| initialize | `disable-model-invocation: true` | Run initialize.sh, report tool versions |
-
-All skills use `disable-model-invocation: true` because they are pipeline actions with side effects -- Claude should not auto-trigger them based on conversation context.
-
-### 2. How workspace/ Relates to chisel-project/src/ and generated/ and sim/
-
-**Decision:** workspace/ is the per-module isolation layer AROUND the existing directories.
-
-```
-workspace/<Module>/
-    spec.json              NEW -- parsed requirements
-    generated/             REPLACES generated/ (per-module)
-      <Module>.v
-      <Module>.fir
-      <Module>.anno.json
-    sim/
-      tb_<Module>.cpp      REPLACES sim/tb_*.cpp (per-module)
-      obj_dir/             REPLACES sim/obj_dir/ (per-module)
+  pnr/                  # (NEW) synthesis + place-and-route artifacts
+    constraint.sdc      # Generated by sdc-generator agent
+    synth.tcl           # Generated by synth.sh (debuggable artifact)
+    pnr.tcl             # Generated by pnr.sh (debuggable artifact)
+    results/
+      synth.v           # Gate-level netlist from Yosys
+      synth_stat.txt    # Yosys statistics report
+      final.def         # Routed DEF
+      final.v           # Gate-level Verilog (post-route)
+      final.spef        # Parasitic extraction
+      final.gds         # GDS-II layout (via KLayout or OpenROAD)
+    reports/
+      timing.rpt        # STA: WNS, TNS, critical paths
+      power.rpt         # Power: total, leakage, dynamic
+      area.rpt          # Area: cell count, utilization
+      pnr_summary.log   # Human-readable summary (generated by reporter)
     logs/
-      sim_result.log       REPLACES sim/logs/sim_result.log (per-module)
-      lint-warnings.log    REPLACES generated/lint-warnings.log (per-module)
+      synth.log         # Yosys stdout/stderr
+      pnr.log           # OpenROAD stdout/stderr
 ```
 
-**What stays in original locations:**
+### Why This Layout
 
-| Location | Contents | Why |
-|----------|----------|-----|
-| `chisel-project/src/main/scala/chipagent/*.scala` | Chisel source files | sbt requires them here. Cannot move without restructuring build.sbt |
-| `chisel-project/build.sbt` | Build config | sbt convention |
-| `generated/` (top-level) | Kept but gitignored | Backward compatibility for manual `scripts/compile.sh` runs without --target-dir |
-| `sim/` (top-level) | Kept but gitignored | Backward compatibility for manual simulation runs |
+- Follows existing `workspace/` flat subdirectory convention (`generated/`, `sim/`, now `pnr/`).
+- `synth.tcl` and `pnr.tcl` persist as debuggable artifacts -- if a stage fails, the user or Claude can inspect the exact Tcl that ran.
+- `results/`, `reports/`, `logs/` mirror the separation in ORFS but with simpler flat structure.
 
-**Critical constraint:** Chisel source files MUST remain in `chisel-project/src/main/scala/chipagent/` because sbt's source root is configured there. The workspace/ directory does NOT hold source code -- it holds compilation outputs and spec metadata.
+---
 
-**Relationship diagram:**
+## Data Flow
 
 ```
-chisel-project/src/.../chipagent/ALU.scala
-         |
-         | (sbt compile, --target-dir workspace/ALU/generated)
-         v
-workspace/ALU/generated/ALU.v
-         |
-         | (verilator --cc)
-         v
-workspace/ALU/sim/obj_dir/VALU
-         |
-         | (run binary)
-         v
-workspace/ALU/logs/sim_result.log
+                    EXISTING PIPELINE (unchanged)
+                    ==============================
+NL description
+  |
+  v
+[requirement-parser]  --> spec.json
+  |
+  v
+[chisel-generator]    --> ALU8.scala
+  |
+  v
+[compile.sh]          --> workspace/generated/ALU8.v
+  |
+  v
+[lint.sh]             --> lint-clean Verilog
+  |
+  v
+[testbench-generator] --> workspace/sim/tb_ALU8.cpp
+  |
+  v
+[simulate.sh]         --> workspace/sim/logs/sim_result.log, ALU8.vcd
+
+
+                    NEW PNR PIPELINE
+                    =================
+workspace/generated/ALU8.v   (input: lint-clean Verilog)
+  +
+spec.json                    (input: module specification)
+  |
+  v
+[sdc-generator agent]  --> workspace/pnr/constraint.sdc
+  |
+  v
+[synth.sh]              --> workspace/pnr/synth.tcl (generated)
+  |                         workspace/pnr/results/synth.v
+  |                         workspace/pnr/results/synth_stat.txt
+  |                         workspace/pnr/logs/synth.log
+  v
+[pnr.sh]                --> workspace/pnr/pnr.tcl (generated)
+  |                         workspace/pnr/results/final.def
+  |                         workspace/pnr/results/final.gds
+  |                         workspace/pnr/reports/timing.rpt
+  |                         workspace/pnr/reports/power.rpt
+  |                         workspace/pnr/reports/area.rpt
+  |                         workspace/pnr/logs/pnr.log
+  v
+[pnr-reporter agent]    --> workspace/pnr/reports/pnr_summary.log
 ```
 
-### 3. How Generate.scala Must Change
+### Key Data Handoff Points
 
-**Current state:** Generate.scala uses a `match` statement to map module names to classes. Each new module requires manually adding a case to this match.
+1. **Verilog input**: `workspace/generated/<Module>.v` -- already produced by compile.sh.
 
-```scala
-// CURRENT
-val module: () => Module = moduleName match {
-  case "TrivialModule" => () => new TrivialModule
-  case "ALU"           => () => new ALU
-  case "Decoder3to8"   => () => new Decoder3to8
-  case other => throw new IllegalArgumentException(...)
+2. **SDC file**: `workspace/pnr/constraint.sdc` -- generated by sdc-generator agent from spec.json. Contains clock definition, I/O delays. For combinational modules, uses virtual clock.
+
+3. **Platform files**: Read directly from ORFS installation at `$ORFS_PLATFORM_DIR/` (detected by detect-env.sh). Includes:
+   - `lef/NangateOpenCellLibrary.tech.lef` (technology LEF)
+   - `lef/NangateOpenCellLibrary.macro.mod.lef` (standard cell LEF)
+   - `lib/NangateOpenCellLibrary_typical.lib` (timing/power library)
+   - `gds/*.gds` (cell GDS for layout)
+   - `cells_latch.v`, `cells_clkgate.v` (technology mapping files)
+   - `setRC.tcl`, `fastroute.tcl`, `tapcell.tcl` (flow configs)
+
+4. **Synthesis output**: `workspace/pnr/results/synth.v` consumed by pnr.sh.
+
+5. **PnR outputs**: DEF, GDS, SPEF, reports in `workspace/pnr/results/` and `workspace/pnr/reports/`.
+
+---
+
+## Script Design
+
+### `scripts/synth.sh` -- Yosys Synthesis
+
+Follows the exact pattern of compile.sh (source _common.sh, 3-mode path resolution, exit code handling).
+
+**Generated Tcl structure (~30 lines):**
+
+```tcl
+# Read technology
+read_liberty -lib <LIB_FILE>
+
+# Read design
+read_verilog <VERILOG_FILE>
+
+# Synthesize
+synth -top <MODULE> -flatten
+
+# Technology mapping
+dfflibmap -liberty <LIB_FILE>
+abc -liberty <LIB_FILE> [-D <CLOCK_PERIOD_PS>]
+
+# Tie cells
+hilomap -singleton \
+    -hicell LOGIC1_X1 Z \
+    -locell LOGIC0_X1 Z
+
+# Buffer insertion
+insbuf -buf BUF_X1 A Z
+splitnets
+opt_clean -purge
+
+# Reports
+tee -o <REPORTS_DIR>/synth_check.txt check
+tee -o <REPORTS_DIR>/synth_stat.txt stat -liberty <LIB_FILE>
+
+# Write netlist
+write_verilog -noattr -noexpr -nohex -nodec <RESULTS_DIR>/synth.v
+```
+
+**Why this is enough:** Chisel modules are flat (no hierarchy to manage), use standard DFFs (no latch/memory inference), and target a single standard cell library. The complex ORFS logic for hierarchical synthesis, memory mocking, and operator wrapping is irrelevant.
+
+### `scripts/pnr.sh` -- Full Place-and-Route
+
+**Generated Tcl structure (~80 lines):**
+
+```tcl
+# --- Read inputs ---
+read_liberty <LIB_FILE>
+read_lef <TECH_LEF>
+read_lef <SC_LEF>
+read_verilog <SYNTH_V>
+link_design <MODULE>
+read_sdc <SDC_FILE>
+
+# --- RC parasitics model ---
+source <PLATFORM_DIR>/setRC.tcl
+
+# --- Floorplan ---
+initialize_floorplan -utilization <UTIL> -site FreePDK45_38x28_10R_NP_162NW_34O
+source <PLATFORM_DIR>/make_tracks.tcl
+place_pins -hor_layers metal3 -ver_layers metal2
+
+# --- Power grid ---
+source <PLATFORM_DIR>/tapcell.tcl
+source <PLATFORM_DIR>/grid_strategy-M1-M4-M7.tcl
+
+# --- Placement ---
+global_placement -density <DENSITY>
+estimate_parasitics -placement
+buffer_ports
+repair_design
+detailed_placement
+
+# --- CTS (conditional: only if real clock) ---
+if { <HAS_CLOCK> } {
+    clock_tree_synthesis
+    set_propagated_clock [all_clocks]
+    estimate_parasitics -placement
+    repair_clock_nets
+    repair_timing
+    detailed_placement
 }
+
+# --- Routing ---
+source <PLATFORM_DIR>/fastroute.tcl
+set_routing_layers -signal metal2-metal10 -clock metal4-metal10
+global_route
+detailed_route -bottom_routing_layer metal2 -top_routing_layer metal10
+
+# --- Fill ---
+filler_placement <FILL_CELLS>
+
+# --- Extraction + Reports ---
+define_process_corner -ext_model_index 0 X
+extract_parasitics -ext_model_file <RCX_RULES>
+write_spef <RESULTS_DIR>/final.spef
+read_spef <RESULTS_DIR>/final.spef
+
+report_checks -path_delay min_max -format full_clock_expanded > <REPORTS_DIR>/timing.rpt
+report_power > <REPORTS_DIR>/power.rpt
+report_design_area > <REPORTS_DIR>/area.rpt
+
+# --- Output ---
+write_def <RESULTS_DIR>/final.def
+write_verilog -remove_cells {TAPCELL_X1 FILLCELL_X1 FILLCELL_X2 FILLCELL_X4 FILLCELL_X8 FILLCELL_X16 FILLCELL_X32} <RESULTS_DIR>/final.v
 ```
 
-**Target state:** Generate.scala already accepts `--module` and `--target-dir` flags. The main change needed is making the module registry extensible without manual editing.
+**Single OpenROAD session:** All PnR stages run in one `openroad` invocation. The design database stays in memory -- no ODB serialization between stages. This is faster and simpler for small designs.
 
-**Approach: Keep the match statement, but have the chisel-generator agent update it.**
+### Platform Path Resolution
 
-This is already how the system works -- the chisel-generator agent rewrites Generate.scala with the new module added to the match statement. The only actual change is ensuring `--target-dir` points to the workspace directory.
-
-The compile.sh script currently hardcodes `OUTPUT_DIR="$PLUGIN_ROOT/generated"`. It must be changed to accept an optional `--target-dir` argument:
-
-```bash
-# MODIFIED compile.sh
-MODULE="${1:-TrivialModule}"
-OUTPUT_DIR="${2:-$PLUGIN_ROOT/generated}"
-
-# ... rest of script ...
-$TIMEOUT_CMD sbt --batch "runMain chipagent.Generate --module $MODULE --target-dir $OUTPUT_DIR"
-```
-
-Generate.scala already handles `--target-dir` correctly. The change is in how compile.sh passes it.
-
-### 4. How Scripts Must Change for Workspace Paths
-
-**compile.sh changes:**
-
-```bash
-# Accept: compile.sh [MODULE_NAME] [TARGET_DIR]
-# Default: compile.sh TrivialModule $PLUGIN_ROOT/generated
-MODULE="${1:-TrivialModule}"
-OUTPUT_DIR="${2:-$PLUGIN_ROOT/generated}"
-mkdir -p "$OUTPUT_DIR"
-sbt --batch "runMain chipagent.Generate --module $MODULE --target-dir $OUTPUT_DIR"
-```
-
-**lint.sh changes:**
-
-```bash
-# Accept: lint.sh [GENERATED_DIR]
-# Default: lint.sh $PLUGIN_ROOT/generated
-GENERATED_DIR="${1:-$PLUGIN_ROOT/generated}"
-# Rest of script uses GENERATED_DIR instead of hardcoded path
-# Also writes lint-warnings.log TO the generated dir's parent /logs/
-WARNINGS_LOG="$(dirname "$GENERATED_DIR")/logs/lint-warnings.log"
-```
-
-**simulate.sh changes:**
-
-```bash
-# Accept: simulate.sh <MODULE_NAME> [WORKSPACE_DIR]
-# Default: simulate.sh ALU (uses legacy paths)
-MODULE="${1:-ALU}"
-WORKSPACE_DIR="${2:-}"
-
-if [ -n "$WORKSPACE_DIR" ]; then
-  GENERATED_DIR="$WORKSPACE_DIR/generated"
-  SIM_DIR="$WORKSPACE_DIR/sim"
-  LOG_DIR="$WORKSPACE_DIR/logs"
-else
-  # Legacy mode -- use flat directories
-  GENERATED_DIR="$PLUGIN_ROOT/generated"
-  SIM_DIR="$PLUGIN_ROOT/sim"
-  LOG_DIR="$SIM_DIR/logs"
-fi
-```
-
-**Backward compatibility:** All scripts default to the original flat directory paths when called without workspace arguments. This preserves the ability to run `scripts/compile.sh` manually.
-
-### 5. Hook Refinement
-
-**Current problem:** The PostToolUse hook fires on ANY Write|Edit, including testbench .cpp files. This triggers sbt compilation unnecessarily when writing testbenches.
-
-**Solution:** Narrow the hook matcher OR use a validation script.
-
-Claude Code hooks do not support file-path-based matchers -- the matcher field matches tool names, not file paths. However, the hook command receives the tool input as JSON via stdin, which includes the file path. A wrapper script can check the file extension:
+ORFS platform path is detected by `detect-env.sh` and stored in `env.json`:
 
 ```json
 {
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/auto-compile.sh",
-            "timeout": 120
-          }
-        ]
-      }
-    ]
+  "tools": {
+    "yosys":    { "installed": true, "version": "0.53", "path": "/usr/bin/yosys" },
+    "openroad": { "installed": true, "version": "v2.0-19691-g...", "path": "/usr/bin/openroad" }
+  },
+  "paths": {
+    "orfs_platform_dir": "/home/mingzhenjia/OpenROAD-flow-scripts/flow/platforms/nangate45"
+  },
+  "capabilities": {
+    "can_synthesize": true,
+    "can_pnr": true
   }
 }
 ```
 
-Where `auto-compile.sh` checks the file path from stdin:
+Scripts read `orfs_platform_dir` from env.json or accept `ORFS_PLATFORM_DIR` env var override, consistent with how `CLAUDE_PLUGIN_ROOT` works today.
+
+The detection logic:
+1. Check if `yosys` and `openroad` are on PATH
+2. Search for ORFS platform dir at common locations: `~/OpenROAD-flow-scripts/flow/platforms/nangate45/`, `/opt/orfs/...`
+3. Validate by checking for `config.mk` and `lib/NangateOpenCellLibrary_typical.lib`
+
+---
+
+## Agent Design
+
+### `agents/sdc-generator.md` -- SDC Constraint Generation
+
+**Input:** `spec.json` (already exists from requirement-parser), `workspace/generated/<Module>.v`
+
+**Logic:**
+- Parse spec.json for clock field (name, period)
+- If no clock in spec: grep Verilog for `input.*clk` or `input.*clock` pattern
+- If clock found: generate real clock SDC with input/output delays at 20% of period
+- If no clock found: generate virtual clock SDC with `set_max_delay` for combinational path
+
+**Sequential module SDC:**
+```tcl
+create_clock -name clk -period 10.0 [get_ports clk]
+set_input_delay  -clock clk 2.0 [all_inputs]
+set_output_delay -clock clk 2.0 [all_outputs]
+```
+
+**Combinational module SDC:**
+```tcl
+create_clock -name virtual_clk -period 2.0
+set_input_delay  -clock virtual_clk 0.0 [all_inputs]
+set_output_delay -clock virtual_clk 0.0 [all_outputs]
+set_max_delay 2.0 [all_outputs]
+```
+
+**Output:** `workspace/pnr/constraint.sdc`
+
+### `agents/pnr-reporter.md` -- Report Extraction
+
+**Input:** Report files in `workspace/pnr/reports/`
+
+**Extracts from timing.rpt:**
+- WNS (worst negative slack)
+- TNS (total negative slack)
+- Critical path endpoints
+
+**Extracts from power.rpt:**
+- Total power (mW)
+- Leakage vs dynamic breakdown
+
+**Extracts from area.rpt:**
+- Cell count
+- Total area (um^2)
+- Utilization percentage
+
+**Output:** `workspace/pnr/reports/pnr_summary.log`
+
+Format (mirrors sim_result.log style):
+```
+=== PnR Summary: ALU8 (nangate45) ===
+Timing:  MET  (WNS: +0.42 ns, TNS: 0.00 ns)
+Area:    234 cells, 1456.3 um^2 (38.2% utilization)
+Power:   0.83 mW total (0.71 mW dynamic, 0.12 mW leakage)
+DRC:     0 violations
+Outputs: workspace/pnr/results/final.def
+         workspace/pnr/results/final.gds
+```
+
+---
+
+## Skill Design: `/chip-agent:pnr`
+
+### `skills/pnr/SKILL.md` Pipeline
+
+1. **Prerequisite check**: Verify `workspace/generated/<Module>.v` exists and is lint-clean. If not, tell user to run `/chip-agent:workflow` or `/chip-agent:compile` first.
+
+2. **Environment check**: Read `.chipagent/env.json`, verify `can_pnr` is true. If not, guide user to install yosys/openroad.
+
+3. **SDC generation**: Invoke sdc-generator agent. Reads spec.json and Verilog to produce constraint.sdc.
+
+4. **Synthesis**: Run `scripts/synth.sh <Module>`. On failure, present last 50 lines of synth.log with diagnosis.
+
+5. **Place-and-Route**: Run `scripts/pnr.sh <Module>`. On failure, present log with stage identification.
+
+6. **Report**: Invoke pnr-reporter agent. Present pnr_summary.log to user.
+
+### NOT Part of Default Workflow
+
+The existing `/chip-agent:workflow` ends at simulation. PnR is a separate command (`/chip-agent:pnr`) because:
+- PnR takes minutes vs seconds for simulation
+- PnR requires additional tools (yosys, openroad) not needed for functional verification
+- Users iterate on RTL design before committing to physical implementation
+
+---
+
+## Error Handling Strategy
+
+### Stage Failure Identification
 
 ```bash
-#!/usr/bin/env bash
-INPUT=$(cat)
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
+# In synth.sh:
+EXIT_CODE=0
+yosys "$PNR_DIR/synth.tcl" > "$PNR_DIR/logs/synth.log" 2>&1 || EXIT_CODE=$?
 
-# Only compile if a Scala file was modified
-if [[ "$FILE_PATH" == *.scala ]]; then
-  exec "${CLAUDE_PLUGIN_ROOT}/scripts/compile.sh"
+if [ "$EXIT_CODE" -ne 0 ]; then
+    echo "SYNTHESIS FAILED (exit code $EXIT_CODE)"
+    echo "---"
+    tail -50 "$PNR_DIR/logs/synth.log"
+    echo "---"
+    echo "Full log: $PNR_DIR/logs/synth.log"
+    echo "Tcl script: $PNR_DIR/synth.tcl"
+    exit 1
 fi
-# Silently exit for non-Scala files
-exit 0
+
+# Verify output
+if [ ! -f "$PNR_DIR/results/synth.v" ]; then
+    echo "SYNTHESIS FAILED: No netlist produced (yosys exited 0 but no synth.v)"
+    cat "$PNR_DIR/logs/synth.log"
+    exit 1
+fi
 ```
 
-This prevents wasteful sbt invocations when writing testbenches or spec files.
+### Common Failure Modes and Guidance
 
-## Patterns to Follow
+| Failure | Stage | Detection | Actionable Guidance |
+|---------|-------|-----------|---------------------|
+| Module not found | Synthesis | "ERROR: Module not found" in log | Check DESIGN_NAME matches Verilog module name |
+| Missing clock port | Synthesis | abc timing violation | SDC clock port must match Verilog port name |
+| Cannot init floorplan | PnR | "Cannot fit" in log | Reduce CORE_UTILIZATION or increase die area |
+| Placement overflow | PnR | Density error | Reduce PLACE_DENSITY |
+| Global route congestion | PnR | GRC overflow | Reduce utilization or adjust routing layers |
+| Detailed route DRC | PnR | DRC count > 0 | Reduce density, may need manual intervention |
+| Timing violation | PnR | WNS < 0 in timing.rpt | Increase clock period in SDC |
 
-### Pattern 1: Workspace as Isolation Boundary
-
-**What:** Every module gets its own directory under `workspace/`. All pipeline artifacts for that module live within that boundary.
-
-**When:** Always -- for every pipeline run.
-
-**Why:** Prevents cross-module contamination. Module A's lint-warnings.log does not overwrite Module B's. Each module's sim_result.log is preserved for later comparison.
-
-```
-workspace/ALU/
-  spec.json
-  generated/ALU.v
-  sim/tb_ALU.cpp
-  sim/obj_dir/
-  logs/sim_result.log
-  logs/lint-warnings.log
-
-workspace/Decoder3to8/
-  spec.json
-  generated/Decoder3to8.v
-  sim/tb_Decoder3to8.cpp
-  sim/obj_dir/
-  logs/sim_result.log
-  logs/lint-warnings.log
-```
-
-### Pattern 2: Spec-File as Inter-Stage Contract
-
-**What:** The JSON spec file (`workspace/<Module>/spec.json`) is the communication medium between pipeline stages when they are separate slash commands.
-
-**When:** Between requirement-parser output and all downstream consumers (chisel-generate, testbench, simulate).
-
-**Why:** Avoids passing large JSON blobs through Claude's conversation context. Each skill reads the file directly using the Read tool. The spec schema is already well-defined by the requirement-parser agent.
-
-```
-requirement-parser ----writes---> workspace/ALU/spec.json
-chisel-generate    ----reads----> workspace/ALU/spec.json
-testbench          ----reads----> workspace/ALU/spec.json
-```
-
-### Pattern 3: Thin Orchestrator Skill
-
-**What:** The generate skill becomes a thin orchestrator that invokes sub-skills in sequence, handles retries, and manages user interaction. It does NOT contain pipeline stage logic.
-
-**When:** Always -- this is the main entry point.
-
-**Template:**
-
-```markdown
----
-name: generate
-description: Turn a natural language hardware description into simulation-verified Verilog
-disable-model-invocation: true
 ---
 
-Given the description "$ARGUMENTS", execute this pipeline:
+## Nangate45 Platform Constants
 
-1. Create workspace directory: workspace/<ModuleName>/
-2. Invoke /chip-agent:requirement-parser with the description
-   - Writes workspace/<ModuleName>/spec.json
-3. Present spec to user for confirmation
-4. Invoke /chip-agent:chisel-generate <ModuleName>
-   - Reads spec.json, writes Scala source, auto-compiles via hook
-5. Invoke /chip-agent:lint <ModuleName>
-   - If errors: fix Chisel source, retry (max 3)
-6. Invoke /chip-agent:testbench <ModuleName>
-7. Invoke /chip-agent:simulate <ModuleName>
-   - If errors: fix testbench, retry (max 3)
-8. Report results from workspace/<ModuleName>/logs/
-```
+These values come from the verified nangate45 `config.mk` and should be used in generated Tcl:
 
-### Pattern 4: Backward-Compatible Script APIs
+| Constant | Value | Source |
+|----------|-------|--------|
+| LIB_FILE | `$PLATFORM_DIR/lib/NangateOpenCellLibrary_typical.lib` | config.mk |
+| TECH_LEF | `$PLATFORM_DIR/lef/NangateOpenCellLibrary.tech.lef` | config.mk |
+| SC_LEF | `$PLATFORM_DIR/lef/NangateOpenCellLibrary.macro.mod.lef` | config.mk |
+| PLACE_SITE | `FreePDK45_38x28_10R_NP_162NW_34O` | config.mk |
+| TIEHI_CELL | `LOGIC1_X1 Z` | config.mk |
+| TIELO_CELL | `LOGIC0_X1 Z` | config.mk |
+| MIN_BUF_CELL | `BUF_X1 A Z` | config.mk |
+| FILL_CELLS | `FILLCELL_X1 X2 X4 X8 X16 X32` | config.mk |
+| MIN_ROUTING_LAYER | `metal2` | config.mk |
+| MAX_ROUTING_LAYER | `metal10` | config.mk |
+| MIN_CLK_ROUTING_LAYER | `metal4` | config.mk |
+| IO_PLACER_H | `metal5` | config.mk |
+| IO_PLACER_V | `metal6` | config.mk |
+| ABC_DRIVER_CELL | `BUF_X1` | config.mk |
+| ABC_LOAD_IN_FF | `3.898` | config.mk |
+| RCX_RULES | `$PLATFORM_DIR/rcx_patterns.rules` | config.mk |
 
-**What:** All modified scripts accept optional arguments for workspace paths while defaulting to the original flat directory layout.
+---
 
-**When:** Always -- scripts are called both by skills (with workspace paths) and manually by developers (without).
+## CTS Handling for Combinational vs Sequential Modules
 
-**Example:**
+Chisel modules from ChipAgent may or may not have clocks:
+- **Combinational** (e.g., ALU, priority encoder): no clock port, no registers
+- **Sequential** (e.g., register file, pipeline stage): has clock, has flip-flops
 
+The `HAS_CLOCK` flag is determined by synth.sh (checking if the Yosys netlist contains any DFF cells) and passed to pnr.sh. This is more reliable than checking Verilog ports, because Chisel may generate a `clock` port even for combinational logic (Chisel `Module` always has an implicit clock).
+
+**Detection in synth.sh:**
 ```bash
-# New usage (workspace mode):
-scripts/compile.sh ALU workspace/ALU/generated
-scripts/lint.sh workspace/ALU/generated
-scripts/simulate.sh ALU workspace/ALU
-
-# Legacy usage (still works):
-scripts/compile.sh
-scripts/lint.sh
-scripts/simulate.sh ALU
+# After synthesis, check if netlist contains sequential cells
+if grep -qE '(DFF|SDFF|DLAT)' "$PNR_DIR/results/synth.v"; then
+    HAS_CLOCK=1
+else
+    HAS_CLOCK=0
+fi
 ```
+
+---
+
+## Build Order (Suggested Implementation Phases)
+
+### Phase 1: Environment and Scaffolding
+- Extend `detect-env.sh`: detect yosys, openroad, locate nangate45 platform dir
+- Add capabilities to env.json: `can_synthesize`, `can_pnr`
+- Extend `project-init.md`: create `workspace/pnr/{results,reports,logs}/`
+- **Test**: `detect-env.sh` correctly identifies tools and platform path
+
+### Phase 2: SDC Generation
+- Create `agents/sdc-generator.md`
+- Handle both clock and combinational cases
+- **Test**: Generate SDC for ALU8 (combinational with Chisel implicit clock) and a simple sequential module
+
+### Phase 3: Synthesis Script
+- Create `scripts/synth.sh` following compile.sh patterns
+- Generate synth.tcl from shell variables + heredoc
+- Invoke `yosys synth.tcl`, verify synth.v output
+- **Test**: `synth.sh ALU8` produces valid gate-level netlist and synth_stat.txt
+
+### Phase 4: PnR Script
+- Create `scripts/pnr.sh` following same patterns
+- Generate pnr.tcl with conditional CTS
+- Invoke `openroad pnr.tcl`, verify final.def output
+- **Test**: `pnr.sh ALU8` produces final.def and reports
+
+### Phase 5: GDS Export
+- Add KLayout or OpenROAD GDS write to pnr.tcl
+- Requires GDS files from nangate45 platform
+- **Test**: `pnr.sh ALU8` produces final.gds
+
+### Phase 6: Reporting and Skill
+- Create `agents/pnr-reporter.md`
+- Create `skills/pnr/SKILL.md`
+- Orchestrate full pipeline: prereq check -> SDC -> synth -> PnR -> report
+- **Test**: `/chip-agent:pnr ALU8` end-to-end produces summary
+
+---
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Moving Chisel Source Into workspace/
+### Do NOT Use ORFS Makefile as Execution Engine
+The Makefile creates rigid directory structures, requires 50+ env vars, and its error output is hard for Claude to parse. Use direct yosys/openroad invocation with generated Tcl.
 
-**What:** Putting ALU.scala inside workspace/ALU/src/.
+### Do NOT Copy Platform Files into ChipAgent
+The nangate45 LEF/LIB/GDS files at the ORFS installation path should be referenced in-place. They are large, version-coupled, and would create maintenance burden.
 
-**Why bad:** sbt expects sources in `chisel-project/src/main/scala/chipagent/`. Moving them requires reconfiguring sbt source roots, adding complexity for no benefit. Chisel source is SHARED (all modules compile together); only outputs need isolation.
+### Do NOT Run Multiple OpenROAD Sessions
+All PnR stages (floorplan through extraction) run in one `openroad` invocation. Splitting into separate sessions requires ODB serialization and re-reads LEF/LIB (~2-3s overhead per session).
 
-**Instead:** Keep all .scala files in `chisel-project/src/main/scala/chipagent/`. Only isolate compilation outputs and simulation artifacts in workspace/.
+### Do NOT Skip Parasitic Extraction
+Timing reports based on placement estimates can be 2-3x off from post-route parasitics. Always run `extract_parasitics` + `read_spef` before reporting timing.
 
-### Anti-Pattern 2: Skills That Know Internal Paths of Other Skills
+### Do NOT Make PnR Part of Default Workflow
+PnR takes minutes, workflow takes seconds. Different iteration cycles. Keep them as separate slash commands.
 
-**What:** The testbench skill hardcoding `workspace/<Module>/generated/<Module>.v` instead of using the workspace convention.
+### Do NOT Hardcode Absolute Paths in Tcl Templates
+All paths must come from shell variable substitution into the generated Tcl. The synth.sh and pnr.sh scripts resolve paths from env.json/environment, then bake them into the Tcl via heredoc.
 
-**Why bad:** Tight coupling. If the generated/ subdirectory structure changes, every skill breaks.
-
-**Instead:** Each skill accepts the module name and derives paths from the workspace convention: `workspace/$MODULE/generated/`, `workspace/$MODULE/sim/`, `workspace/$MODULE/logs/`.
-
-### Anti-Pattern 3: Passing Spec JSON Through Conversation Context
-
-**What:** Having the requirement-parser skill return the full JSON spec in the conversation, then passing it as a string to the chisel-generate skill.
-
-**Why bad:** Wastes context window tokens. A complex spec (CPU with 4 sub-modules) is 100+ lines of JSON. When skills run sequentially, each skill's prompt adds to the cumulative context.
-
-**Instead:** Write spec.json to workspace/. Downstream skills read the file with the Read tool. The conversation only carries the module name.
-
-### Anti-Pattern 4: Separate sbt Projects Per Module
-
-**What:** Creating `workspace/ALU/chisel-project/` with its own build.sbt.
-
-**Why bad:** sbt startup takes 10-30 seconds. Each separate project multiplies this overhead. Chisel modules share dependencies and compiler plugins. Duplicating the build config is wasteful.
-
-**Instead:** Single sbt project, multiple modules. Use `--target-dir` to control where output goes. The `--module` flag selects which module to emit.
-
-### Anti-Pattern 5: Using context: fork for Pipeline Skills
-
-**What:** Setting `context: fork` on the generate orchestrator skill.
-
-**Why bad:** Forked subagents lose conversation context. The generate skill needs to interact with the user (spec confirmation via AskUserQuestion), which requires the main conversation context.
-
-**Instead:** Run generate in the main conversation. Only individual research or exploration tasks should use `context: fork`.
-
-## Build Order (Dependency-Aware)
-
-Based on dependencies between components, build in this order:
-
-### Phase 1: Workspace Foundation (no dependencies on other changes)
-1. Create `workspace/` directory structure convention
-2. Modify `scripts/compile.sh` to accept module name and target-dir arguments
-3. Modify `scripts/lint.sh` to accept generated directory path
-4. Modify `scripts/simulate.sh` to accept workspace directory path
-5. Modify `Generate.scala` if needed (already handles --target-dir, may just need validation)
-
-### Phase 2: Skill Decomposition (depends on Phase 1 scripts)
-6. Create `skills/initialize/SKILL.md` + `scripts/initialize.sh`
-7. Create `skills/requirement-parser/SKILL.md` (wraps existing agent)
-8. Create `skills/chisel-generate/SKILL.md` (wraps existing agent)
-9. Create `skills/lint/SKILL.md` (wraps modified lint.sh)
-10. Create `skills/testbench/SKILL.md` (wraps existing agent)
-11. Create `skills/simulate/SKILL.md` (wraps modified simulate.sh)
-
-### Phase 3: Orchestrator + Hooks (depends on Phase 2 skills existing)
-12. Rewrite `skills/generate/SKILL.md` as thin orchestrator invoking sub-skills
-13. Update `hooks/hooks.json` with auto-compile.sh wrapper for .scala-only filtering
-14. Create `scripts/auto-compile.sh` (hook wrapper)
-
-### Phase 4: Migration + Cleanup
-15. Delete old `skills/generate.md`
-16. Update CLAUDE.md with new directory structure and skill list
-17. Update package.json files array if needed
-
-**Rationale for ordering:**
-- Scripts must be workspace-aware BEFORE skills reference them
-- Individual skills must exist BEFORE the orchestrator can invoke them
-- Hooks must be updated AFTER the skill decomposition to avoid breaking the existing pipeline during development
+---
 
 ## Scalability Considerations
 
-| Concern | At 1 module | At 10 modules | At 50+ modules |
-|---------|-------------|---------------|----------------|
-| workspace/ size | ~500KB | ~5MB | ~25MB (gitignore obj_dir/) |
-| sbt compile time | <30s | ~30s (incremental) | ~60s (recompiles changed modules only) |
-| Verilator build per module | ~5s | 5s each (isolated obj_dir/) | Parallelize with make -j |
-| spec.json management | Trivial | Manual navigation | Add workspace/index.json listing all modules |
-| Disk cleanup | Not needed | Not needed | Add scripts/clean-workspace.sh |
+| Concern | Small Module (ALU, <100 cells) | Medium Module (pipeline stage, 100-10K cells) | Large Module (full core, 10K+) |
+|---------|-------------------------------|-----------------------------------------------|-------------------------------|
+| Synthesis time | <5s | 5-30s | 30-300s |
+| PnR time | <30s | 30-300s | 5-60min |
+| Default config works? | Yes | Yes | May need tuning |
+| CORE_UTILIZATION | 40% (default) | 40% (default) | May need 30-40% |
+| CTS complexity | Skip (combinational) | Simple single-clock | May need multi-clock |
+| Memory usage | <500MB | 500MB-2GB | 2-8GB |
+
+For v1.1.2, targeting small-to-medium Chisel modules with default nangate45 parameters. Large module support deferred.
+
+---
 
 ## Sources
 
-- [Claude Code Skills Documentation](https://code.claude.com/docs/en/skills) -- SKILL.md format, frontmatter fields, $ARGUMENTS, disable-model-invocation, CLAUDE_SKILL_DIR
-- [Claude Code Plugins Documentation](https://code.claude.com/docs/en/plugins) -- Plugin structure, skills/ directory, plugin namespacing (plugin-name:skill-name)
-- [Claude Code Subagents Documentation](https://code.claude.com/docs/en/sub-agents) -- Agent definitions, how skills invoke agents, context: fork behavior
-- [Claude Code Hooks Documentation](https://code.claude.com/docs/en/hooks) -- PostToolUse events, hook input JSON format, command execution
-- [Inside Claude Code Skills](https://mikhail.io/2025/10/claude-code-skills/) -- Skills architecture deep-dive
-- [Claude Code Merges Slash Commands Into Skills](https://medium.com/@joe.njenga/claude-code-merges-slash-commands-into-skills-dont-miss-your-update-8296f3989697) -- Commands -> Skills migration
-- Existing codebase analysis: generate.md, hooks.json, compile.sh, lint.sh, simulate.sh, Generate.scala, all agent definitions
-
----
-*Architecture patterns for: ChipAgent v1.1 -- Modular Slash Commands + Workspace Isolation*
-*Researched: 2026-03-19*
+- ORFS Makefile: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/Makefile` (verified locally, 2026-03-31)
+- ORFS synth.tcl: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/scripts/synth.tcl` (verified locally, 249 lines analyzed)
+- ORFS final_report.tcl: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/scripts/final_report.tcl` (verified locally)
+- ORFS floorplan.tcl: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/scripts/floorplan.tcl` (verified locally)
+- nangate45 platform config: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/platforms/nangate45/config.mk` (verified locally, all constants extracted)
+- GCD example config: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/designs/nangate45/gcd/config.mk` (verified locally)
+- ChipAgent compile.sh: `/home/mingzhenjia/ChipAgent/scripts/compile.sh` (pattern reference)
+- ChipAgent lint.sh: `/home/mingzhenjia/ChipAgent/scripts/lint.sh` (pattern reference)
+- ChipAgent simulate.sh: `/home/mingzhenjia/ChipAgent/scripts/simulate.sh` (pattern reference)
+- ChipAgent detect-env.sh: `/home/mingzhenjia/ChipAgent/scripts/detect-env.sh` (extension point)
+- ChipAgent PROJECT.md: `/home/mingzhenjia/ChipAgent/.planning/PROJECT.md` (requirements context)
