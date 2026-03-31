@@ -61,7 +61,9 @@ Plans:
   1. Running `scripts/synth.sh <ModuleName>` produces a gate-level Verilog netlist at `workspace/pnr/<ModuleName>.synth.v` that OpenROAD can parse without errors
   2. Synthesis statistics report at `workspace/pnr/reports/synth_stat.txt` contains gate count, cell usage breakdown, and total area
   3. Synthesis works for both combinational modules (e.g., ALU) and sequential modules with the appropriate SDC applied
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 10-01-PLAN.md -- Yosys synthesis pipeline (synth.sh + synth.tcl)
 
 ### Phase 11: OpenROAD PnR + GDS Export
 **Goal**: A synthesized netlist is physically implemented through floorplan, placement, CTS, and routing, producing a routed DEF, GDS, and physical design reports
@@ -98,7 +100,7 @@ Plans:
 | 7. Orchestrator + Initialize | v1.1 | 2/2 | Complete | 2026-03-20 |
 | 8. Debug Command | v1.1 | 2/2 | Complete | 2026-03-20 |
 | 9. Environment + SDC Foundation | 2/2 | Complete   | 2026-03-31 | - |
-| 10. Yosys Synthesis | v1.1.2 | 0/? | Not started | - |
+| 10. Yosys Synthesis | v1.1.2 | 0/1 | Planning | - |
 | 11. OpenROAD PnR + GDS Export | v1.1.2 | 0/? | Not started | - |
 | 12. PnR Command + Report Integration | v1.1.2 | 0/? | Not started | - |
 
