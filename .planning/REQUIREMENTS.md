@@ -68,24 +68,24 @@ Requirements for RTL-to-GDS milestone. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ENV-01 | — | Pending |
-| ENV-02 | — | Pending |
-| SYN-01 | — | Pending |
-| SYN-02 | — | Pending |
-| SYN-03 | — | Pending |
-| PNR-01 | — | Pending |
-| PNR-02 | — | Pending |
-| PNR-03 | — | Pending |
-| GDS-01 | — | Pending |
-| CMD-01 | — | Pending |
-| CMD-02 | — | Pending |
-| CMD-03 | — | Pending |
+| ENV-01 | Phase 9 | Pending |
+| ENV-02 | Phase 9 | Pending |
+| SYN-01 | Phase 10 | Pending |
+| SYN-02 | Phase 9 | Pending |
+| SYN-03 | Phase 10 | Pending |
+| PNR-01 | Phase 11 | Pending |
+| PNR-02 | Phase 11 | Pending |
+| PNR-03 | Phase 11 | Pending |
+| GDS-01 | Phase 11 | Pending |
+| CMD-01 | Phase 12 | Pending |
+| CMD-02 | Phase 12 | Pending |
+| CMD-03 | Phase 12 | Pending |
 
 **Coverage:**
 - v1.1.2 requirements: 12 total
-- Mapped to phases: 0
-- Unmapped: 12 ⚠️
+- Mapped to phases: 12
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-31*
-*Last updated: 2026-03-31 after initial definition*
+*Last updated: 2026-03-31 after roadmap creation*
