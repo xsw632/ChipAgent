@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 09-02-PLAN.md
-last_updated: "2026-03-31T12:58:04.323Z"
+stopped_at: Completed 09-01-PLAN.md
+last_updated: "2026-03-31T12:58:34.334Z"
 last_activity: 2026-03-31 — Roadmap created for v1.1.2 RTL-to-GDS
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -51,6 +51,7 @@ Recent decisions affecting current work:
 - 2.0ns default clock period (conservative, avoids timing failures)
 - Output to workspace/pnr/ with reports/ subdirectory
 - [Phase 09]: Detect sequential by always @(posedge, not clock port presence
+- [Phase 09]: PDK path resolved via candidate directory chain: env override, ORFS_DIR, ~/OpenROAD-flow-scripts, /opt
 
 ### Pending Todos
 
@@ -63,6 +64,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-31T12:58:04.321Z
-Stopped at: Completed 09-02-PLAN.md
+Last session: 2026-03-31T12:58:34.332Z
+Stopped at: Completed 09-01-PLAN.md
 Resume file: None
