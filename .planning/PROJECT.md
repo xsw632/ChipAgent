@@ -32,7 +32,17 @@ A single slash command turns a natural language hardware description into lint-c
 
 ### Active
 
-(None — next milestone requirements to be defined via `/gsd:new-milestone`)
+## Current Milestone: v1.1.2 RTL-to-GDS
+
+**Goal:** Add a `/chip-agent:pnr` command that runs Yosys synthesis + OpenROAD place-and-route on verified Verilog to produce GDS, DEF, and timing/power/area reports using nangate45 PDK.
+
+**Target features:**
+- nangate45 PDK setup and detection in environment initialization
+- Yosys synthesis script producing gate-level netlist from RTL Verilog
+- OpenROAD PnR flow (floorplan → placement → CTS → routing → export)
+- GDS and routed DEF output artifacts
+- Timing (STA), power, and area reports
+- `/chip-agent:pnr <ModuleName>` slash command
 
 ### Out of Scope
 
@@ -49,9 +59,10 @@ A single slash command turns a natural language hardware description into lint-c
 
 Shipped v1.1 Refine with modular pipeline decomposition.
 ~4,500 LOC across Scala, C++, Bash, Python, and JSON.
-Tech stack: Chisel 3.6.1, Scala 2.13.10, sbt 1.10.7, FIRRTL/firtool, Verilator 5.008+, Python 3 (stdlib VCD parser).
+Tech stack: Chisel 3.6.1, Scala 2.13.10, sbt 1.10.7, FIRRTL/firtool, Verilator 5.008+, Yosys 0.53+, OpenROAD 26Q1, Python 3 (stdlib VCD parser).
 8 slash commands: generate, compile, lint, simulate, requirement-parser, testbench, initialize, debug.
 Acceptance test: ALU with ADD/SUB/AND/OR/XOR/SLT + zero flag passes all 12 test cases end-to-end.
+Starting v1.1.2: RTL-to-GDS via Yosys + OpenROAD with nangate45 PDK.
 
 ## Constraints
 
@@ -82,4 +93,4 @@ Acceptance test: ALU with ADD/SUB/AND/OR/XOR/SLT + zero flag passes all 12 test 
 | Debug is diagnostic-only | Never auto-applies fixes; prevents runaway modification loops | ✓ Good |
 
 ---
-*Last updated: 2026-03-23 after v1.1 milestone*
+*Last updated: 2026-03-31 after v1.1.2 milestone start*
