@@ -48,7 +48,10 @@
   2. A pre-flight validation script exits non-zero with a clear message when any required PDK file (liberty, LEF, GDS) is missing
   3. Given a sequential Chisel module's Verilog (contains `clock` port), SDC generation produces `create_clock` on that port with a configurable period
   4. Given a combinational module's Verilog (no clock port), SDC generation produces a virtual clock with `set_max_delay` constraints
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 09-01-PLAN.md -- Extend env detection for PnR tools + PDK validation script
+- [ ] 09-02-PLAN.md -- SDC constraint auto-generation from Verilog analysis
 
 ### Phase 10: Yosys Synthesis
 **Goal**: Any verified Verilog module can be synthesized to a gate-level netlist with nangate45 cells, producing a synthesis statistics report
@@ -94,7 +97,7 @@
 | 6. Skill Decomposition | v1.1 | 2/2 | Complete | 2026-03-20 |
 | 7. Orchestrator + Initialize | v1.1 | 2/2 | Complete | 2026-03-20 |
 | 8. Debug Command | v1.1 | 2/2 | Complete | 2026-03-20 |
-| 9. Environment + SDC Foundation | v1.1.2 | 0/? | Not started | - |
+| 9. Environment + SDC Foundation | v1.1.2 | 0/2 | Not started | - |
 | 10. Yosys Synthesis | v1.1.2 | 0/? | Not started | - |
 | 11. OpenROAD PnR + GDS Export | v1.1.2 | 0/? | Not started | - |
 | 12. PnR Command + Report Integration | v1.1.2 | 0/? | Not started | - |
