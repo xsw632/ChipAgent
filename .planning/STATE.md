@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: Completed 09-01-PLAN.md
-last_updated: "2026-03-31T13:05:53.970Z"
-last_activity: 2026-03-31 — Roadmap created for v1.1.2 RTL-to-GDS
+status: executing
+stopped_at: Completed 10-01-PLAN.md
+last_updated: "2026-03-31T15:05:46Z"
+last_activity: 2026-03-31 — Phase 10 Plan 01 (Yosys synthesis pipeline) completed
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 2
-  completed_plans: 2
-  percent: 0
+  completed_plans: 1
+  percent: 25
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog with a complete test report.
-**Current focus:** Phase 9 — Environment + SDC Foundation
+**Current focus:** Phase 10 — Yosys Synthesis
 
 ## Current Position
 
-Phase: 9 (Environment + SDC Foundation) — first of 4 in v1.1.2
-Plan: None yet (ready to plan)
-Status: Ready to plan
-Last activity: 2026-03-31 — Roadmap created for v1.1.2 RTL-to-GDS
+Phase: 10 (Yosys Synthesis) — second of 4 in v1.1.2
+Plan: 1 of 1 complete
+Status: Phase 10 complete
+Last activity: 2026-03-31 — Yosys synthesis pipeline verified on ALU and Counter8
 
-Progress: [░░░░░░░░░░] 0% (v1.1.2 scope: 0/4 phases)
+Progress: [##........] 25% (v1.1.2 scope: 2/4 phases)
 
 ## Performance Metrics
 
@@ -50,6 +50,8 @@ Recent decisions affecting current work:
 - SDC: sequential gets create_clock on real port, combinational gets virtual clock + set_max_delay
 - 2.0ns default clock period (conservative, avoids timing failures)
 - Output to workspace/pnr/ with reports/ subdirectory
+- [Phase 10]: Yosys Tcl mode (-c) requires yosys prefix on all synthesis commands
+- [Phase 10]: Simplified synthesis flow (no hilomap/insbuf) produces OpenROAD-compatible netlists
 - [Phase 09]: Detect sequential by always @(posedge, not clock port presence
 - [Phase 09]: PDK path resolved via candidate directory chain: env override, ORFS_DIR, ~/OpenROAD-flow-scripts, /opt
 
@@ -64,6 +66,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-31T12:58:34.332Z
-Stopped at: Completed 09-01-PLAN.md
+Last session: 2026-03-31T15:05:46Z
+Stopped at: Completed 10-01-PLAN.md
 Resume file: None

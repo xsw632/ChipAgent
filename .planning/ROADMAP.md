@@ -33,7 +33,7 @@
 **Milestone Goal:** Add `/chip-agent:pnr` command that runs Yosys synthesis + OpenROAD place-and-route on verified Verilog to produce GDS, DEF, and timing/power/area reports using nangate45 PDK.
 
 - [x] **Phase 9: Environment + SDC Foundation** - Extend env detection for PnR tools and generate SDC constraints from Verilog (completed 2026-03-31)
-- [ ] **Phase 10: Yosys Synthesis** - Produce gate-level netlist from RTL Verilog via standalone Yosys with generated Tcl
+- [x] **Phase 10: Yosys Synthesis** - Produce gate-level netlist from RTL Verilog via standalone Yosys with generated Tcl (completed 2026-03-31)
 - [ ] **Phase 11: OpenROAD PnR + GDS Export** - Run full physical design flow and export final layout
 - [ ] **Phase 12: PnR Command + Report Integration** - Wire scripts into slash command with formatted reports and auto-fix
 
@@ -63,7 +63,7 @@ Plans:
   3. Synthesis works for both combinational modules (e.g., ALU) and sequential modules with the appropriate SDC applied
 **Plans**: 1 plan
 Plans:
-- [ ] 10-01-PLAN.md -- Yosys synthesis pipeline (synth.sh + synth.tcl)
+- [x] 10-01-PLAN.md -- Yosys synthesis pipeline (synth.sh + synth.tcl)
 
 ### Phase 11: OpenROAD PnR + GDS Export
 **Goal**: A synthesized netlist is physically implemented through floorplan, placement, CTS, and routing, producing a routed DEF, GDS, and physical design reports
@@ -100,7 +100,7 @@ Plans:
 | 7. Orchestrator + Initialize | v1.1 | 2/2 | Complete | 2026-03-20 |
 | 8. Debug Command | v1.1 | 2/2 | Complete | 2026-03-20 |
 | 9. Environment + SDC Foundation | 2/2 | Complete   | 2026-03-31 | - |
-| 10. Yosys Synthesis | v1.1.2 | 0/1 | Planning | - |
+| 10. Yosys Synthesis | v1.1.2 | 1/1 | Complete | 2026-03-31 |
 | 11. OpenROAD PnR + GDS Export | v1.1.2 | 0/? | Not started | - |
 | 12. PnR Command + Report Integration | v1.1.2 | 0/? | Not started | - |
 

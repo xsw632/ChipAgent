@@ -14,9 +14,9 @@ Requirements for RTL-to-GDS milestone. Each maps to roadmap phases.
 
 ### Synthesis
 
-- [ ] **SYN-01**: `scripts/synth.sh <ModuleName>` runs Yosys with nangate45 liberty, produces gate-level netlist in `workspace/pnr/`
+- [x] **SYN-01**: `scripts/synth.sh <ModuleName>` runs Yosys with nangate45 liberty, produces gate-level netlist in `workspace/pnr/`
 - [x] **SYN-02**: SDC auto-generation detects clock ports from Verilog, creates `create_clock` for sequential or virtual clock + `set_max_delay` for combinational modules
-- [ ] **SYN-03**: Synthesis report (gate count, cell usage, area) written to `workspace/pnr/reports/synth_stat.txt`
+- [x] **SYN-03**: Synthesis report (gate count, cell usage, area) written to `workspace/pnr/reports/synth_stat.txt`
 
 ### Place and Route
 
@@ -70,9 +70,9 @@ Requirements for RTL-to-GDS milestone. Each maps to roadmap phases.
 |-------------|-------|--------|
 | ENV-01 | Phase 9 | Complete |
 | ENV-02 | Phase 9 | Complete |
-| SYN-01 | Phase 10 | Pending |
+| SYN-01 | Phase 10 | Complete |
 | SYN-02 | Phase 9 | Complete |
-| SYN-03 | Phase 10 | Pending |
+| SYN-03 | Phase 10 | Complete |
 | PNR-01 | Phase 11 | Pending |
 | PNR-02 | Phase 11 | Pending |
 | PNR-03 | Phase 11 | Pending |
