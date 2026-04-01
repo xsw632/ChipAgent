@@ -30,9 +30,9 @@ Requirements for RTL-to-GDS milestone. Each maps to roadmap phases.
 
 ### Command
 
-- [ ] **CMD-01**: `/chip-agent:pnr <ModuleName>` slash command runs synth + PnR + GDS, produces formatted report
-- [ ] **CMD-02**: PnR report agent formats raw reports into human-readable verification summary
-- [ ] **CMD-03**: Auto-fix retry loop (up to 3 attempts) for synthesis and PnR errors
+- [x] **CMD-01**: `/chip-agent:pnr <ModuleName>` slash command runs synth + PnR + GDS, produces formatted report
+- [x] **CMD-02**: PnR report agent formats raw reports into human-readable verification summary
+- [x] **CMD-03**: Auto-fix retry loop (up to 3 attempts) for synthesis and PnR errors
 
 ## Future Requirements
 
@@ -77,9 +77,9 @@ Requirements for RTL-to-GDS milestone. Each maps to roadmap phases.
 | PNR-02 | Phase 11 | Complete |
 | PNR-03 | Phase 11 | Complete |
 | GDS-01 | Phase 11 | Complete |
-| CMD-01 | Phase 12 | Pending |
-| CMD-02 | Phase 12 | Pending |
-| CMD-03 | Phase 12 | Pending |
+| CMD-01 | Phase 12 | Complete |
+| CMD-02 | Phase 12 | Complete |
+| CMD-03 | Phase 12 | Complete |
 
 **Coverage:**
 - v1.1.2 requirements: 12 total

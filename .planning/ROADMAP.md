@@ -35,7 +35,7 @@
 - [x] **Phase 9: Environment + SDC Foundation** - Extend env detection for PnR tools and generate SDC constraints from Verilog (completed 2026-03-31)
 - [x] **Phase 10: Yosys Synthesis** - Produce gate-level netlist from RTL Verilog via standalone Yosys with generated Tcl (completed 2026-03-31)
 - [x] **Phase 11: OpenROAD PnR + GDS Export** - Run full physical design flow and export final layout (completed 2026-04-01)
-- [ ] **Phase 12: PnR Command + Report Integration** - Wire scripts into slash command with formatted reports and auto-fix
+- [x] **Phase 12: PnR Command + Report Integration** - Wire scripts into slash command with formatted reports and auto-fix (completed 2026-04-01)
 
 ## Phase Details
 
@@ -106,7 +106,7 @@ Plans:
 | 9. Environment + SDC Foundation | 2/2 | Complete   | 2026-03-31 | - |
 | 10. Yosys Synthesis | v1.1.2 | Complete    | 2026-03-31 | 2026-03-31 |
 | 11. OpenROAD PnR + GDS Export | 1/1 | Complete    | 2026-04-01 | - |
-| 12. PnR Command + Report Integration | v1.1.2 | 0/1 | Not started | - |
+| 12. PnR Command + Report Integration | 1/1 | Complete   | 2026-04-01 | - |
 
 ---
 *Full v1.0 details archived to `.planning/milestones/v1.0-ROADMAP.md`*
