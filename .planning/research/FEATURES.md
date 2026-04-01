@@ -1,226 +1,320 @@
-# Feature Landscape: RTL-to-GDS
+# Feature Landscape
 
-**Domain:** EDA physical design automation (synthesis + place-and-route)
-**Project:** ChipAgent v1.1.2
-**Researched:** 2026-03-31
-**Confidence:** HIGH -- features derived from verified ORFS GCD flow on nangate45, existing codebase analysis, and ASIC design workflow knowledge
+**Domain:** MCP Server-driven ORFS/sky130hd backend for ChipAgent Claude Code plugin
+**Researched:** 2026-04-01
+**Milestone:** v1.1.5 sky130hd MCP Backend
+**Target level:** task2 进阶要求 (full-flow MCP tools, auto-advance 6 stages, per-stage metrics, PPA summary)
 
-## Scope
+## Context: What Exists vs What Is New
 
-Features required for a `/chip-agent:pnr` slash command that takes verified RTL Verilog (output of the existing pipeline) through Yosys synthesis and OpenROAD place-and-route to produce DEF, gate-level Verilog, and timing/power/area reports on nangate45.
+The existing v1.1.2 PnR pipeline uses standalone Tcl scripts (synth.tcl, pnr.tcl) running Yosys and OpenROAD directly on the host against nangate45 PDK. The v1.1.5 milestone **replaces** this with:
+
+1. An MCP Server (TypeScript) that wraps `docker exec` calls into the `openroad/orfs:latest` container
+2. ORFS `make` targets instead of standalone Tcl scripts
+3. sky130hd PDK instead of nangate45
+4. Auto-generated `config.mk` and `constraint.sdc` for ORFS consumption
+5. Per-stage metric extraction from ORFS logs/reports/metadata.json
+6. PPA summary report replacing the current pnr-report-formatter agent
+
+**Dependency:** Compiled Verilog from existing `/chip-agent:compile` or `/chip-agent:workflow` pipeline (unchanged).
 
 ---
 
 ## Table Stakes
 
-Features users expect. Missing any of these and the PnR command feels broken or unusable.
+Features users (and the task2 grading rubric) expect. Missing = incomplete submission.
 
-| # | Feature | Why Expected | Complexity | Depends On |
-|---|---------|-------------|------------|------------|
-| TS-01 | **SDC auto-generation from Verilog** | Users (NL-to-Verilog users) do not know SDC format. The pipeline must generate constraints automatically by detecting clock ports in the compiled Verilog. Sequential modules get `create_clock`; combinational modules get `set_max_delay` with a virtual clock. | Low | Existing `workspace/generated/<Module>.v` |
-| TS-02 | **Yosys synthesis to gate-level netlist** | The core value: RTL to gates. Must read liberty, read Verilog, run `synth -top -flatten`, `dfflibmap` (sequential), `abc`, tie/buffer insertion, and write `synth.v`. | Med | TS-01 (SDC for ABC timing-driven synthesis) |
-| TS-03 | **Synthesis report parsing** | Users need to know if synthesis succeeded and what it produced. Parse `synth_stat.txt` for cell count, area estimate, and `synth_check.txt` for warnings/errors. Display in Claude-readable summary. | Low | TS-02 |
-| TS-04 | **OpenROAD floorplan initialization** | Physical design starts here. `initialize_floorplan` with utilization (default 55%), aspect ratio 1.0, site name, track definitions. | Med | TS-02 (needs synth.v) |
-| TS-05 | **IO pin placement** | Pins must be placed on routing layers for the design to be routable. `place_pins` on metal5 (horizontal) and metal6 (vertical) per nangate45 convention. | Low | TS-04 |
-| TS-06 | **Power distribution network** | Design is non-functional without VDD/VSS. Source the platform's `grid_strategy-M1-M4-M7.tcl` and run `pdngen`. | Low | TS-04 |
-| TS-07 | **Global + detailed placement** | Core PnR. `global_placement` with density control, parasitic estimation, buffer/timing repair, then `detailed_placement` with violation check. | Med | TS-06 |
-| TS-08 | **CTS for sequential modules** | Any module with a real clock needs clock tree synthesis. Skip automatically for combinational modules (zero propagated clocks). Buffer list from nangate45. | Med | TS-07 |
-| TS-09 | **Global + detailed routing** | Completes physical implementation. Layer constraints from `fastroute.tcl`, DRC report from detailed routing. | Med | TS-08 |
-| TS-10 | **Filler cell insertion** | Required for DRC-clean layout. Insert fill cells (X1 through X32) after routing. | Low | TS-09 |
-| TS-11 | **Timing report (STA)** | The primary PPA metric. `report_checks` with min/max paths, plus WNS and TNS summaries. Users need to know if timing is met. | Low | TS-09 |
-| TS-12 | **Power report** | Second PPA metric. `report_power` showing internal, switching, and leakage breakdown. | Low | TS-09 |
-| TS-13 | **Area report** | Third PPA metric. `report_design_area` for total and utilization. | Low | TS-09 |
-| TS-14 | **DEF + gate-level Verilog export** | The primary output artifacts. `write_def` and `write_verilog` to `workspace/pnr/results/`. | Low | TS-09 |
-| TS-15 | **Workspace directory structure** | All PnR artifacts in `workspace/pnr/` with `results/` and `reports/` subdirs. Follows existing workspace isolation pattern. | Low | Existing workspace convention |
-| TS-16 | **Pre-flight validation** | Before running PnR, verify: (a) `workspace/generated/<Module>.v` exists, (b) Yosys is installed, (c) OpenROAD is installed, (d) nangate45 PDK is locatable. Fail fast with actionable error if any missing. | Low | Existing env detection |
-| TS-17 | **Stage-level error handling** | Each stage (SDC gen, synthesis, floorplan, placement, CTS, routing, reports) must capture stderr/stdout, detect failure, and report which stage failed with diagnostic context. Pipeline stops on first failure. | Med | All stages |
-| TS-18 | **PnR summary report** | Final formatted report analogous to the simulation verification report. Shows: module name, synthesis stats (cells, area), timing (WNS/TNS, met/violated), power, area, output file paths. | Low | TS-11, TS-12, TS-13 |
-| TS-19 | **`/chip-agent:pnr` slash command** | The entry point. Skill definition with `SKILL.md`, accepted arguments (`<ModuleName>`), pipeline steps, allowed tools. Follows existing skill conventions. | Med | All above |
+| # | Feature | Why Expected | Complexity | Dependencies | Notes |
+|---|---------|-------------|------------|--------------|-------|
+| T1 | **MCP Server with `run_stage` tool** | task2 requires MCP Server wrapping ORFS make targets; `run_stage` is the primary tool for executing any of the 6 ORFS stages via `docker exec` | Med | Docker running, container alive | Must accept `stage` (synth/floorplan/place/cts/route/finish) and `design_config` path. Executes `docker exec orfs-agent make -C /OpenROAD-flow-scripts/flow DESIGN_CONFIG=/workspace/config.mk <stage>`. Returns stdout/stderr and exit code. |
+| T2 | **MCP Server with `get_report` tool** | task2 requires at least 2 MCP tools; `get_report` reads back log/report files from the container for a given stage | Med | T1 (stages must have run) | Reads from `logs/sky130hd/<DESIGN>/base/` and `reports/sky130hd/<DESIGN>/base/` inside container via `docker exec cat`. Returns file contents as text. |
+| T3 | **sky130hd `config.mk` auto-generation** | ORFS make flow requires a design-level config.mk; task2 rubric checks that Agent auto-generates it | Med | Verilog file exists, module name known | Must set: `PLATFORM=sky130hd`, `DESIGN_NAME`, `VERILOG_FILES=/workspace/<module>.v`, `SDC_FILE=/workspace/constraint.sdc`, `CORE_UTILIZATION` (default 40). Write to `design/config.mk` (host) which maps to `/workspace/config.mk` (container). |
+| T4 | **sky130hd `constraint.sdc` auto-generation** | ORFS requires SDC; existing generate_sdc.sh produces nangate45-style SDC; must produce ORFS-compatible SDC for sky130hd | Low | Verilog file (for sequential/combinational detection) | Reuse existing sequential-vs-combinational detection logic. SDC format matches ORFS gcd example: `create_clock -name core_clock -period $clk_period [get_ports clk]` with 20% I/O delay. Clock port name must match actual Verilog port (Chisel uses `clock` not `clk`). |
+| T5 | **Skill orchestrating full 6-stage ORFS flow** | 进阶要求 requires Skill auto-advancing all stages: synth -> floorplan -> place -> cts -> route -> finish | High | T1, T3, T4, MCP server running | Rewrite `/chip-agent:pnr` to call MCP tools sequentially. Each stage: call `run_stage`, check exit code, extract per-stage metrics via `get_report`, proceed or stop. Must handle the 6 ORFS make targets in order. |
+| T6 | **Per-stage metric extraction** | 进阶要求 explicitly requires per-stage key metric extraction (area, WNS/TNS, DRC) | Med | T2 (report retrieval) | After each stage completes, parse logs/reports for stage-specific metrics. synth: cell count, area. floorplan: core area, utilization. place: density, congestion. cts: clock skew. route: WNS, TNS, DRC count. finish: final area, power, timing. |
+| T7 | **PPA summary report** | 进阶要求 requires PPA (Performance, Power, Area) summary at end of flow | Med | T6 (all metrics collected) | Aggregate metrics from all stages into formatted report. Performance = WNS/TNS/clock period. Power = total/internal/switching/leakage in uW. Area = cell count, design area, utilization. Display in conversation. |
+| T8 | **Docker container lifecycle management** | task2 specifies long-running container pattern with `docker run -d` + volume mount + `docker exec` | Low | Docker installed | `docker run -d --name orfs-agent -v $(pwd)/design:/workspace openroad/orfs:latest sleep infinity`. MCP server must check container exists and is running before executing. Container name configurable. |
+| T9 | **`.mcp.json` project-scoped configuration** | task2 submission structure expects `.claude/.mcp.json` configuring the MCP server | Low | T1 server built | stdio transport: `{ "mcpServers": { "chip-backend": { "type": "stdio", "command": "node", "args": ["mcp-server/dist/index.js"] } } }`. Must work with `claude mcp add` or direct file edit. |
+| T10 | **`/chip-agent:initialize` Docker + sky130hd detection** | Users need to know if Docker and the ORFS container are available before running PnR | Low | Existing initialize skill | Add Docker detection (`docker --version`), container status check (`docker ps --filter name=orfs-agent`), and sky130hd PDK availability check (inside container: `test -d /OpenROAD-flow-scripts/flow/platforms/sky130hd`). Update env.json with new capability flags. |
 
 ---
 
 ## Differentiators
 
-Features that elevate ChipAgent beyond "just runs scripts." Not expected, but meaningfully valuable.
+Features that exceed 进阶要求, moving toward 满分要求. Not required but valued for higher marks.
 
-| # | Feature | Value Proposition | Complexity | Depends On |
-|---|---------|-------------------|------------|------------|
-| DF-01 | **spec.json-driven SDC enrichment** | If `spec.json` contains `clock_period_ns`, use it instead of the 2.0ns default. Lets users influence timing targets through the natural language spec ("500MHz clock") without touching SDC directly. | Low | TS-01, existing spec.json |
-| DF-02 | **Combinational vs sequential auto-detection** | Automatically detect whether the module has a clock port and adjust the entire flow: SDC template, `dfflibmap` inclusion, CTS skip. Zero user configuration needed. This is already baked into the table stakes but explicitly calling it out as a differentiator because most EDA flows require the user to specify this. | Low | TS-01, TS-02, TS-08 |
-| DF-03 | **Timing failure diagnosis** | When WNS is negative (timing violated), parse the critical path from `timing.rpt` and present it in plain English: "Timing violated by X ns on path from port A through N cells to port B. Consider relaxing the clock period or reducing combinational depth." | Med | TS-11 |
-| DF-04 | **DRC violation summary** | Parse `route_drc.rpt` and summarize violations by type (short, spacing, width). If zero violations, say so explicitly. If violations exist, flag as warning (common for academic PDKs). | Low | TS-09 |
-| DF-05 | **Cell usage analysis** | Parse `cell_usage.rpt` to show the most-used standard cells and total cell count. Gives users insight into what the synthesizer chose. | Low | TS-09 |
-| DF-06 | **Congestion reporting** | Parse `congestion.rpt` and flag if any region exceeds density threshold. Useful for understanding routing difficulty. | Low | TS-09 |
-| DF-07 | **Environment detection for PnR tools** | Extend `detect-env.sh` and `env.json` with Yosys, OpenROAD, KLayout presence/version and nangate45 PDK path. Add `can_synthesize` and `can_pnr` capability flags. `/chip-agent:initialize` gains PnR awareness. | Med | Existing detect-env.sh |
-| DF-08 | **SPEF parasitic extraction** | Run OpenRCX to extract parasitics, write SPEF, and use it for final STA. Makes timing reports more accurate (post-route vs estimated). Already in the Tcl flow but calling it out as a differentiator because many quick flows skip this. | Low | TS-09 |
-| DF-09 | **Synthesis auto-retry on failure** | If Yosys synthesis fails (e.g., undefined module, unsupported construct), parse the error, attempt to diagnose (common: Chisel generates `$` prefixed internal signals, `FIRRTL_RAND` macros), and suggest fixes. Up to 3 attempts, matching the existing lint auto-fix pattern. | High | TS-02 |
+| # | Feature | Value Proposition | Complexity | Dependencies | Notes |
+|---|---------|-------------------|------------|--------------|-------|
+| D1 | **Failure diagnosis by error type** | 满分要求: auto-diagnose timing violations, congestion, DRC | Med | T6 metrics | Classify failures: timing (WNS < 0), congestion (placement density too high), DRC (violations > 0). Map to specific remediation parameters. |
+| D2 | **Parameter retry on failure** | 满分要求: adjust PLACE_DENSITY, CLOCK_PERIOD and re-run | High | D1, T3 (regenerate config.mk) | On timing failure: increase clock period by 50% (reuse existing v1.1.2 pattern). On congestion: decrease PLACE_DENSITY. On DRC: increase ROUTING_LAYER_ADJUSTMENT. Regenerate config.mk + SDC, clean affected stages, re-run. Max 3 attempts. |
+| D3 | **Multi-run QoR comparison** | 满分要求: compare different configuration results side by side | Med | D2 (multiple runs needed) | Store each run's PPA summary with config parameters. Display comparison table: run#, clock_period, place_density, WNS, TNS, power, area. Let user pick best. |
+| D4 | **MCP `get_metrics` tool** | Extract structured JSON metrics from ORFS metadata.json instead of parsing logs | Low | T1 (container running), ORFS generates metadata.json after finish | `docker exec orfs-agent cat results/sky130hd/<DESIGN>/base/metadata.json`. More reliable than log parsing. Falls back to log parsing if metadata.json missing. |
+| D5 | **MCP `clean_stage` tool** | Clean a specific stage's outputs to enable selective re-run | Low | T1 | `docker exec orfs-agent make -C /OpenROAD-flow-scripts/flow DESIGN_CONFIG=/workspace/config.mk clean_<stage>`. Useful for retry workflows. |
+| D6 | **MCP `check_container` tool** | Health check: verify container running, tools accessible, PDK present | Low | T8 | Returns JSON with container status, tool versions, PDK path validity. Prevents cryptic failures when container is down. |
+| D7 | **Layout image extraction** | ORFS finish stage generates visualization images (final_all.webp etc.) in reports/ | Low | T5 (finish stage complete) | Copy images from container to host workspace. Reference in PPA report. Provides visual verification of layout quality. |
 
 ---
 
 ## Anti-Features
 
-Features to explicitly NOT build in v1.1.2.
+Features to explicitly NOT build. These would waste time or cause problems.
 
-| Anti-Feature | Why Avoid | What to Do Instead |
-|--------------|-----------|-------------------|
-| **GDS export** | KLayout is not installed. Adding a KLayout dependency changes the install story significantly. DEF + reports deliver the core PPA value. | Scope to DEF output. Document GDS as a follow-up requiring KLayout. |
-| **Multi-PDK support** | Only nangate45 is available and verified. Adding sky130 or ASAP7 requires testing each platform's config files, liberty models, and Tcl scripts. | Hardcode nangate45. Design scripts so PDK path is a variable (future-proofing), but only support one PDK now. |
-| **Clock period optimization loop** | Automatically binary-searching for the best achievable clock period is computationally expensive (each PnR run takes 30-120 seconds) and adds complexity. | Use a conservative default (2.0ns). Let users specify via spec.json if they want tighter timing. |
-| **Floorplan GUI or visual feedback** | No GUI in Claude Code. Visual floorplan/placement feedback requires an image renderer or external viewer. | Report numeric area/utilization. DEF files can be opened in external viewers (OpenROAD GUI, KLayout) by the user. |
-| **Incremental PnR / ECO flow** | Engineering change orders require design database persistence between sessions, which is out of scope for a stateless slash command. | Always run full flow from scratch. Each PnR invocation is idempotent. |
-| **Custom floorplan constraints** | Macro placement, blockages, pin assignment constraints are advanced features that require domain expertise. | Use auto-floorplan with utilization-based sizing. Pin placement is automatic. |
-| **Multi-corner STA** | nangate45 only ships typical corner. Multi-corner analysis requires additional liberty files (fast, slow) which are not available. | Single-corner (typical) STA only. |
-| **Power intent (UPF/CPF)** | Power domains, voltage islands, and retention are SoC-level concerns beyond single-module scope. | Single power domain (VDD/VSS) only. |
-| **Formal equivalence checking** | Verifying gate-level netlist matches RTL requires a formal tool (e.g., Conformal, Formality). Out of scope. | Rely on Yosys synthesis correctness. Users can run their own verification. |
-| **Extending `/chip-agent:workflow` with PnR** | PnR is slow (30-120s), optional, and conceptually separate from verification. Bolting it onto workflow makes the existing fast path slower and more fragile. | Separate `/chip-agent:pnr` command. Users run it after verification passes. |
-| **Hierarchical synthesis** | ChipAgent modules are small (under 10K gates typically). Hierarchy adds complexity for no benefit at this scale. | Always flatten with `synth -flatten`. |
-| **Macro support (SRAMs, hard IPs)** | Generated modules are standard-cell-only combinational/sequential blocks. No memory compilers or hard IP. | Skip macro placement entirely. |
-| **Interactive OpenROAD GUI** | CLI-only plugin with no display server assumption. | Text reports only. Users open DEF in external viewers if needed. |
-| **IR drop analysis** | Requires additional power grid analysis setup. Not critical for academic/demonstration flow. | Omit `analyze_power_grid`. PDN generation is sufficient. |
+| # | Anti-Feature | Why Avoid | What to Do Instead |
+|---|-------------|-----------|-------------------|
+| A1 | **Run ORFS tools natively (no Docker)** | task2 explicitly requires Docker-based execution. Native Yosys/OpenROAD would bypass the Docker requirement and create environment inconsistency. | Always use `docker exec` through the MCP server. The existing v1.1.2 native Tcl scripts become dead code for this milestone. |
+| A2 | **Build custom Tcl scripts for sky130hd** | ORFS Makefile already contains battle-tested Tcl scripts for each stage. Custom scripts duplicate effort and miss ORFS optimizations (timing repair, filler insertion, PDN generation). | Use ORFS `make` targets which invoke ORFS's own Tcl scripts internally. |
+| A3 | **Multi-PDK support** | Out of scope per PROJECT.md. sky130hd only per task2 requirement. Adding nangate45/asap7 support adds complexity with zero grading benefit. | Hardcode sky130hd in config.mk generation. Add multi-PDK as future milestone. |
+| A4 | **Hierarchical synthesis** | Chisel-generated modules are small enough for flat synthesis. ORFS hierarchical flow adds complexity. | Use flat ORFS flow (default). |
+| A5 | **MCP HTTP/SSE remote transport** | Overkill for local plugin. stdio transport is simpler, has no network overhead, and auto-manages server lifecycle. | Use stdio transport exclusively. MCP server runs as child process of Claude Code. |
+| A6 | **Persistent container state between sessions** | Creates stale state bugs. ORFS outputs depend on config.mk which may change between runs. | Always `clean_all` before full flow run. Host-side volume mount preserves user files. |
+| A7 | **GDS export via standalone KLayout script** | ORFS `make finish` stage already handles GDS merge via its own KLayout integration. The v1.1.2 def2gds.py becomes unnecessary. | Let ORFS finish stage produce `6_final.gds`. Copy it from container. |
+| A8 | **DRC/LVS verification beyond ORFS built-in** | Out of scope per PROJECT.md. Requires KLayout ruledecks and Magic. ORFS finish stage does basic DRC check already. | Rely on ORFS built-in DRC check in route/finish stages. Report DRC count from logs. |
+| A9 | **Watch mode / auto-restart on file change** | Learned from v1.0: creates infinite loops. Explicit slash command invocation is safer. | User explicitly invokes `/chip-agent:pnr` when ready. |
+| A10 | **Multiple simultaneous container instances** | Adds orchestration complexity. Single design at a time is sufficient for task2. | Single named container `orfs-agent`. One design flow at a time. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-Pre-flight validation (TS-16)
-    |
-    v
-SDC auto-generation (TS-01)
-    |
-    +-- spec.json clock enrichment (DF-01)
-    |
-    v
-Yosys synthesis (TS-02)
-    |
-    +-- Synth report parsing (TS-03)
-    +-- Synth auto-retry (DF-09)
-    |
-    v
-Floorplan init (TS-04)
-    |
-    +-- IO pin placement (TS-05)
-    +-- PDN (TS-06)
-    |
-    v
-Placement (TS-07)
-    |
-    v
-CTS (TS-08) -- skipped if combinational
-    |
-    v
-Routing (TS-09)
-    |
-    +-- Filler cells (TS-10)
-    +-- SPEF extraction (DF-08)
-    +-- DRC summary (DF-04)
-    +-- Congestion report (DF-06)
-    |
-    v
-Reports (TS-11 timing, TS-12 power, TS-13 area)
-    |
-    +-- Timing failure diagnosis (DF-03)
-    +-- Cell usage analysis (DF-05)
-    |
-    v
-Export (TS-14 DEF + Verilog)
-    |
-    v
-PnR summary report (TS-18)
-    |
-    v
-Slash command (TS-19)
-
-Parallel/independent:
-  - Workspace structure (TS-15) -- created at pipeline start
-  - Stage-level error handling (TS-17) -- cross-cutting, built into each script
-  - Environment detection (DF-07) -- can be built independently
+T8 (Docker container) ─────────────────────────────────────┐
+                                                            v
+T3 (config.mk gen) ──┐                            T1 (run_stage tool)
+                      ├──> T5 (6-stage Skill) ──> T6 (per-stage metrics)
+T4 (SDC gen) ─────────┘         |                          |
+                                v                          v
+                      T2 (get_report tool)         T7 (PPA summary)
+                                                           |
+T10 (initialize update)                             D1 (failure diagnosis)
+                                                           |
+T9 (.mcp.json)                                     D2 (parameter retry)
+                                                           |
+                                                    D3 (QoR comparison)
 ```
 
-All PnR stages are strictly sequential: each stage requires the previous stage's output in memory (single OpenROAD session). Synthesis must complete before PnR begins. SDC must exist before synthesis.
+Key ordering constraints:
+- T1 and T2 (MCP tools) must exist before T5 (orchestrating Skill) can call them
+- T3 and T4 (config generation) must exist before T5 can prepare ORFS inputs
+- T8 (container) must be running before T1 can execute anything
+- T6 (metrics) feeds into T7 (PPA report) and D1 (diagnosis)
+- D1 (diagnosis) enables D2 (retry) enables D3 (comparison)
+
+---
+
+## MCP Tool Specification Detail
+
+### Tool 1: `run_stage`
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `stage` | string enum | YES | One of: `synth`, `floorplan`, `place`, `cts`, `route`, `finish` |
+| `design_config` | string | YES | Path to config.mk inside container (default: `/workspace/config.mk`) |
+| `container_name` | string | NO | Docker container name (default: `orfs-agent`) |
+
+**Returns:** `{ success: boolean, exit_code: number, stdout: string, stderr: string, duration_ms: number }`
+
+**Implementation:** `docker exec <container> make -C /OpenROAD-flow-scripts/flow DESIGN_CONFIG=<design_config> <stage>`
+
+### Tool 2: `get_report`
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `design_name` | string | YES | Module name (e.g., `ALU`) |
+| `stage` | string enum | YES | Stage to get report for |
+| `report_type` | string enum | NO | `log`, `report`, `result` (default: `log`) |
+| `container_name` | string | NO | Docker container name (default: `orfs-agent`) |
+
+**Returns:** `{ content: string, path: string }` -- file contents and container-internal path
+
+**Implementation:** `docker exec <container> cat <path>` where path is computed from stage number and type:
+- Logs: `logs/sky130hd/<DESIGN>/base/<stage_prefix>_*.log`
+- Reports: `reports/sky130hd/<DESIGN>/base/<stage_prefix>_*.rpt`
+- Results: `results/sky130hd/<DESIGN>/base/<stage_prefix>_*`
+
+### Tool 3 (differentiator): `get_metrics`
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `design_name` | string | YES | Module name |
+| `container_name` | string | NO | Docker container name |
+
+**Returns:** Structured JSON with all ORFS metrics from `metadata.json`
+
+### Tool 4 (differentiator): `clean_stage`
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `stage` | string enum | YES | Stage to clean |
+| `design_config` | string | YES | Path to config.mk |
+| `container_name` | string | NO | Docker container name |
+
+**Implementation:** `docker exec <container> make -C /OpenROAD-flow-scripts/flow DESIGN_CONFIG=<design_config> clean_<stage>`
+
+### Tool 5 (differentiator): `check_container`
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `container_name` | string | NO | Docker container name |
+
+**Returns:** `{ running: boolean, tools: { yosys: string, openroad: string, klayout: string }, pdk: { sky130hd: boolean, path: string } }`
+
+---
+
+## config.mk Generation Detail
+
+The auto-generated `config.mk` for a ChipAgent module must produce:
+
+```makefile
+export PLATFORM    = sky130hd
+export DESIGN_NAME = <ModuleName>
+export VERILOG_FILES = /workspace/<ModuleName>.v
+export SDC_FILE      = /workspace/constraint.sdc
+
+export CORE_UTILIZATION ?= 40
+export PLACE_DENSITY    ?= 0.60
+export TNS_END_PERCENT  ?= 100
+```
+
+Key notes:
+- Paths use container-internal `/workspace/` prefix (volume-mounted from host `design/` directory)
+- `CORE_UTILIZATION` defaults to 40 (matching ORFS gcd example); can be overridden for retry
+- `PLACE_DENSITY` defaults to 0.60; adjustable for congestion retry
+- `?=` syntax allows command-line override without regenerating config.mk
+- ORFS platform-level config.mk handles all PDK paths (LIB_FILES, SC_LEF, GDS_FILES, etc.)
+
+## constraint.sdc Generation Detail
+
+For sequential modules (clock detected in Verilog):
+
+```tcl
+current_design <ModuleName>
+
+set clk_name  core_clock
+set clk_port  [get_ports clock]
+set clk_period <period_ns>
+
+create_clock -name $clk_name -period $clk_period $clk_port
+
+set non_clock_inputs [lsearch -all -inline -not -exact [all_inputs] $clk_port]
+set_input_delay  [expr $clk_period * 0.2] -clock $clk_name $non_clock_inputs
+set_output_delay [expr $clk_period * 0.2] -clock $clk_name [all_outputs]
+```
+
+For combinational modules (no clock):
+
+```tcl
+current_design <ModuleName>
+
+set clk_period <period_ns>
+
+create_clock -name virtual_clk -period $clk_period
+
+set_input_delay  0.0 -clock virtual_clk [all_inputs]
+set_output_delay 0.0 -clock virtual_clk [all_outputs]
+set_max_delay $clk_period -from [all_inputs] -to [all_outputs]
+```
+
+Note: Chisel `io.clock` compiles to port named `clock` in generated Verilog, not `clk` (which is ORFS gcd convention). SDC generation must use the actual port name from the Verilog.
+
+---
+
+## Per-Stage Metrics Extraction Detail
+
+| Stage | ORFS Make Target | Key Metrics to Extract | Source File(s) |
+|-------|-----------------|----------------------|----------------|
+| Synthesis | `synth` | Cell count, design area (um2), buffer count | `logs/sky130hd/<DESIGN>/base/1_1_yosys.log` |
+| Floorplan | `floorplan` | Core area (um2), die area (um2), utilization % | `logs/sky130hd/<DESIGN>/base/2_1_floorplan.log` |
+| Placement | `place` | Placement density, HPWL (half-perimeter wirelength), congestion % | `logs/sky130hd/<DESIGN>/base/3_5_place_dp.log` |
+| CTS | `cts` | Clock skew (ps), buffer count, max latency | `logs/sky130hd/<DESIGN>/base/4_1_cts.log` |
+| Route | `route` | WNS (ns), TNS (ns), DRC violation count, wirelength | `logs/sky130hd/<DESIGN>/base/5_2_route.log`, `reports/sky130hd/<DESIGN>/base/5_route_drc.rpt` |
+| Finish | `finish` | Final area, final WNS/TNS, total power (uW), GDS file path | `logs/sky130hd/<DESIGN>/base/6_report.log`, `results/sky130hd/<DESIGN>/base/6_final.gds` |
+
+Alternative: After `make finish`, ORFS generates `metadata.json` in the logs directory with all metrics in structured JSON. The `get_metrics` tool (D4) can read this directly instead of parsing individual log files.
+
+---
+
+## PPA Report Format
+
+The PPA summary report adapts the existing pnr-report-formatter agent pattern for ORFS outputs:
+
+```
+=== PPA Report: <ModuleName> (sky130hd) ===
+
+Performance:
+  Clock Period:  XX.X ns
+  WNS:           X.XX ns (MET/VIOLATED)
+  TNS:           X.XX ns
+  Clock Skew:    X.XX ps
+
+Power:
+  Internal:      XX.X uW  (XX.X%)
+  Switching:     XX.X uW  (XX.X%)
+  Leakage:       XX.X uW  (XX.X%)
+  Total:         XX.X uW
+
+Area:
+  Cell Count:    XXX
+  Design Area:   XXXX um^2
+  Utilization:   XX%
+
+DRC:             X violations
+
+Per-Stage Summary:
+  [1] Synthesis:  XXX cells, XXX um^2
+  [2] Floorplan:  XXX um^2 die, XX% util
+  [3] Placement:  density X.XX
+  [4] CTS:        XX buffers, X.XX ps skew
+  [5] Route:      WNS X.XX ns, X DRC
+  [6] Finish:     GDS exported
+
+Artifacts:
+  Config:    design/config.mk
+  SDC:       design/constraint.sdc
+  GDS:       results/sky130hd/<DESIGN>/base/6_final.gds
+  Logs:      logs/sky130hd/<DESIGN>/base/
+  Reports:   reports/sky130hd/<DESIGN>/base/
+```
 
 ---
 
 ## MVP Recommendation
 
-### Must have for v1.1.2 launch (19 features):
+Prioritize for 进阶要求 level (minimum viable for full marks at that tier):
 
-All 19 table stakes features (TS-01 through TS-19). These form the minimal complete pipeline from verified Verilog to DEF + reports. Omitting any single one leaves the pipeline broken or unusable:
-- Without SDC (TS-01): synthesis has no timing target
-- Without any PnR stage (TS-04 through TS-10): no physical implementation
-- Without reports (TS-11 through TS-13): users get artifacts but no insight
-- Without error handling (TS-17): failures are silent or cryptic
-- Without pre-flight (TS-16): users hit confusing tool-not-found errors deep in the flow
+1. **T8** - Docker container lifecycle (foundation for everything)
+2. **T1** - `run_stage` MCP tool (core execution capability)
+3. **T2** - `get_report` MCP tool (observability)
+4. **T3** - config.mk auto-generation (ORFS input)
+5. **T4** - constraint.sdc auto-generation (ORFS input)
+6. **T5** - 6-stage orchestrating Skill (the main workflow)
+7. **T6** - Per-stage metric extraction (required for 进阶)
+8. **T7** - PPA summary report (required for 进阶)
+9. **T9** - .mcp.json configuration (submission requirement)
+10. **T10** - Initialize update (user-facing polish)
 
-### Include in v1.1.2 (high-value, low-cost differentiators):
+**Defer to stretch goals:** D1-D7 (failure diagnosis, retry, QoR comparison, extra MCP tools)
 
-1. **DF-01** (spec.json clock enrichment) -- trivial to add during SDC generation, one `grep` of spec.json
-2. **DF-02** (combinational auto-detection) -- already designed into the table stakes, costs nothing extra
-3. **DF-04** (DRC violation summary) -- simple file parsing, already generated by detailed_route
-4. **DF-07** (environment detection) -- extends existing detect-env.sh pattern, needed for pre-flight anyway
-5. **DF-08** (SPEF extraction) -- already in the OpenROAD Tcl flow, just do not remove it
-
-### Defer to v1.2+:
-
-- **DF-03** (timing failure diagnosis) -- valuable but requires OpenSTA report parsing logic; add after core flow is stable
-- **DF-05** (cell usage analysis) -- nice-to-have, low priority
-- **DF-06** (congestion reporting) -- nice-to-have, low priority
-- **DF-09** (synthesis auto-retry) -- high complexity, uncertain failure modes; add after observing real synthesis failures in the wild
-
----
-
-## Phase Structure Recommendation
-
-Based on feature dependencies, the implementation should follow this order:
-
-**Phase 1: Infrastructure** (TS-15, TS-16, DF-07)
-- Workspace directory creation (`pnr/results/`, `pnr/reports/`)
-- Extend detect-env.sh for Yosys, OpenROAD, nangate45
-- Pre-flight validation function
-- Rationale: Everything else depends on directories existing and tools being available
-
-**Phase 2: Synthesis Pipeline** (TS-01, TS-02, TS-03, DF-01)
-- SDC generation script with clock auto-detection and spec.json enrichment
-- Yosys synthesis script with nangate45 liberty
-- Synthesis report parsing
-- Rationale: Must work before PnR can begin; independently testable with just Yosys
-
-**Phase 3: Place-and-Route Pipeline** (TS-04 through TS-10, TS-14, DF-08)
-- Single OpenROAD Tcl script covering floorplan through routing and export
-- Combinational/sequential auto-handling (CTS skip)
-- SPEF extraction
-- DEF + gate-level Verilog export
-- Rationale: Single script, single OpenROAD session; test end-to-end with a known module
-
-**Phase 4: Reports and Command** (TS-11 through TS-13, TS-17, TS-18, TS-19, DF-04)
-- Report generation (timing, power, area, DRC)
-- Stage-level error handling across all scripts
-- PnR summary report formatting
-- `/chip-agent:pnr` skill definition and orchestration
-- Rationale: Reports and the command tie everything together; error handling is best added once the happy path works
-
----
-
-## Complexity Budget
-
-| Complexity | Count | Features |
-|------------|-------|----------|
-| Low | 14 | TS-01, TS-03, TS-05, TS-06, TS-10, TS-11, TS-12, TS-13, TS-14, TS-15, TS-16, DF-01, DF-04, DF-08 |
-| Medium | 9 | TS-02, TS-04, TS-07, TS-08, TS-09, TS-17, TS-18, TS-19, DF-07 |
-| High | 1 | DF-09 (deferred) |
-
-Total estimated effort: comparable to v1.1 Phase 5+6 (workspace isolation + skill decomposition). The OpenROAD Tcl is largely mechanical -- the complexity is in error handling and the synthesis script's interaction with Chisel-generated Verilog quirks.
+**Implementation order rationale:**
+- T8 first because nothing works without a running container
+- T1+T2 next because they are the MCP foundation the Skill calls
+- T3+T4 can be built in parallel (independent input file generators)
+- T5 ties everything together once tools and inputs exist
+- T6+T7 are the metrics layer on top of the stage execution
+- T9+T10 are configuration/polish best done last
 
 ---
 
 ## Sources
 
-- **ORFS GCD example:** Verified locally on nangate45 (2026-03-31) -- all 7 stages produce expected artifacts
-- **Existing codebase:** `scripts/compile.sh`, `scripts/simulate.sh`, `scripts/detect-env.sh`, `skills/workflow/SKILL.md`, `agents/requirement-parser.md` -- patterns for script conventions, error handling, and skill structure
-- **STACK.md research:** Concurrent research (2026-03-31) with verified tool versions, PDK file inventory, and Tcl script specifications
-- **PROJECT.md:** v1.1.2 milestone definition and constraints
-- **ASIC design workflow knowledge:** Standard RTL-to-GDS flow stages, SDC conventions, OpenSTA report format (HIGH confidence -- well-established domain)
-
----
-*Feature research for: ChipAgent v1.1.2 -- RTL-to-GDS via Yosys + OpenROAD*
-*Researched: 2026-03-31*
+- [ORFS GitHub Repository](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts)
+- [ORFS Flow Tutorial](https://openroad-flow-scripts.readthedocs.io/en/latest/tutorials/FlowTutorial.html)
+- [ORFS Flow Variables](https://openroad-flow-scripts.readthedocs.io/en/latest/user/FlowVariables.html)
+- [ORFS Adding New Designs](https://openroad-flow-scripts.readthedocs.io/en/latest/user/AddingNewDesign.html)
+- [ORFS sky130hd platform config.mk](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/master/flow/platforms/sky130hd/config.mk)
+- [ORFS sky130hd gcd design config.mk](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/master/flow/designs/sky130hd/gcd/config.mk)
+- [ORFS Metrics Documentation](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/master/docs/contrib/Metrics.md)
+- [ORFS DeepWiki Overview](https://deepwiki.com/The-OpenROAD-Project/OpenROAD-flow-scripts)
+- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)
+- [MCP Official Specification](https://modelcontextprotocol.io/specification/2025-03-26)
+- [Claude Code MCP Documentation](https://code.claude.com/docs/en/mcp)
+- [ORFS Docker Shell Documentation](https://openroad-flow-scripts.readthedocs.io/en/latest/user/DockerShell.html)
