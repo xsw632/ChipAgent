@@ -106,7 +106,7 @@ Plans:
 | 9. Environment + SDC Foundation | 2/2 | Complete   | 2026-03-31 | - |
 | 10. Yosys Synthesis | v1.1.2 | Complete    | 2026-03-31 | 2026-03-31 |
 | 11. OpenROAD PnR + GDS Export | 1/1 | Complete    | 2026-04-01 | - |
-| 12. PnR Command + Report Integration | 1/1 | Complete   | 2026-04-01 | - |
+| 12. PnR Command + Report Integration | 1/1 | Complete    | 2026-04-01 | - |
 
 ---
 *Full v1.0 details archived to `.planning/milestones/v1.0-ROADMAP.md`*
