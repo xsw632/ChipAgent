@@ -1,36 +1,33 @@
-# Architecture: RTL-to-GDS Integration
+# Architecture: sky130hd MCP Backend
 
-**Project:** ChipAgent v1.1.2
-**Researched:** 2026-03-31
-**Overall confidence:** HIGH (based on verified ORFS installation, nangate45 platform files, and existing codebase analysis)
+**Project:** ChipAgent v1.1.5
+**Researched:** 2026-04-01
+**Overall confidence:** HIGH (based on verified ORFS installation at ~/OpenROAD-flow-scripts, sky130hd platform files present, task2.md requirements analyzed, MCP SDK docs verified via official sources)
 
-## Recommendation: Option 1 -- Standalone Tcl Scripts Calling Yosys/OpenROAD Directly
+---
 
-**Generate self-contained Tcl scripts per module, invoke `yosys` and `openroad` directly from bash wrapper scripts.** Use ORFS platform files (LEF, LIB, GDS, tech configs) in-place but do not use the ORFS Makefile.
+## Executive Summary
 
-### Rationale
+v1.1.5 replaces the standalone nangate45 Tcl-script PnR flow (v1.1.2) with an ORFS-driven sky130hd flow exposed through an MCP Server. The key architectural change: **Claude Code calls MCP tools instead of invoking bash scripts directly.** The MCP Server wraps `docker exec` calls to an ORFS container (with a local-fallback path for development), generates config.mk/constraint.sdc from spec.json, invokes ORFS make targets per-stage, extracts metrics from ORFS output directories, and returns structured results.
 
-1. **ORFS complexity is unnecessary for our modules.** ORFS synth.tcl is 249 lines handling hierarchical synthesis, memory mocking, operator wrapping, DFF legalization with multiple strategies, and adder mapping. Chisel-generated modules are small, flat, and single-clock -- a 30-line Yosys script suffices.
+The architecture introduces three new components (MCP Server, config generator, ORFS wrapper) while modifying four existing ones (pnr skill, initialize skill, detect-env.sh, env.json schema). All components upstream of PnR (generate, compile, lint, simulate) remain untouched.
 
-2. **ORFS Makefile imposes rigid directory structure.** It creates `results/$PLATFORM/$DESIGN_NAME/$FLOW_VARIANT/` under WORK_HOME. This conflicts with ChipAgent's `workspace/pnr/` convention and would produce deeply nested paths like `workspace/pnr/results/nangate45/ALU8/base/1_synth.odb`.
+---
 
-3. **ORFS env var surface area is massive.** The Makefile and Tcl scripts consume 50+ environment variables (SYNTH_HIERARCHICAL, SYNTH_GUT, SYNTH_MOCK_LARGE_MEMORIES, etc.). Misconfiguring any one causes silent wrong behavior or cryptic Tcl errors.
+## Architectural Decision: ORFS Makefile via MCP (not standalone Tcl)
 
-4. **Standalone Tcl gives full control** over output paths, error messages, and stage sequencing. The generated Tcl persists in `workspace/pnr/` as a debuggable artifact.
+**v1.1.2 chose standalone Tcl.** That was correct for nangate45 because:
+- ORFS complexity was unnecessary for small Chisel modules
+- nangate45 platform files could be consumed directly by standalone Tcl
+- The rigid ORFS directory structure conflicted with workspace conventions
 
-5. **Platform files are the real value in ORFS.** The nangate45 directory contains LEF, LIB, GDS, timing constraints, routing configs, and RC extraction rules. These are data files consumed by read commands -- no ORFS Makefile needed to use them.
+**v1.1.5 must use the ORFS Makefile.** The reasons are different now:
+1. **Task2 requirement is explicit:** "ORFS 后端自动化流程框架, 通过 `make` 驱动完整后端流程" -- the assignment mandates using ORFS make targets, not standalone Tcl.
+2. **Docker container model:** The ORFS Docker image (`openroad/orfs:latest`) has ORFS installed at `/OpenROAD-flow-scripts/flow/`. The canonical usage is `make DESIGN_CONFIG=...` inside the container.
+3. **sky130hd platform has more complex flow requirements** than nangate45: the PDN Tcl, tapcell Tcl, fastroute config, fill.json, latch/clkgate mapping files, and adder mapping are all consumed by ORFS's synthesis and PnR scripts -- not trivially replicated in standalone Tcl.
+4. **Per-stage make targets** (`synth`, `floorplan`, `place`, `cts`, `route`, `finish`) allow the MCP Server to execute stages individually while still leveraging ORFS's internal dependency tracking.
 
-### Why Not ORFS Makefile (Option 2)
-
-- ORFS is designed for production tapeouts with complex designs. Its 47 Tcl scripts handle edge cases irrelevant to Chisel-generated small modules.
-- The Makefile's stage caching (via .odb files) adds value for iterative design, but ChipAgent runs the full flow once per `/chip-agent:pnr` invocation.
-- Makefile errors are hard for Claude to parse and present actionable guidance.
-- ORFS updates could break our wrapper scripts without warning.
-
-### Why Not Hybrid (Option 3)
-
-- Worst of both worlds: still depends on ORFS platform directory structure, but loses Makefile's dependency tracking.
-- No clear boundary between "our code" and "ORFS code".
+**The MCP Server wraps ORFS make.** It does not replace it. The server generates `config.mk` and `constraint.sdc`, copies them into the container workspace, then invokes `make DESIGN_CONFIG=/workspace/config.mk <target>` via `docker exec`.
 
 ---
 
@@ -40,533 +37,733 @@
 
 | Component | Type | Location | Responsibility |
 |-----------|------|----------|----------------|
-| `synth.sh` | Script | `scripts/synth.sh` | Generate Yosys Tcl, run synthesis |
-| `pnr.sh` | Script | `scripts/pnr.sh` | Generate OpenROAD Tcl, run full PnR |
-| `sdc-generator.md` | Agent | `agents/sdc-generator.md` | Generate SDC constraints from spec.json |
-| `pnr-reporter.md` | Agent | `agents/pnr-reporter.md` | Parse reports into human-readable summary |
-| `pnr/SKILL.md` | Skill | `skills/pnr/SKILL.md` | `/chip-agent:pnr` slash command orchestrator |
+| MCP Server | TypeScript process | `mcp-server/src/index.ts` | Expose ORFS tools to Claude Code via stdio MCP protocol |
+| Config Generator | TypeScript module | `mcp-server/src/config-gen.ts` | Generate config.mk and constraint.sdc from spec.json + Verilog analysis |
+| ORFS Runner | TypeScript module | `mcp-server/src/orfs-runner.ts` | Execute ORFS make targets via docker exec (or local make --file) |
+| Metric Extractor | TypeScript module | `mcp-server/src/metrics.ts` | Parse ORFS output directories for timing/power/area/DRC metrics |
+| `.mcp.json` | Config file | `.mcp.json` (project root) | Register MCP Server with Claude Code |
 
 ### Modified Components
 
-| Component | Change |
-|-----------|--------|
-| `scripts/detect-env.sh` | Add yosys, openroad detection; detect ORFS platform path |
-| `agents/project-init.md` | Create `workspace/pnr/` subdirectories |
-| `.chipagent/env.json` | Add `can_synthesize`, `can_pnr` capabilities; `orfs_platform_dir` path |
+| Component | Change | Why |
+|-----------|--------|-----|
+| `skills/pnr/SKILL.md` | Rewrite to call MCP tools instead of bash scripts | MCP tools replace direct script invocation |
+| `skills/initialize/SKILL.md` | Add Docker detection, sky130hd detection | New environment requirements |
+| `scripts/detect-env.sh` | Add Docker, sky130hd PDK detection | Pre-flight for Docker + ORFS |
+| `.chipagent/env.json` | New fields: `docker`, `pdk.sky130hd`, `orfs` | Track Docker and sky130hd availability |
+| `CLAUDE.md` | Add MCP Server description, update tech stack | Document new components |
+| `agents/pnr-report-formatter.md` | Update for ORFS report format (different from standalone) | ORFS produces reports in different paths/formats |
+
+### Deprecated/Removed Components
+
+| Component | Status | Replacement |
+|-----------|--------|-------------|
+| `scripts/synth.sh` | Deprecated (keep for nangate45 fallback) | MCP `run_stage` tool with target=synth |
+| `scripts/synth.tcl` | Deprecated (keep for nangate45 fallback) | ORFS internal synthesis scripts |
+| `scripts/pnr.sh` | Deprecated (keep for nangate45 fallback) | MCP `run_stage` tool with target=route/finish |
+| `scripts/pnr.tcl` | Deprecated (keep for nangate45 fallback) | ORFS internal PnR scripts |
+| `scripts/generate_sdc.sh` | Deprecated | MCP `generate_config` tool (config-gen.ts) |
+| `scripts/validate-pdk.sh` | Deprecated | MCP `check_environment` tool |
+| `scripts/def2gds.py` | Deprecated | ORFS `finish` target includes GDS merge |
 
 ### Unchanged Components
 
-All existing scripts (compile.sh, lint.sh, simulate.sh), skills (generate, workflow, compile, lint, simulate, debug), and agents (requirement-parser, chisel-generator, testbench-generator, debug-analyzer) remain untouched.
+All components upstream of PnR remain untouched:
+- `skills/generate/`, `skills/workflow/`, `skills/compile/`, `skills/lint/`, `skills/simulate/`, `skills/debug/`
+- `agents/requirement-parser.md`, `agents/chisel-generator.md`, `agents/testbench-generator.md`, `agents/debug-analyzer.md`, `agents/project-init.md`
+- `scripts/compile.sh`, `scripts/lint.sh`, `scripts/simulate.sh`, `scripts/setup.sh`, `scripts/_common.sh`
 
 ---
 
-## Directory Structure
+## MCP Server Architecture
 
-### Per-Module Workspace Extension
-
-```
-MyDesign/<Module>/workspace/
-  generated/            # (existing) Chisel-compiled Verilog
-  sim/                  # (existing) simulation artifacts
-    logs/
-  pnr/                  # (NEW) synthesis + place-and-route artifacts
-    constraint.sdc      # Generated by sdc-generator agent
-    synth.tcl           # Generated by synth.sh (debuggable artifact)
-    pnr.tcl             # Generated by pnr.sh (debuggable artifact)
-    results/
-      synth.v           # Gate-level netlist from Yosys
-      synth_stat.txt    # Yosys statistics report
-      final.def         # Routed DEF
-      final.v           # Gate-level Verilog (post-route)
-      final.spef        # Parasitic extraction
-      final.gds         # GDS-II layout (via KLayout or OpenROAD)
-    reports/
-      timing.rpt        # STA: WNS, TNS, critical paths
-      power.rpt         # Power: total, leakage, dynamic
-      area.rpt          # Area: cell count, utilization
-      pnr_summary.log   # Human-readable summary (generated by reporter)
-    logs/
-      synth.log         # Yosys stdout/stderr
-      pnr.log           # OpenROAD stdout/stderr
-```
-
-### Why This Layout
-
-- Follows existing `workspace/` flat subdirectory convention (`generated/`, `sim/`, now `pnr/`).
-- `synth.tcl` and `pnr.tcl` persist as debuggable artifacts -- if a stage fails, the user or Claude can inspect the exact Tcl that ran.
-- `results/`, `reports/`, `logs/` mirror the separation in ORFS but with simpler flat structure.
-
----
-
-## Data Flow
+### Server Structure
 
 ```
-                    EXISTING PIPELINE (unchanged)
-                    ==============================
-NL description
-  |
-  v
-[requirement-parser]  --> spec.json
-  |
-  v
-[chisel-generator]    --> ALU8.scala
-  |
-  v
-[compile.sh]          --> workspace/generated/ALU8.v
-  |
-  v
-[lint.sh]             --> lint-clean Verilog
-  |
-  v
-[testbench-generator] --> workspace/sim/tb_ALU8.cpp
-  |
-  v
-[simulate.sh]         --> workspace/sim/logs/sim_result.log, ALU8.vcd
-
-
-                    NEW PNR PIPELINE
-                    =================
-workspace/generated/ALU8.v   (input: lint-clean Verilog)
-  +
-spec.json                    (input: module specification)
-  |
-  v
-[sdc-generator agent]  --> workspace/pnr/constraint.sdc
-  |
-  v
-[synth.sh]              --> workspace/pnr/synth.tcl (generated)
-  |                         workspace/pnr/results/synth.v
-  |                         workspace/pnr/results/synth_stat.txt
-  |                         workspace/pnr/logs/synth.log
-  v
-[pnr.sh]                --> workspace/pnr/pnr.tcl (generated)
-  |                         workspace/pnr/results/final.def
-  |                         workspace/pnr/results/final.gds
-  |                         workspace/pnr/reports/timing.rpt
-  |                         workspace/pnr/reports/power.rpt
-  |                         workspace/pnr/reports/area.rpt
-  |                         workspace/pnr/logs/pnr.log
-  v
-[pnr-reporter agent]    --> workspace/pnr/reports/pnr_summary.log
+mcp-server/
+  package.json              # name: "chipagent-mcp-server", dependencies
+  tsconfig.json             # TypeScript config (ESM, Node 18+)
+  src/
+    index.ts                # Entry point: McpServer + StdioServerTransport
+    tools/
+      check-environment.ts  # Tool: validate Docker + ORFS + sky130hd
+      generate-config.ts    # Tool: produce config.mk + constraint.sdc
+      run-stage.ts          # Tool: execute one ORFS make target
+      get-report.ts         # Tool: extract metrics from ORFS output
+      get-log.ts            # Tool: read stage log for diagnosis
+    lib/
+      orfs-runner.ts        # Docker exec / local make wrapper
+      config-gen.ts         # config.mk + SDC template generation
+      metrics.ts            # Parse ORFS reports/logs/metadata.json
+      docker.ts             # Docker container management helpers
+      paths.ts              # Path resolution (container vs local)
 ```
 
-### Key Data Handoff Points
+### MCP Tools Exposed
 
-1. **Verilog input**: `workspace/generated/<Module>.v` -- already produced by compile.sh.
+Five tools cover the full ORFS backend flow. Each tool maps to a `server.tool()` registration with Zod schema validation.
 
-2. **SDC file**: `workspace/pnr/constraint.sdc` -- generated by sdc-generator agent from spec.json. Contains clock definition, I/O delays. For combinational modules, uses virtual clock.
+#### Tool 1: `check_environment`
 
-3. **Platform files**: Read directly from ORFS installation at `$ORFS_PLATFORM_DIR/` (detected by detect-env.sh). Includes:
-   - `lef/NangateOpenCellLibrary.tech.lef` (technology LEF)
-   - `lef/NangateOpenCellLibrary.macro.mod.lef` (standard cell LEF)
-   - `lib/NangateOpenCellLibrary_typical.lib` (timing/power library)
-   - `gds/*.gds` (cell GDS for layout)
-   - `cells_latch.v`, `cells_clkgate.v` (technology mapping files)
-   - `setRC.tcl`, `fastroute.tcl`, `tapcell.tcl` (flow configs)
+**Purpose:** Validate that Docker, ORFS container, and sky130hd platform are available.
 
-4. **Synthesis output**: `workspace/pnr/results/synth.v` consumed by pnr.sh.
+**Parameters:** None.
 
-5. **PnR outputs**: DEF, GDS, SPEF, reports in `workspace/pnr/results/` and `workspace/pnr/reports/`.
-
----
-
-## Script Design
-
-### `scripts/synth.sh` -- Yosys Synthesis
-
-Follows the exact pattern of compile.sh (source _common.sh, 3-mode path resolution, exit code handling).
-
-**Generated Tcl structure (~30 lines):**
-
-```tcl
-# Read technology
-read_liberty -lib <LIB_FILE>
-
-# Read design
-read_verilog <VERILOG_FILE>
-
-# Synthesize
-synth -top <MODULE> -flatten
-
-# Technology mapping
-dfflibmap -liberty <LIB_FILE>
-abc -liberty <LIB_FILE> [-D <CLOCK_PERIOD_PS>]
-
-# Tie cells
-hilomap -singleton \
-    -hicell LOGIC1_X1 Z \
-    -locell LOGIC0_X1 Z
-
-# Buffer insertion
-insbuf -buf BUF_X1 A Z
-splitnets
-opt_clean -purge
-
-# Reports
-tee -o <REPORTS_DIR>/synth_check.txt check
-tee -o <REPORTS_DIR>/synth_stat.txt stat -liberty <LIB_FILE>
-
-# Write netlist
-write_verilog -noattr -noexpr -nohex -nodec <RESULTS_DIR>/synth.v
-```
-
-**Why this is enough:** Chisel modules are flat (no hierarchy to manage), use standard DFFs (no latch/memory inference), and target a single standard cell library. The complex ORFS logic for hierarchical synthesis, memory mocking, and operator wrapping is irrelevant.
-
-### `scripts/pnr.sh` -- Full Place-and-Route
-
-**Generated Tcl structure (~80 lines):**
-
-```tcl
-# --- Read inputs ---
-read_liberty <LIB_FILE>
-read_lef <TECH_LEF>
-read_lef <SC_LEF>
-read_verilog <SYNTH_V>
-link_design <MODULE>
-read_sdc <SDC_FILE>
-
-# --- RC parasitics model ---
-source <PLATFORM_DIR>/setRC.tcl
-
-# --- Floorplan ---
-initialize_floorplan -utilization <UTIL> -site FreePDK45_38x28_10R_NP_162NW_34O
-source <PLATFORM_DIR>/make_tracks.tcl
-place_pins -hor_layers metal3 -ver_layers metal2
-
-# --- Power grid ---
-source <PLATFORM_DIR>/tapcell.tcl
-source <PLATFORM_DIR>/grid_strategy-M1-M4-M7.tcl
-
-# --- Placement ---
-global_placement -density <DENSITY>
-estimate_parasitics -placement
-buffer_ports
-repair_design
-detailed_placement
-
-# --- CTS (conditional: only if real clock) ---
-if { <HAS_CLOCK> } {
-    clock_tree_synthesis
-    set_propagated_clock [all_clocks]
-    estimate_parasitics -placement
-    repair_clock_nets
-    repair_timing
-    detailed_placement
-}
-
-# --- Routing ---
-source <PLATFORM_DIR>/fastroute.tcl
-set_routing_layers -signal metal2-metal10 -clock metal4-metal10
-global_route
-detailed_route -bottom_routing_layer metal2 -top_routing_layer metal10
-
-# --- Fill ---
-filler_placement <FILL_CELLS>
-
-# --- Extraction + Reports ---
-define_process_corner -ext_model_index 0 X
-extract_parasitics -ext_model_file <RCX_RULES>
-write_spef <RESULTS_DIR>/final.spef
-read_spef <RESULTS_DIR>/final.spef
-
-report_checks -path_delay min_max -format full_clock_expanded > <REPORTS_DIR>/timing.rpt
-report_power > <REPORTS_DIR>/power.rpt
-report_design_area > <REPORTS_DIR>/area.rpt
-
-# --- Output ---
-write_def <RESULTS_DIR>/final.def
-write_verilog -remove_cells {TAPCELL_X1 FILLCELL_X1 FILLCELL_X2 FILLCELL_X4 FILLCELL_X8 FILLCELL_X16 FILLCELL_X32} <RESULTS_DIR>/final.v
-```
-
-**Single OpenROAD session:** All PnR stages run in one `openroad` invocation. The design database stays in memory -- no ODB serialization between stages. This is faster and simpler for small designs.
-
-### Platform Path Resolution
-
-ORFS platform path is detected by `detect-env.sh` and stored in `env.json`:
-
+**Returns:**
 ```json
 {
-  "tools": {
-    "yosys":    { "installed": true, "version": "0.53", "path": "/usr/bin/yosys" },
-    "openroad": { "installed": true, "version": "v2.0-19691-g...", "path": "/usr/bin/openroad" }
+  "docker_available": true,
+  "container_running": true,
+  "container_name": "orfs-agent",
+  "orfs_path": "/OpenROAD-flow-scripts/flow",
+  "sky130hd_available": true,
+  "yosys_version": "0.53+...",
+  "openroad_version": "v2.0-...",
+  "ready": true
+}
+```
+
+**Implementation:** Runs `docker exec orfs-agent yosys -version` and `docker exec orfs-agent openroad -version`. Checks for `/OpenROAD-flow-scripts/flow/platforms/sky130hd/config.mk` inside container.
+
+#### Tool 2: `generate_config`
+
+**Purpose:** Generate `config.mk` and `constraint.sdc` for a module based on spec.json and Verilog analysis.
+
+**Parameters:**
+```typescript
+{
+  module_name: z.string().describe("PascalCase module name, e.g., ALU"),
+  verilog_path: z.string().describe("Absolute path to compiled Verilog file"),
+  spec_json_path: z.string().optional().describe("Path to spec.json for clock info"),
+  clock_period_ns: z.number().optional().describe("Override clock period in ns (default: auto-detect)"),
+  core_utilization: z.number().optional().describe("Core utilization percentage (default: 40)"),
+  place_density: z.number().optional().describe("Placement density 0-1 (default: 0.60)")
+}
+```
+
+**Returns:** Paths to generated config.mk and constraint.sdc, plus the detected module type (sequential/combinational).
+
+**Implementation:**
+1. Read Verilog file, extract `module` name (authoritative).
+2. Grep for `always @(posedge` to detect sequential vs combinational.
+3. Read spec.json `clock_period_ns` if available, else default 5.0 ns (sky130hd needs more relaxed timing than nangate45).
+4. Generate `config.mk` with PLATFORM=sky130hd, DESIGN_NAME, VERILOG_FILES, SDC_FILE, CORE_UTILIZATION, PLACE_DENSITY.
+5. Generate `constraint.sdc` following the gcd example pattern (sky130hd-compatible format).
+6. Write both to `MyDesign/<Module>/workspace/pnr/`.
+7. Copy Verilog file to the workspace design source directory for ORFS to find.
+
+#### Tool 3: `run_stage`
+
+**Purpose:** Execute a single ORFS flow stage via make.
+
+**Parameters:**
+```typescript
+{
+  module_name: z.string().describe("Module name"),
+  stage: z.enum(["synth", "floorplan", "place", "cts", "route", "finish"]).describe("ORFS make target"),
+  config_path: z.string().describe("Path to config.mk in workspace")
+}
+```
+
+**Returns:**
+```json
+{
+  "success": true,
+  "stage": "synth",
+  "elapsed_seconds": 12.3,
+  "log_path": "/workspace/logs/sky130hd/ALU/base/1_1_yosys.log",
+  "results_path": "/workspace/results/sky130hd/ALU/base/",
+  "error_summary": null
+}
+```
+
+**Implementation:**
+1. Copy config.mk and constraint.sdc and Verilog into the Docker container workspace.
+2. Run `docker exec orfs-agent make -C /OpenROAD-flow-scripts/flow DESIGN_CONFIG=/workspace/config.mk <stage>` with a timeout.
+3. Capture exit code, parse last 50 lines of log on failure.
+4. On success, copy result files back to host workspace.
+
+**Local fallback:** When Docker is unavailable and ORFS is installed locally (detected at `~/OpenROAD-flow-scripts`), run `make --file=$HOME/OpenROAD-flow-scripts/flow/Makefile DESIGN_CONFIG=<path>/config.mk <stage>` directly.
+
+#### Tool 4: `get_report`
+
+**Purpose:** Extract structured metrics from ORFS output for a completed (or partially completed) flow.
+
+**Parameters:**
+```typescript
+{
+  module_name: z.string().describe("Module name"),
+  stage: z.enum(["synth", "floorplan", "place", "cts", "route", "finish", "all"]).describe("Which stage metrics to extract"),
+  config_path: z.string().describe("Path to config.mk for directory resolution")
+}
+```
+
+**Returns:** Structured JSON with stage-appropriate metrics:
+```json
+{
+  "stage": "route",
+  "metrics": {
+    "cell_count": 156,
+    "design_area_um2": 8234.5,
+    "utilization_pct": 12.3,
+    "wns_ns": 0.42,
+    "tns_ns": 0.0,
+    "drc_violations": 0,
+    "total_power_uw": 45.2,
+    "internal_power_uw": 28.1,
+    "switching_power_uw": 12.3,
+    "leakage_power_uw": 4.8
   },
-  "paths": {
-    "orfs_platform_dir": "/home/mingzhenjia/OpenROAD-flow-scripts/flow/platforms/nangate45"
-  },
-  "capabilities": {
-    "can_synthesize": true,
-    "can_pnr": true
+  "timing_met": true,
+  "report_paths": {
+    "timing": "...",
+    "power": "...",
+    "area": "..."
   }
 }
 ```
 
-Scripts read `orfs_platform_dir` from env.json or accept `ORFS_PLATFORM_DIR` env var override, consistent with how `CLAUDE_PLUGIN_ROOT` works today.
+**Implementation:** Reads ORFS output from `results/sky130hd/<DESIGN_NAME>/base/` and `reports/sky130hd/<DESIGN_NAME>/base/`. Parses `synth_stat.txt`, timing reports, power reports via regex. Falls back to `metadata.json` if available (ORFS generates this at flow end).
 
-The detection logic:
-1. Check if `yosys` and `openroad` are on PATH
-2. Search for ORFS platform dir at common locations: `~/OpenROAD-flow-scripts/flow/platforms/nangate45/`, `/opt/orfs/...`
-3. Validate by checking for `config.mk` and `lib/NangateOpenCellLibrary_typical.lib`
+#### Tool 5: `get_log`
+
+**Purpose:** Retrieve and tail stage log for diagnosis when a stage fails.
+
+**Parameters:**
+```typescript
+{
+  module_name: z.string().describe("Module name"),
+  stage: z.enum(["synth", "floorplan", "place", "cts", "route", "finish"]).describe("Which stage log"),
+  lines: z.number().optional().describe("Number of lines from end (default: 100)")
+}
+```
+
+**Returns:** Log text content and file path.
+
+**Implementation:** Reads from ORFS `logs/sky130hd/<DESIGN_NAME>/base/` directory. The log filenames follow ORFS convention: `1_1_yosys.log`, `2_1_floorplan.log`, `3_1_place_gp_skip_io.log`, `4_1_cts.log`, `5_1_grt.log`/`5_2_route.log`, `6_1_merge.log`.
+
+### MCP Registration
+
+The MCP Server connects to Claude Code via stdio transport. Registration in `.mcp.json` at project root:
+
+```json
+{
+  "mcpServers": {
+    "chipagent-orfs": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["mcp-server/build/index.js"],
+      "env": {
+        "DOCKER_CONTAINER": "orfs-agent",
+        "ORFS_DIR": "${ORFS_DIR:-/home/mingzhenjia/OpenROAD-flow-scripts}"
+      }
+    }
+  }
+}
+```
+
+**Why stdio transport:** Claude Code runs locally. The MCP Server needs to exec Docker commands and access the local filesystem. Stdio is the standard transport for local MCP servers.
+
+**Why not HTTP transport:** No need for remote access. HTTP adds complexity (CORS, port allocation, process management) with no benefit for a local tool server.
 
 ---
 
-## Agent Design
+## Data Flow: Skill -> MCP -> ORFS -> Results -> Reports
 
-### `agents/sdc-generator.md` -- SDC Constraint Generation
+```
+USER invokes /chip-agent:pnr ALU
+  |
+  v
+[pnr SKILL.md] -- orchestration layer (Claude reads SKILL.md instructions)
+  |
+  |  1. Call MCP tool: check_environment
+  |     <- { ready: true, ... }
+  |
+  |  2. Call MCP tool: generate_config
+  |     -> { module_name: "ALU", verilog_path: ".../ALU.v", ... }
+  |     <- { config_mk: ".../config.mk", sdc: ".../constraint.sdc", type: "combinational" }
+  |
+  |  3. For each stage in [synth, floorplan, place, cts, route, finish]:
+  |     Call MCP tool: run_stage
+  |       -> { module_name: "ALU", stage: "synth", config_path: ".../config.mk" }
+  |       <- { success: true, elapsed_seconds: 5.2, ... }
+  |
+  |     Call MCP tool: get_report
+  |       -> { module_name: "ALU", stage: "synth" }
+  |       <- { metrics: { cell_count: 156, ... } }
+  |
+  |     If stage fails:
+  |       Call MCP tool: get_log
+  |         -> { module_name: "ALU", stage: "synth", lines: 100 }
+  |         <- { log: "...", path: "..." }
+  |       Diagnose and decide: retry with adjusted params or stop
+  |
+  |  4. Call MCP tool: get_report (stage: "all")
+  |     <- { complete PPA summary }
+  |
+  |  5. Format and present PPA summary report
+  v
+USER sees formatted PPA report in conversation
+```
 
-**Input:** `spec.json` (already exists from requirement-parser), `workspace/generated/<Module>.v`
+### Internal Data Flow Within MCP Server
 
-**Logic:**
-- Parse spec.json for clock field (name, period)
-- If no clock in spec: grep Verilog for `input.*clk` or `input.*clock` pattern
-- If clock found: generate real clock SDC with input/output delays at 20% of period
-- If no clock found: generate virtual clock SDC with `set_max_delay` for combinational path
+```
+[generate_config tool]
+  |
+  |  Reads: MyDesign/ALU/workspace/generated/ALU.v
+  |  Reads: MyDesign/ALU/workspace/spec.json (optional)
+  |
+  |  Writes to host:
+  |    MyDesign/ALU/workspace/pnr/config.mk
+  |    MyDesign/ALU/workspace/pnr/constraint.sdc
+  |
+  v
+[run_stage tool]
+  |
+  |  docker cp: config.mk, constraint.sdc, ALU.v -> container:/workspace/
+  |  docker exec: make -C /OpenROAD-flow-scripts/flow
+  |                     DESIGN_CONFIG=/workspace/config.mk synth
+  |
+  |  ORFS inside container:
+  |    Reads: /workspace/config.mk -> PLATFORM=sky130hd, DESIGN_NAME=ALU
+  |    Reads: /OpenROAD-flow-scripts/flow/platforms/sky130hd/config.mk
+  |    Runs: Yosys with platform .lib, .lef, mapping files
+  |    Writes: results/sky130hd/ALU/base/1_synth.odb
+  |            results/sky130hd/ALU/base/1_2_yosys.v
+  |            logs/sky130hd/ALU/base/1_1_yosys.log
+  |            reports/sky130hd/ALU/base/synth_stat.txt
+  |
+  |  docker cp: results/, reports/, logs/ -> host MyDesign/ALU/workspace/pnr/
+  |
+  v
+[get_report tool]
+  |
+  |  Reads: MyDesign/ALU/workspace/pnr/results/sky130hd/ALU/base/
+  |  Reads: MyDesign/ALU/workspace/pnr/reports/sky130hd/ALU/base/
+  |  Parses: synth_stat.txt, timing reports, power reports
+  |
+  |  Returns: structured JSON metrics
+  v
+```
 
-**Sequential module SDC:**
+---
+
+## config.mk Generation from spec.json/Verilog
+
+### Template
+
+The generated `config.mk` for a ChipAgent module targeting sky130hd:
+
+```makefile
+export PLATFORM    = sky130hd
+export DESIGN_NAME = <MODULE_NAME>
+
+export VERILOG_FILES = /workspace/src/<MODULE_NAME>.v
+export SDC_FILE      = /workspace/constraint.sdc
+
+export CORE_UTILIZATION = <40 default, configurable>
+export PLACE_DENSITY    = <0.60 default, configurable>
+export TNS_END_PERCENT  = 100
+```
+
+**Paths are container-relative.** The Verilog file and SDC are copied into the container's `/workspace/` directory. ORFS resolves the sky130hd platform files relative to its own installation at `/OpenROAD-flow-scripts/flow/platforms/sky130hd/`.
+
+### constraint.sdc Generation
+
+Following the sky130hd GCD example pattern (verified from ORFS source):
+
+**Sequential module:**
 ```tcl
-create_clock -name clk -period 10.0 [get_ports clk]
-set_input_delay  -clock clk 2.0 [all_inputs]
-set_output_delay -clock clk 2.0 [all_outputs]
+current_design <MODULE_NAME>
+
+set clk_name  core_clock
+set clk_port_name clock
+set clk_period <PERIOD_NS>
+set clk_io_pct 0.2
+
+set clk_port [get_ports $clk_port_name]
+
+create_clock -name $clk_name -period $clk_period $clk_port
+
+set non_clock_inputs [all_inputs -no_clocks]
+
+set_input_delay  [expr $clk_period * $clk_io_pct] -clock $clk_name $non_clock_inputs
+set_output_delay [expr $clk_period * $clk_io_pct] -clock $clk_name [all_outputs]
 ```
 
-**Combinational module SDC:**
+**Combinational module:**
 ```tcl
-create_clock -name virtual_clk -period 2.0
-set_input_delay  -clock virtual_clk 0.0 [all_inputs]
-set_output_delay -clock virtual_clk 0.0 [all_outputs]
-set_max_delay 2.0 [all_outputs]
+current_design <MODULE_NAME>
+
+set clk_period <PERIOD_NS>
+
+create_clock -name virtual_clk -period $clk_period
+
+set_input_delay  0.0 -clock virtual_clk [all_inputs]
+set_output_delay 0.0 -clock virtual_clk [all_outputs]
+set_max_delay $clk_period -from [all_inputs] -to [all_outputs]
 ```
 
-**Output:** `workspace/pnr/constraint.sdc`
+### Key Differences from v1.1.2 SDC
 
-### `agents/pnr-reporter.md` -- Report Extraction
+| Aspect | v1.1.2 (nangate45) | v1.1.5 (sky130hd) |
+|--------|---------------------|---------------------|
+| Default clock period | 2.0 ns | 5.0 ns (sky130 is slower, 130nm) |
+| Clock port name | `clock` (Chisel default) | `clock` (same, Chisel default) |
+| SDC format | Minimal | Follows ORFS GCD example (more variables) |
+| `current_design` | Present | Present |
+| IO delay fraction | 20% of period | 20% of period |
 
-**Input:** Report files in `workspace/pnr/reports/`
+### Generation Logic
 
-**Extracts from timing.rpt:**
-- WNS (worst negative slack)
-- TNS (total negative slack)
-- Critical path endpoints
+1. Read `spec.json` for `clock_period_ns` (if present, use it; otherwise default 5.0 ns).
+2. Read Verilog file, extract module name with `grep -m1 '^module '`.
+3. Detect sequential vs combinational: `grep 'always @(posedge'` in Verilog.
+4. If sequential, extract clock port name: look for `input clock` or `input clk` pattern in Verilog port list.
+5. Write config.mk with absolute container paths.
+6. Write constraint.sdc using the appropriate template.
 
-**Extracts from power.rpt:**
-- Total power (mW)
-- Leakage vs dynamic breakdown
+---
 
-**Extracts from area.rpt:**
-- Cell count
-- Total area (um^2)
-- Utilization percentage
+## Container Workspace Layout
 
-**Output:** `workspace/pnr/reports/pnr_summary.log`
+When the MCP Server prepares a run, the Docker container workspace looks like this:
 
-Format (mirrors sim_result.log style):
 ```
-=== PnR Summary: ALU8 (nangate45) ===
-Timing:  MET  (WNS: +0.42 ns, TNS: 0.00 ns)
-Area:    234 cells, 1456.3 um^2 (38.2% utilization)
-Power:   0.83 mW total (0.71 mW dynamic, 0.12 mW leakage)
-DRC:     0 violations
-Outputs: workspace/pnr/results/final.def
-         workspace/pnr/results/final.gds
+/workspace/                        # Mounted or copied into container
+  src/
+    ALU.v                          # Compiled Verilog (copied from host)
+  config.mk                       # Generated by MCP Server
+  constraint.sdc                   # Generated by MCP Server
+
+# ORFS creates these under /OpenROAD-flow-scripts/flow/:
+/OpenROAD-flow-scripts/flow/
+  results/sky130hd/ALU/base/       # Stage output files (.odb, .v, .sdc)
+  logs/sky130hd/ALU/base/          # Stage log files
+  reports/sky130hd/ALU/base/       # Stage report files
+  objects/sky130hd/ALU/base/       # Internal working files
+```
+
+### Host Workspace Layout (after results are copied back)
+
+```
+MyDesign/ALU/workspace/
+  generated/ALU.v                  # (existing, unchanged)
+  sim/                             # (existing, unchanged)
+  spec.json                        # (existing, unchanged)
+  pnr/                             # (modified: ORFS-based layout)
+    config.mk                      # Generated by MCP Server
+    constraint.sdc                 # Generated by MCP Server
+    results/                       # Copied from container
+      sky130hd/ALU/base/
+        1_synth.odb
+        1_2_yosys.v
+        2_floorplan.odb
+        3_place.odb
+        4_cts.odb (if sequential)
+        5_route.odb
+        6_final.gds
+    logs/                          # Copied from container
+      sky130hd/ALU/base/
+        1_1_yosys.log
+        2_1_floorplan.log
+        ...
+    reports/                       # Copied from container
+      sky130hd/ALU/base/
+        synth_stat.txt
+        5_route_drc.rpt
+        ...
 ```
 
 ---
 
-## Skill Design: `/chip-agent:pnr`
+## Docker Integration
 
-### `skills/pnr/SKILL.md` Pipeline
+### Container Lifecycle
 
-1. **Prerequisite check**: Verify `workspace/generated/<Module>.v` exists and is lint-clean. If not, tell user to run `/chip-agent:workflow` or `/chip-agent:compile` first.
-
-2. **Environment check**: Read `.chipagent/env.json`, verify `can_pnr` is true. If not, guide user to install yosys/openroad.
-
-3. **SDC generation**: Invoke sdc-generator agent. Reads spec.json and Verilog to produce constraint.sdc.
-
-4. **Synthesis**: Run `scripts/synth.sh <Module>`. On failure, present last 50 lines of synth.log with diagnosis.
-
-5. **Place-and-Route**: Run `scripts/pnr.sh <Module>`. On failure, present log with stage identification.
-
-6. **Report**: Invoke pnr-reporter agent. Present pnr_summary.log to user.
-
-### NOT Part of Default Workflow
-
-The existing `/chip-agent:workflow` ends at simulation. PnR is a separate command (`/chip-agent:pnr`) because:
-- PnR takes minutes vs seconds for simulation
-- PnR requires additional tools (yosys, openroad) not needed for functional verification
-- Users iterate on RTL design before committing to physical implementation
-
----
-
-## Error Handling Strategy
-
-### Stage Failure Identification
+The task2 specification mandates a **long-running container** model:
 
 ```bash
-# In synth.sh:
-EXIT_CODE=0
-yosys "$PNR_DIR/synth.tcl" > "$PNR_DIR/logs/synth.log" 2>&1 || EXIT_CODE=$?
+# One-time setup (done by initialize skill or user)
+docker run -d --name orfs-agent \
+  -v $(pwd)/design:/workspace \
+  openroad/orfs:latest sleep infinity
 
-if [ "$EXIT_CODE" -ne 0 ]; then
-    echo "SYNTHESIS FAILED (exit code $EXIT_CODE)"
-    echo "---"
-    tail -50 "$PNR_DIR/logs/synth.log"
-    echo "---"
-    echo "Full log: $PNR_DIR/logs/synth.log"
-    echo "Tcl script: $PNR_DIR/synth.tcl"
-    exit 1
-fi
-
-# Verify output
-if [ ! -f "$PNR_DIR/results/synth.v" ]; then
-    echo "SYNTHESIS FAILED: No netlist produced (yosys exited 0 but no synth.v)"
-    cat "$PNR_DIR/logs/synth.log"
-    exit 1
-fi
+# All subsequent operations use docker exec
+docker exec orfs-agent make -C /OpenROAD-flow-scripts/flow \
+  DESIGN_CONFIG=/workspace/config.mk synth
 ```
 
-### Common Failure Modes and Guidance
+The MCP Server manages this lifecycle:
+1. `check_environment` verifies the container exists and is running.
+2. If container is not running, the tool returns instructions for starting it.
+3. The MCP Server does NOT auto-start the container (avoid side effects in tool calls).
 
-| Failure | Stage | Detection | Actionable Guidance |
-|---------|-------|-----------|---------------------|
-| Module not found | Synthesis | "ERROR: Module not found" in log | Check DESIGN_NAME matches Verilog module name |
-| Missing clock port | Synthesis | abc timing violation | SDC clock port must match Verilog port name |
-| Cannot init floorplan | PnR | "Cannot fit" in log | Reduce CORE_UTILIZATION or increase die area |
-| Placement overflow | PnR | Density error | Reduce PLACE_DENSITY |
-| Global route congestion | PnR | GRC overflow | Reduce utilization or adjust routing layers |
-| Detailed route DRC | PnR | DRC count > 0 | Reduce density, may need manual intervention |
-| Timing violation | PnR | WNS < 0 in timing.rpt | Increase clock period in SDC |
+### File Transfer Strategy
 
----
+**Option A (volume mount):** Mount host workspace directory as `/workspace` in container. Simplest, but requires the container to be started with the right mount point.
 
-## Nangate45 Platform Constants
+**Option B (docker cp):** Copy files in/out per stage. More flexible (works regardless of mount), but slower.
 
-These values come from the verified nangate45 `config.mk` and should be used in generated Tcl:
+**Recommendation: Volume mount as primary, docker cp as fallback.** The `generate_config` tool writes files to the host workspace, which is visible to the container via the mount. The `get_report` tool reads from the same mounted directory. If the mount is not configured, fall back to `docker cp`.
 
-| Constant | Value | Source |
-|----------|-------|--------|
-| LIB_FILE | `$PLATFORM_DIR/lib/NangateOpenCellLibrary_typical.lib` | config.mk |
-| TECH_LEF | `$PLATFORM_DIR/lef/NangateOpenCellLibrary.tech.lef` | config.mk |
-| SC_LEF | `$PLATFORM_DIR/lef/NangateOpenCellLibrary.macro.mod.lef` | config.mk |
-| PLACE_SITE | `FreePDK45_38x28_10R_NP_162NW_34O` | config.mk |
-| TIEHI_CELL | `LOGIC1_X1 Z` | config.mk |
-| TIELO_CELL | `LOGIC0_X1 Z` | config.mk |
-| MIN_BUF_CELL | `BUF_X1 A Z` | config.mk |
-| FILL_CELLS | `FILLCELL_X1 X2 X4 X8 X16 X32` | config.mk |
-| MIN_ROUTING_LAYER | `metal2` | config.mk |
-| MAX_ROUTING_LAYER | `metal10` | config.mk |
-| MIN_CLK_ROUTING_LAYER | `metal4` | config.mk |
-| IO_PLACER_H | `metal5` | config.mk |
-| IO_PLACER_V | `metal6` | config.mk |
-| ABC_DRIVER_CELL | `BUF_X1` | config.mk |
-| ABC_LOAD_IN_FF | `3.898` | config.mk |
-| RCX_RULES | `$PLATFORM_DIR/rcx_patterns.rules` | config.mk |
+### Local Fallback (No Docker)
 
----
+When ORFS is installed locally (as it is on this machine at `~/OpenROAD-flow-scripts`), the MCP Server uses `make --file` directly:
 
-## CTS Handling for Combinational vs Sequential Modules
-
-Chisel modules from ChipAgent may or may not have clocks:
-- **Combinational** (e.g., ALU, priority encoder): no clock port, no registers
-- **Sequential** (e.g., register file, pipeline stage): has clock, has flip-flops
-
-The `HAS_CLOCK` flag is determined by synth.sh (checking if the Yosys netlist contains any DFF cells) and passed to pnr.sh. This is more reliable than checking Verilog ports, because Chisel may generate a `clock` port even for combinational logic (Chisel `Module` always has an implicit clock).
-
-**Detection in synth.sh:**
 ```bash
-# After synthesis, check if netlist contains sequential cells
-if grep -qE '(DFF|SDFF|DLAT)' "$PNR_DIR/results/synth.v"; then
-    HAS_CLOCK=1
-else
-    HAS_CLOCK=0
-fi
+make --file=$HOME/OpenROAD-flow-scripts/flow/Makefile \
+  DESIGN_CONFIG=$(pwd)/MyDesign/ALU/workspace/pnr/config.mk synth
+```
+
+This requires adjusting config.mk paths to be host-absolute instead of container-relative. The `orfs-runner.ts` module abstracts this difference.
+
+### Environment Detection Flow
+
+```
+[detect-env.sh] (updated)
+  |
+  |  1. Check Docker: docker --version, docker info
+  |  2. Check ORFS container: docker inspect orfs-agent
+  |  3. Check local ORFS: ~/OpenROAD-flow-scripts/flow/Makefile
+  |  4. Check sky130hd PDK:
+  |     - Container: docker exec orfs-agent test -f /OpenROAD-flow-scripts/flow/platforms/sky130hd/config.mk
+  |     - Local: test -f ~/OpenROAD-flow-scripts/flow/platforms/sky130hd/config.mk
+  |  5. Check tools in container: docker exec orfs-agent yosys -version / openroad -version
+  |
+  v
+[.chipagent/env.json] (updated schema)
+{
+  "docker": {
+    "installed": true,
+    "version": "27.x",
+    "orfs_container": {
+      "exists": true,
+      "running": true,
+      "name": "orfs-agent",
+      "image": "openroad/orfs:latest"
+    }
+  },
+  "pdk": {
+    "sky130hd": {
+      "installed": true,
+      "source": "container",
+      "path": "/OpenROAD-flow-scripts/flow/platforms/sky130hd"
+    },
+    "nangate45": { ... }
+  },
+  "orfs": {
+    "installed": true,
+    "source": "local",
+    "path": "/home/mingzhenjia/OpenROAD-flow-scripts",
+    "flow_dir": "/home/mingzhenjia/OpenROAD-flow-scripts/flow"
+  },
+  "capabilities": {
+    "can_compile": true,
+    "can_lint": true,
+    "can_simulate": true,
+    "can_synthesize": true,
+    "can_pnr": true,
+    "can_gds": true,
+    "can_orfs_docker": true,
+    "can_orfs_local": true
+  }
+}
 ```
 
 ---
 
-## Build Order (Suggested Implementation Phases)
+## sky130hd Platform Constants
 
-### Phase 1: Environment and Scaffolding
-- Extend `detect-env.sh`: detect yosys, openroad, locate nangate45 platform dir
-- Add capabilities to env.json: `can_synthesize`, `can_pnr`
-- Extend `project-init.md`: create `workspace/pnr/{results,reports,logs}/`
-- **Test**: `detect-env.sh` correctly identifies tools and platform path
+From the verified `~/OpenROAD-flow-scripts/flow/platforms/sky130hd/config.mk`:
 
-### Phase 2: SDC Generation
-- Create `agents/sdc-generator.md`
-- Handle both clock and combinational cases
-- **Test**: Generate SDC for ALU8 (combinational with Chisel implicit clock) and a simple sequential module
+| Constant | Value | Notes |
+|----------|-------|-------|
+| PROCESS | 130 (nm) | Much larger feature size than nangate45 |
+| TECH_LEF | `sky130_fd_sc_hd.tlef` | Technology LEF |
+| SC_LEF | `sky130_fd_sc_hd_merged.lef` | Standard cell LEF |
+| LIB_FILES | `sky130_fd_sc_hd__tt_025C_1v80.lib` | Typical corner, 25C, 1.8V |
+| PLACE_SITE | `unithd` | Differs from nangate45 `FreePDK45_38x28_10R_NP_162NW_34O` |
+| PLACE_DENSITY | 0.60 (default) | Higher than nangate45 0.30 |
+| TAP_CELL_NAME | `sky130_fd_sc_hd__tapvpwrvgnd_1` | Differs from nangate45 `TAPCELL_X1` |
+| FILL_CELLS | `sky130_fd_sc_hd__fill_1/2/4/8` | Differs from nangate45 |
+| MIN_ROUTING_LAYER | met1 | |
+| MAX_ROUTING_LAYER | met5 | Only 5 metal layers (vs nangate45's 10) |
+| MIN_CLK_ROUTING_LAYER | met3 | |
+| IO_PLACER_H/V | met3 / met2 | |
+| ABC_DRIVER_CELL | `sky130_fd_sc_hd__buf_1` | |
+| RCX_RULES | `rcx_patterns.rules` (symlink to sky130hs) | |
+| PWR_NETS_VOLTAGES | VDD 1.8 | |
+| GND_NETS_VOLTAGES | VSS 0.0 | |
+| PDN_TCL | `pdn.tcl` (platform-specific) | |
 
-### Phase 3: Synthesis Script
-- Create `scripts/synth.sh` following compile.sh patterns
-- Generate synth.tcl from shell variables + heredoc
-- Invoke `yosys synth.tcl`, verify synth.v output
-- **Test**: `synth.sh ALU8` produces valid gate-level netlist and synth_stat.txt
+**Key difference from nangate45:** sky130hd has only 5 metal layers (met1-met5), not 10. The default PLACE_DENSITY is 0.60, not 0.30. Clock period must be more relaxed (5-10 ns typical for small designs, vs 2 ns for nangate45).
 
-### Phase 4: PnR Script
-- Create `scripts/pnr.sh` following same patterns
-- Generate pnr.tcl with conditional CTS
-- Invoke `openroad pnr.tcl`, verify final.def output
-- **Test**: `pnr.sh ALU8` produces final.def and reports
+---
 
-### Phase 5: GDS Export
-- Add KLayout or OpenROAD GDS write to pnr.tcl
-- Requires GDS files from nangate45 platform
-- **Test**: `pnr.sh ALU8` produces final.gds
+## ORFS Make Targets Mapping
 
-### Phase 6: Reporting and Skill
-- Create `agents/pnr-reporter.md`
-- Create `skills/pnr/SKILL.md`
-- Orchestrate full pipeline: prereq check -> SDC -> synth -> PnR -> report
-- **Test**: `/chip-agent:pnr ALU8` end-to-end produces summary
+Each ORFS stage maps to a make target. The MCP `run_stage` tool accepts these as the `stage` parameter.
+
+| Stage | Make Target | Dependencies | Key Outputs |
+|-------|-------------|--------------|-------------|
+| Synthesis | `synth` | RTL Verilog, SDC, .lib, .lef | `1_synth.odb`, `1_2_yosys.v`, `synth_stat.txt` |
+| Floorplan | `floorplan` | synth output | `2_floorplan.odb`, `2_floorplan.sdc` |
+| Placement | `place` | floorplan output | `3_place.odb`, `3_place.sdc` |
+| CTS | `cts` | place output | `4_cts.odb` |
+| Routing | `route` | cts output | `5_route.odb`, `5_route_drc.rpt` |
+| Finishing | `finish` | route output | `6_final.gds`, final reports |
+
+**Note:** ORFS handles dependencies internally. Running `make ... finish` will automatically run all prerequisite stages. However, the Skill should invoke stages individually to provide per-stage progress reporting and metric extraction.
+
+### Clean Targets
+
+Each stage has a clean target: `clean_synth`, `clean_floorplan`, `clean_place`, `clean_cts`, `clean_route`, `clean_finish`. Plus `clean_all` for full reset. These are useful for retry logic.
+
+---
+
+## Suggested Build Order
+
+### Phase 1: MCP Server Scaffold + Environment Detection
+
+**Build:**
+1. Create `mcp-server/` directory with `package.json`, `tsconfig.json`, basic project structure.
+2. Install `@modelcontextprotocol/sdk`, `zod`, TypeScript.
+3. Implement `src/index.ts` with McpServer + StdioServerTransport.
+4. Implement `check_environment` tool (docker detection, ORFS detection, sky130hd validation).
+5. Update `scripts/detect-env.sh` to add Docker + sky130hd detection.
+6. Create `.mcp.json` at project root to register the server.
+
+**Test:** `claude mcp list` shows `chipagent-orfs` server. `check_environment` returns accurate status.
+
+**Rationale:** Must be first -- all subsequent tools depend on the MCP Server scaffold and environment detection.
+
+### Phase 2: Config Generation (config.mk + constraint.sdc)
+
+**Build:**
+1. Implement `config-gen.ts` with config.mk and SDC templates for sky130hd.
+2. Implement `generate_config` MCP tool.
+3. Handle sequential vs combinational detection.
+4. Handle spec.json clock_period_ns reading.
+
+**Test:** `generate_config` for ALU produces valid config.mk and constraint.sdc. SDC format matches ORFS sky130hd/gcd example.
+
+**Rationale:** Config generation is prerequisite for any ORFS make invocation. No Docker dependency for testing (just file generation).
+
+### Phase 3: ORFS Runner + Synthesis Stage
+
+**Build:**
+1. Implement `orfs-runner.ts` with Docker exec and local make fallback.
+2. Implement `run_stage` MCP tool.
+3. Implement `get_log` MCP tool.
+4. Test with `synth` target only (fastest stage, ~5-15s).
+
+**Test:** `run_stage(stage="synth")` produces gate-level netlist. `get_log(stage="synth")` returns Yosys log.
+
+**Rationale:** Synthesis is the first ORFS stage and fastest to iterate on. Validates the full Docker exec pipeline.
+
+### Phase 4: Metric Extraction + Full Flow
+
+**Build:**
+1. Implement `metrics.ts` with parsers for synth_stat.txt, timing reports, power reports, DRC reports.
+2. Implement `get_report` MCP tool.
+3. Test full 6-stage flow: synth -> floorplan -> place -> cts -> route -> finish.
+4. Verify GDS output from finish stage.
+
+**Test:** `get_report(stage="all")` returns complete PPA metrics. GDS file is produced.
+
+**Rationale:** Metric extraction validates that ORFS outputs are parseable. Full flow validates end-to-end.
+
+### Phase 5: Skill Rewrite + PPA Report
+
+**Build:**
+1. Rewrite `skills/pnr/SKILL.md` to use MCP tools instead of bash scripts.
+2. Update `agents/pnr-report-formatter.md` for ORFS report format.
+3. Update `skills/initialize/SKILL.md` for Docker + sky130hd detection.
+4. Implement per-stage progress reporting in the Skill.
+5. Implement PPA summary report format.
+
+**Test:** `/chip-agent:pnr ALU` runs full flow end-to-end and presents formatted PPA report.
+
+**Rationale:** Skill depends on all MCP tools being functional. Report formatter needs real ORFS output to validate against.
+
+### Phase 6: Auto-Retry + Error Diagnosis (Stretch)
+
+**Build:**
+1. Add timing violation detection in Skill (check WNS from get_report).
+2. Implement clock period relaxation retry (increase period, re-run from synth).
+3. Add placement density adjustment for congestion failures.
+4. Add error type classification from log analysis.
+
+**Test:** Module with tight timing constraint triggers auto-retry with relaxed period and succeeds.
+
+**Rationale:** Retry logic depends on working metrics extraction and stage re-run capability. This is the "satisfaction requirements" level from task2.
 
 ---
 
 ## Anti-Patterns to Avoid
 
-### Do NOT Use ORFS Makefile as Execution Engine
-The Makefile creates rigid directory structures, requires 50+ env vars, and its error output is hard for Claude to parse. Use direct yosys/openroad invocation with generated Tcl.
+### Do NOT Run ORFS from Host Against Container Paths
 
-### Do NOT Copy Platform Files into ChipAgent
-The nangate45 LEF/LIB/GDS files at the ORFS installation path should be referenced in-place. They are large, version-coupled, and would create maintenance burden.
+ORFS config.mk paths must be container-relative when using Docker exec. A config.mk with host paths like `/home/mingzhenjia/...` will fail inside the container.
 
-### Do NOT Run Multiple OpenROAD Sessions
-All PnR stages (floorplan through extraction) run in one `openroad` invocation. Splitting into separate sessions requires ODB serialization and re-reads LEF/LIB (~2-3s overhead per session).
+### Do NOT Skip `synth` When Re-Running from a Later Stage
 
-### Do NOT Skip Parasitic Extraction
-Timing reports based on placement estimates can be 2-3x off from post-route parasitics. Always run `extract_parasitics` + `read_spef` before reporting timing.
+ORFS's make tracks dependencies via ODB files. But if config.mk or SDC changes, all stages should re-run. Use `clean_all` before re-running when parameters change.
 
-### Do NOT Make PnR Part of Default Workflow
-PnR takes minutes, workflow takes seconds. Different iteration cycles. Keep them as separate slash commands.
+### Do NOT Use console.log() in MCP Server
 
-### Do NOT Hardcode Absolute Paths in Tcl Templates
-All paths must come from shell variable substitution into the generated Tcl. The synth.sh and pnr.sh scripts resolve paths from env.json/environment, then bake them into the Tcl via heredoc.
+MCP stdio transport uses stdout for JSON-RPC messages. Any `console.log()` corrupts the protocol. Use `console.error()` or a file-based logger.
+
+### Do NOT Assume 2ns Clock Period for sky130hd
+
+sky130hd is 130nm technology. Typical timing is 5-10ns for small modules. Using 2ns (the nangate45 default) will cause immediate timing violations.
+
+### Do NOT Hard-Code ORFS Output Directory Structure
+
+ORFS directories follow the pattern `<type>/sky130hd/<DESIGN_NAME>/base/`. The `base` is the FLOW_VARIANT (default). Do not assume a flat structure.
+
+### Do NOT Mount the Entire ChipAgent Directory into Docker
+
+Only mount the per-module workspace. Mounting the entire plugin directory exposes source code, .claude-plugin/, and other sensitive files to the container.
+
+### Do NOT Block on Docker Operations Without Timeout
+
+ORFS routing can take 10+ minutes for medium designs. All `docker exec` calls must have configurable timeouts (default: 10 minutes per stage).
 
 ---
 
-## Scalability Considerations
+## Integration Points Summary
 
-| Concern | Small Module (ALU, <100 cells) | Medium Module (pipeline stage, 100-10K cells) | Large Module (full core, 10K+) |
-|---------|-------------------------------|-----------------------------------------------|-------------------------------|
-| Synthesis time | <5s | 5-30s | 30-300s |
-| PnR time | <30s | 30-300s | 5-60min |
-| Default config works? | Yes | Yes | May need tuning |
-| CORE_UTILIZATION | 40% (default) | 40% (default) | May need 30-40% |
-| CTS complexity | Skip (combinational) | Simple single-clock | May need multi-clock |
-| Memory usage | <500MB | 500MB-2GB | 2-8GB |
-
-For v1.1.2, targeting small-to-medium Chisel modules with default nangate45 parameters. Large module support deferred.
+| Integration Point | From | To | Data Format |
+|-------------------|------|-----|-------------|
+| Claude Code -> MCP Server | Skill (SKILL.md) | MCP tool calls | JSON-RPC via stdio |
+| MCP Server -> Docker | orfs-runner.ts | docker exec commands | Shell commands |
+| MCP Server -> ORFS | docker exec | make targets | DESIGN_CONFIG env var |
+| ORFS -> Results | make output | results/logs/reports dirs | ODB, Verilog, GDS, text |
+| MCP Server -> Claude Code | MCP tool return | Skill reads result | JSON (structured metrics) |
+| spec.json -> config.mk | config-gen.ts | ORFS config | Makefile format |
+| Verilog -> SDC | config-gen.ts | ORFS constraints | Tcl SDC format |
+| env.json -> MCP Server | detect-env.sh | server configuration | JSON |
 
 ---
 
 ## Sources
 
-- ORFS Makefile: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/Makefile` (verified locally, 2026-03-31)
-- ORFS synth.tcl: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/scripts/synth.tcl` (verified locally, 249 lines analyzed)
-- ORFS final_report.tcl: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/scripts/final_report.tcl` (verified locally)
-- ORFS floorplan.tcl: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/scripts/floorplan.tcl` (verified locally)
-- nangate45 platform config: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/platforms/nangate45/config.mk` (verified locally, all constants extracted)
-- GCD example config: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/designs/nangate45/gcd/config.mk` (verified locally)
-- ChipAgent compile.sh: `/home/mingzhenjia/ChipAgent/scripts/compile.sh` (pattern reference)
-- ChipAgent lint.sh: `/home/mingzhenjia/ChipAgent/scripts/lint.sh` (pattern reference)
-- ChipAgent simulate.sh: `/home/mingzhenjia/ChipAgent/scripts/simulate.sh` (pattern reference)
-- ChipAgent detect-env.sh: `/home/mingzhenjia/ChipAgent/scripts/detect-env.sh` (extension point)
-- ChipAgent PROJECT.md: `/home/mingzhenjia/ChipAgent/.planning/PROJECT.md` (requirements context)
+- ORFS sky130hd platform config: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/platforms/sky130hd/config.mk` (verified locally, 2026-04-01) [HIGH confidence]
+- ORFS sky130hd GCD design config: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/designs/sky130hd/gcd/config.mk` (verified locally) [HIGH confidence]
+- ORFS sky130hd GCD constraint.sdc: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/designs/sky130hd/gcd/constraint.sdc` (verified locally) [HIGH confidence]
+- ORFS Makefile targets: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/Makefile` (verified locally, grep confirmed synth/floorplan/place/cts/route/finish targets) [HIGH confidence]
+- ORFS variables.mk: `/home/mingzhenjia/OpenROAD-flow-scripts/flow/scripts/variables.mk` (verified locally, directory layout confirmed) [HIGH confidence]
+- MCP TypeScript SDK: [github.com/modelcontextprotocol/typescript-sdk](https://github.com/modelcontextprotocol/typescript-sdk) [HIGH confidence]
+- MCP Server build guide: [modelcontextprotocol.io/docs/develop/build-server](https://modelcontextprotocol.io/docs/develop/build-server) [HIGH confidence]
+- Claude Code MCP configuration: [code.claude.com/docs/en/mcp](https://code.claude.com/docs/en/mcp) [HIGH confidence]
+- @modelcontextprotocol/sdk npm: [npmjs.com/package/@modelcontextprotocol/sdk](https://www.npmjs.com/package/@modelcontextprotocol/sdk) [HIGH confidence]
+- ORFS tutorial: [github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/master/docs/tutorials/FlowTutorial.md](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/master/docs/tutorials/FlowTutorial.md) [HIGH confidence]
+- ORFS adding new designs: [github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/master/docs/user/AddingNewDesign.md](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/master/docs/user/AddingNewDesign.md) [HIGH confidence]
+- task2.md requirements: `/home/mingzhenjia/ChipAgent/task2.md` (verified locally) [HIGH confidence]
+- ChipAgent v1.1.2 architecture: `/home/mingzhenjia/ChipAgent/.planning/research/ARCHITECTURE.md` (previous version, used as baseline) [HIGH confidence]
+- Existing pnr skill: `/home/mingzhenjia/ChipAgent/skills/pnr/SKILL.md` (verified locally) [HIGH confidence]
+- Existing detect-env.sh: `/home/mingzhenjia/ChipAgent/scripts/detect-env.sh` (verified locally) [HIGH confidence]
+- Existing synth.sh/pnr.sh/synth.tcl/pnr.tcl: verified locally, used to understand current architecture [HIGH confidence]
