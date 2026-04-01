@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.1.5
 milestone_name: sky130hd MCP Backend
-status: defining_requirements
+status: ready_to_plan
 stopped_at: null
-last_updated: "2026-04-01T20:00:00.000Z"
-last_activity: 2026-04-01 — Milestone v1.1.5 started
+last_updated: "2026-04-01T21:00:00.000Z"
+last_activity: 2026-04-01 — Roadmap created for v1.1.5
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -20,15 +20,17 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-04-01)
 
-**Core value:** A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog — and a second command extends it through synthesis, PnR, and GDS export.
-**Current focus:** Defining requirements for v1.1.5
+**Core value:** A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog -- and a second command extends it through synthesis, PnR, and GDS export.
+**Current focus:** Phase 13 - MCP Server + Environment Foundation
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-04-01 — Milestone v1.1.5 started
+Phase: 13 (1 of 3 in v1.1.5) — MCP Server + Environment Foundation
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-04-01 — Roadmap created for v1.1.5
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -46,11 +48,13 @@ Decisions are logged in PROJECT.md Key Decisions table.
 All v1.1.2 decisions archived with milestone.
 
 **v1.1.5 decisions:**
-- ORFS make flow replaces standalone Tcl scripts
-- sky130hd replaces nangate45
-- TypeScript MCP Server with Docker interface pre-reserved
-- Local mode first, Docker support added later
-- Complete switch — no nangate45 fallback
+- ORFS make flow replaces standalone Tcl scripts entirely
+- sky130hd replaces nangate45 (complete switch, no fallback)
+- TypeScript MCP Server with stdio transport, Docker interface pre-reserved
+- Local mode first, Docker support deferred to v1.2
+- MCP SDK v1.29.0, Zod v3.25.0, Node.js native TS type-stripping
+- Default clock 10ns for sky130hd (not 2ns from nangate45)
+- sky130hd PDK at ~/OpenROAD-flow-scripts/flow/platforms/sky130hd/
 
 ### Pending Todos
 
@@ -63,5 +67,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-04-01
-Stopped at: Defining requirements
+Stopped at: Roadmap created, ready to plan Phase 13
 Resume file: None

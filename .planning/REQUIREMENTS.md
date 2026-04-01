@@ -1,7 +1,7 @@
 # Requirements: ChipAgent
 
 **Defined:** 2026-04-01
-**Core Value:** A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog — and a second command extends it through synthesis, PnR, and GDS export.
+**Core Value:** A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog -- and a second command extends it through synthesis, PnR, and GDS export.
 
 ## v1.1.5 Requirements
 
@@ -23,7 +23,7 @@ Requirements for sky130hd MCP Backend milestone. Each maps to roadmap phases.
 ### PnR Flow Orchestration
 
 - [ ] **FLOW-01**: /chip-agent:pnr skill rewritten to orchestrate via MCP tools instead of direct bash script invocation
-- [ ] **FLOW-02**: Skill auto-advances through 6 ORFS stages sequentially (synth → floorplan → place → cts → route → finish)
+- [ ] **FLOW-02**: Skill auto-advances through 6 ORFS stages sequentially (synth -> floorplan -> place -> cts -> route -> finish)
 - [ ] **FLOW-03**: Per-stage metric extraction after each ORFS stage (cell count, design area, WNS, TNS, DRC violations)
 
 ### Reporting
@@ -43,7 +43,7 @@ Requirements for sky130hd MCP Backend milestone. Each maps to roadmap phases.
 
 ## v1.2 Requirements
 
-Deferred to future release (满分 QoS optimization). Tracked but not in current roadmap.
+Deferred to future release. Tracked but not in current roadmap.
 
 ### Auto-Recovery
 
@@ -80,28 +80,28 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MCP-01 | TBD | Pending |
-| MCP-02 | TBD | Pending |
-| MCP-03 | TBD | Pending |
-| MCP-04 | TBD | Pending |
-| MCP-05 | TBD | Pending |
-| CFG-01 | TBD | Pending |
-| CFG-02 | TBD | Pending |
-| FLOW-01 | TBD | Pending |
-| FLOW-02 | TBD | Pending |
-| FLOW-03 | TBD | Pending |
-| RPT-01 | TBD | Pending |
-| ENV-01 | TBD | Pending |
-| ENV-02 | TBD | Pending |
-| ENV-03 | TBD | Pending |
-| CLN-01 | TBD | Pending |
-| CLN-02 | TBD | Pending |
+| MCP-01 | Phase 13 | Pending |
+| MCP-02 | Phase 13 | Pending |
+| MCP-03 | Phase 14 | Pending |
+| MCP-04 | Phase 14 | Pending |
+| MCP-05 | Phase 14 | Pending |
+| CFG-01 | Phase 14 | Pending |
+| CFG-02 | Phase 14 | Pending |
+| FLOW-01 | Phase 15 | Pending |
+| FLOW-02 | Phase 15 | Pending |
+| FLOW-03 | Phase 15 | Pending |
+| RPT-01 | Phase 15 | Pending |
+| ENV-01 | Phase 13 | Pending |
+| ENV-02 | Phase 13 | Pending |
+| ENV-03 | Phase 13 | Pending |
+| CLN-01 | Phase 13 | Pending |
+| CLN-02 | Phase 13 | Pending |
 
 **Coverage:**
 - v1.1.5 requirements: 16 total
-- Mapped to phases: 0
-- Unmapped: 16 ⚠️
+- Mapped to phases: 16
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-01*
-*Last updated: 2026-04-01 after initial definition*
+*Last updated: 2026-04-01 after roadmap creation*
