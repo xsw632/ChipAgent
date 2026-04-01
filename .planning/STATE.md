@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 11-01-PLAN.md
-last_updated: "2026-04-01T09:50:10.189Z"
-last_activity: 2026-04-01 — OpenROAD PnR + GDS export verified on ALU and Counter8
+stopped_at: Completed 12-01-PLAN.md
+last_updated: "2026-04-01T10:50:18Z"
+last_activity: 2026-04-01 — PnR command + report integration complete
 progress:
   total_phases: 4
-  completed_phases: 3
-  total_plans: 4
-  completed_plans: 4
+  completed_phases: 4
+  total_plans: 5
+  completed_plans: 5
   percent: 100
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog with a complete test report.
-**Current focus:** Phase 11 — OpenROAD PnR + GDS Export
+**Current focus:** Phase 12 — PnR Command + Report Integration
 
 ## Current Position
 
-Phase: 11 (OpenROAD PnR + GDS Export) — fourth of 4 in v1.1.2
+Phase: 12 (PnR Command + Report Integration) — fifth of 5 in v1.1.2
 Plan: 1 of 1 complete
-Status: Phase 11 complete
-Last activity: 2026-04-01 — OpenROAD PnR + GDS export verified on ALU and Counter8
+Status: Phase 12 complete
+Last activity: 2026-04-01 — PnR command + report integration complete
 
-Progress: [##########] 100% (v1.1.2 scope: 4/4 phases)
+Progress: [##########] 100% (v1.1.2 scope: 5/5 phases)
 
 ## Performance Metrics
 
@@ -61,6 +61,10 @@ Recent decisions affecting current work:
 - [Phase 11]: KLayout DEF loading uses LEF files via layoutOptions, not .lyt tech file
 - [Phase 11]: Auto-size die area: <100 cells uses 70x70um floor, >=100 uses 30% utilization
 
+- [Phase 12]: No synthesis retry -- synthesis failures require RTL changes outside PnR scope
+- [Phase 12]: 50% clock period increase per auto-fix retry attempt
+- [Phase 12]: Power always reported in microwatts, never raw Watts
+
 ### Pending Todos
 
 None.
@@ -71,6 +75,6 @@ None. KLayout confirmed installed and working. CTS skip logic verified on ALU (c
 
 ## Session Continuity
 
-Last session: 2026-04-01T09:27:27.497Z
-Stopped at: Completed 11-01-PLAN.md
+Last session: 2026-04-01T10:50:18Z
+Stopped at: Completed 12-01-PLAN.md
 Resume file: None
