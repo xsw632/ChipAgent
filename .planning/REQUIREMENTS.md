@@ -20,13 +20,13 @@ Requirements for RTL-to-GDS milestone. Each maps to roadmap phases.
 
 ### Place and Route
 
-- [ ] **PNR-01**: `scripts/pnr.sh <ModuleName>` runs full OpenROAD flow (floorplan → place → CTS → route) in single session, outputs routed DEF
-- [ ] **PNR-02**: Timing (WNS/TNS), power (internal/switching/leakage), and area reports in `workspace/pnr/reports/`
-- [ ] **PNR-03**: Smart defaults: auto-size die area from synthesis cell count, skip CTS for combinational modules
+- [x] **PNR-01**: `scripts/pnr.sh <ModuleName>` runs full OpenROAD flow (floorplan → place → CTS → route) in single session, outputs routed DEF
+- [x] **PNR-02**: Timing (WNS/TNS), power (internal/switching/leakage), and area reports in `workspace/pnr/reports/`
+- [x] **PNR-03**: Smart defaults: auto-size die area from synthesis cell count, skip CTS for combinational modules
 
 ### GDS Export
 
-- [ ] **GDS-01**: KLayout DEF→GDS merge produces final `<Module>.gds` in `workspace/pnr/`
+- [x] **GDS-01**: KLayout DEF→GDS merge produces final `<Module>.gds` in `workspace/pnr/`
 
 ### Command
 
@@ -73,10 +73,10 @@ Requirements for RTL-to-GDS milestone. Each maps to roadmap phases.
 | SYN-01 | Phase 10 | Complete |
 | SYN-02 | Phase 9 | Complete |
 | SYN-03 | Phase 10 | Complete |
-| PNR-01 | Phase 11 | Pending |
-| PNR-02 | Phase 11 | Pending |
-| PNR-03 | Phase 11 | Pending |
-| GDS-01 | Phase 11 | Pending |
+| PNR-01 | Phase 11 | Complete |
+| PNR-02 | Phase 11 | Complete |
+| PNR-03 | Phase 11 | Complete |
+| GDS-01 | Phase 11 | Complete |
 | CMD-01 | Phase 12 | Pending |
 | CMD-02 | Phase 12 | Pending |
 | CMD-03 | Phase 12 | Pending |
