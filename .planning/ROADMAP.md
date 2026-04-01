@@ -58,11 +58,11 @@
   2. `check_environment` tool returns structured JSON reporting ORFS path, sky130hd PDK presence, and Docker availability
   3. `/chip-agent:initialize` detects sky130hd PDK (not nangate45) and writes correct paths to env.json with backend_mode field
   4. Old nangate45 scripts (synth.tcl, pnr.tcl, validate-pdk.sh, def2gds.py) are removed and CLAUDE.md reflects the new sky130hd + MCP architecture
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 13-01: TBD
-- [ ] 13-02: TBD
+- [ ] 13-01-PLAN.md — MCP server scaffold + check_environment tool
+- [ ] 13-02-PLAN.md — Environment detection rewrite + nangate45 cleanup
 
 ### Phase 14: Config Generation + ORFS Stage Execution
 **Goal**: Users can generate ORFS-ready config files and execute individual ORFS make stages with metric extraction
@@ -72,7 +72,7 @@ Plans:
   1. `generate_config` tool produces a valid config.mk with correct ORFS variables (DESIGN_NAME, PLATFORM=sky130hd, VERILOG_FILES, SDC_FILE, CORE_UTILIZATION) and a constraint.sdc with 10ns default clock for sequential modules or virtual clock for combinational
   2. `run_stage` tool executes any of the 6 ORFS make targets (synth/floorplan/place/cts/route/finish) and returns structured output with success/failure status and log path
   3. `get_report` tool extracts stage-specific metrics (cell count, design area, WNS, TNS, DRC violations) from ORFS output directories and returns them as structured JSON
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 14-01: TBD
@@ -86,7 +86,7 @@ Plans:
   1. `/chip-agent:pnr <ModuleName>` orchestrates via MCP tools (not direct bash scripts) through all 6 ORFS stages sequentially
   2. Each stage produces extracted metrics (cell count, area, WNS/TNS, DRC) visible to the user before advancing to the next stage
   3. After the final stage, a formatted PPA summary report combining timing (WNS/TNS/clock period), power, and area metrics is presented to the user
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 15-01: TBD
