@@ -2,11 +2,11 @@
 
 ## What This Is
 
-An npm-installable Claude Code plugin that provides a fully automated, modular pipeline from natural language hardware descriptions to simulation-verified Verilog. Users describe a RISC-V module in plain language, invoke `/chip-agent:generate`, and the orchestrator sequentially runs requirement parsing, Chisel generation, compilation, linting, testbench generation, simulation, and verification reporting — all with per-module workspace isolation and VCD-based debug support.
+An npm-installable Claude Code plugin that provides a fully automated pipeline from natural language hardware descriptions to physical GDS layout. Users describe a RISC-V module in plain language, invoke `/chip-agent:workflow` for RTL generation and verification, then `/chip-agent:pnr` for physical implementation — covering requirement parsing, Chisel generation, compilation, linting, testbench generation, simulation, Yosys synthesis, OpenROAD place-and-route, and KLayout GDS export with formatted reports and auto-fix retry.
 
 ## Core Value
 
-A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog with a complete test report.
+A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog with a complete test report — and a second command extends it through synthesis, place-and-route, and GDS export with formatted physical design reports.
 
 ## Requirements
 
@@ -29,40 +29,38 @@ A single slash command turns a natural language hardware description into lint-c
 - ✓ Environment detection via `/chip-agent:initialize` writing `.chipagent/env.json` — v1.1
 - ✓ VCD waveform trace generation for simulation debug — v1.1
 - ✓ `/chip-agent:debug` for structured failure diagnosis with VCD analysis — v1.1
+- ✓ nangate45 PDK detection and pre-flight validation in environment initialization — v1.1.2
+- ✓ SDC auto-generation: sequential modules get `create_clock`, combinational get virtual clock + `set_max_delay` — v1.1.2
+- ✓ Yosys synthesis producing gate-level netlist with synthesis statistics report — v1.1.2
+- ✓ OpenROAD PnR flow (floorplan → place → CTS → route) with auto-die-sizing and conditional CTS skip — v1.1.2
+- ✓ KLayout DEF→GDS merge producing final layout — v1.1.2
+- ✓ `/chip-agent:pnr` slash command with formatted timing/power/area reports and auto-fix retry — v1.1.2
 
 ### Active
 
-## Current Milestone: v1.1.2 RTL-to-GDS
-
-**Goal:** Add a `/chip-agent:pnr` command that runs Yosys synthesis + OpenROAD place-and-route on verified Verilog to produce GDS, DEF, and timing/power/area reports using nangate45 PDK.
-
-**Target features:**
-- nangate45 PDK setup and detection in environment initialization
-- Yosys synthesis script producing gate-level netlist from RTL Verilog
-- OpenROAD PnR flow (floorplan → placement → CTS → routing → export)
-- GDS and routed DEF output artifacts
-- Timing (STA), power, and area reports
-- `/chip-agent:pnr <ModuleName>` slash command
+(None — next milestone requirements TBD via `/gsd:new-milestone`)
 
 ### Out of Scope
 
 - Full CPU core generation — pipeline targets individual functional modules, not complete processor designs
-- FPGA synthesis — pipeline ends at functional simulation, no synthesis or place-and-route
 - Non-RISC-V architectures — scoped to RV32I ISA
 - GUI/web interface — CLI-only through Claude Code
-- RTL optimization/PPA — beyond functional verification
 - Per-module sbt projects — sbt startup cost multiplied; modules share dependencies
-- Moving Scala sources into workspace/ — sbt requires sources in chisel-project/src/
 - Watch mode / file watcher — creates infinite loops (PostToolUse hook lesson from v1.0)
+- FPGA synthesis — pipeline targets ASIC flow via OpenROAD, not FPGA
+- Multi-corner STA — single typical corner sufficient for current scope
+- DRC/LVS — requires KLayout ruledecks and Magic; defer to future
+- Hierarchical synthesis — Chisel modules are small enough for flat synthesis
+- Non-nangate45 PDKs — single PDK simplifies current flow; multi-PDK later
 
 ## Context
 
-Shipped v1.1 Refine with modular pipeline decomposition.
-~4,500 LOC across Scala, C++, Bash, Python, and JSON.
-Tech stack: Chisel 3.6.1, Scala 2.13.10, sbt 1.10.7, FIRRTL/firtool, Verilator 5.008+, Yosys 0.53+, OpenROAD 26Q1, Python 3 (stdlib VCD parser).
-8 slash commands: generate, compile, lint, simulate, requirement-parser, testbench, initialize, debug.
+Shipped v1.1.2 RTL-to-GDS with full physical implementation pipeline.
+~8,700 LOC across Scala, C++, Bash, Python, Tcl, and Markdown.
+Tech stack: Chisel 3.6.1, Scala 2.13.10, sbt 1.10.7, FIRRTL/firtool, Verilator 5.008+, Yosys 0.53+, OpenROAD 26Q1, KLayout 0.30.7, Python 3 (stdlib VCD parser + pya for GDS).
+10 slash commands: generate, workflow, compile, lint, simulate, requirement-parser, testbench, initialize, debug, pnr.
 Acceptance test: ALU with ADD/SUB/AND/OR/XOR/SLT + zero flag passes all 12 test cases end-to-end.
-Starting v1.1.2: RTL-to-GDS via Yosys + OpenROAD with nangate45 PDK.
+PnR validated: ALU and Counter8 synthesize and route to GDS with timing MET.
 
 ## Constraints
 
@@ -91,6 +89,17 @@ Starting v1.1.2: RTL-to-GDS via Yosys + OpenROAD with nangate45 PDK.
 | Runtime plugin root detection | .claude-plugin/plugin.json ancestor search avoids broken env var | ✓ Good |
 | VCD parser uses stdlib only | Zero-install portability across all Python 3 environments | ✓ Good |
 | Debug is diagnostic-only | Never auto-applies fixes; prevents runaway modification loops | ✓ Good |
+| Standalone Tcl scripts for PnR | Standalone Yosys/OpenROAD Tcl scripts instead of ORFS Makefile; portable | ✓ Good |
+| SDC: sequential vs combinational detection | Grep for `always @(posedge` in Verilog to classify modules | ✓ Good |
+| 2.0ns default clock period | Conservative default avoids timing failures on small modules | ✓ Good |
+| PDK candidate directory chain | env override → ORFS_DIR → ~/OpenROAD-flow-scripts → /opt | ✓ Good |
+| Yosys Tcl mode (-c) | Yosys Tcl requires `yosys` prefix on all commands | ✓ Good |
+| Auto-size die area | <100 cells → 70x70um floor; ≥100 cells → 30% utilization | ✓ Good |
+| Conditional CTS skip | Combinational modules skip clock tree synthesis | ✓ Good |
+| KLayout LEF via layoutOptions | Load LEF files through layoutOptions, not .lyt tech file | ✓ Good |
+| No synthesis retry in PnR | Synthesis failures require RTL changes outside PnR scope | ✓ Good |
+| 50% clock period increase per retry | Auto-fix timing violations by relaxing clock constraint | ✓ Good |
+| Power in microwatts | Always report power in uW, never raw Watts | ✓ Good |
 
 ---
-*Last updated: 2026-03-31 after v1.1.2 milestone start*
+*Last updated: 2026-04-01 after v1.1.2 milestone*
