@@ -4,6 +4,7 @@ Claude Code plugin that turns natural language hardware descriptions into simula
 
 - `/chip-agent:generate` -- Chisel-only: parse requirements, confirm spec, generate Scala source
 - `/chip-agent:workflow` -- Full pipeline: parse, generate, compile, lint, testbench, simulate, report
+- `/chip-agent:pnr` -- Physical implementation: synthesis, place-and-route, GDS export with formatted report
 
 ## Tech Stack
 
@@ -83,3 +84,4 @@ Query Context7 (`/chipsalliance/chisel`) for up-to-date Chisel API usage before 
 
 - `/chip-agent:generate <description>` -- Produces Chisel source files only (steps 0-2). No compilation or verification.
 - `/chip-agent:workflow <description>` -- Runs the full 8-step pipeline: init project, parse, confirm, generate, compile, lint, testbench, simulate, report. Each stage feeds into the next; failures stop the pipeline with context for debugging.
+- `/chip-agent:pnr <ModuleName>` -- Runs Yosys synthesis + OpenROAD PnR + KLayout GDS export on compiled Verilog. Produces timing/power/area reports and GDS file. Auto-retries timing violations by relaxing clock period.
