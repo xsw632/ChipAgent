@@ -1,11 +1,11 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1.2
-milestone_name: RTL-to-GDS
-status: milestone_complete
-stopped_at: v1.1.2 milestone archived
-last_updated: "2026-04-01T19:00:00.000Z"
-last_activity: 2026-04-01 — v1.1.2 RTL-to-GDS milestone complete
+milestone: v1.1.5
+milestone_name: sky130hd MCP Backend
+status: defining_requirements
+stopped_at: null
+last_updated: "2026-04-01T20:00:00.000Z"
+last_activity: 2026-04-01 — Milestone v1.1.5 started
 progress:
   total_phases: 0
   completed_phases: 0
@@ -21,12 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-01)
 
 **Core value:** A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog — and a second command extends it through synthesis, PnR, and GDS export.
-**Current focus:** Planning next milestone
+**Current focus:** Defining requirements for v1.1.5
 
 ## Current Position
 
-Milestone: v1.1.2 RTL-to-GDS shipped 2026-04-01
-Next: Run `/gsd:new-milestone` to start next milestone
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-01 — Milestone v1.1.5 started
 
 ## Performance Metrics
 
@@ -43,6 +45,13 @@ Next: Run `/gsd:new-milestone` to start next milestone
 Decisions are logged in PROJECT.md Key Decisions table.
 All v1.1.2 decisions archived with milestone.
 
+**v1.1.5 decisions:**
+- ORFS make flow replaces standalone Tcl scripts
+- sky130hd replaces nangate45
+- TypeScript MCP Server with Docker interface pre-reserved
+- Local mode first, Docker support added later
+- Complete switch — no nangate45 fallback
+
 ### Pending Todos
 
 None.
@@ -54,5 +63,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-04-01
-Stopped at: v1.1.2 milestone archived
+Stopped at: Defining requirements
 Resume file: None

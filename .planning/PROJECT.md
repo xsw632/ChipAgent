@@ -38,7 +38,24 @@ A single slash command turns a natural language hardware description into lint-c
 
 ### Active
 
-(None — next milestone requirements TBD via `/gsd:new-milestone`)
+<!-- v1.1.5 sky130hd MCP Backend — see REQUIREMENTS.md for full list -->
+
+- [ ] MCP Server wrapping ORFS make targets for full backend flow
+- [ ] sky130hd PDK support (replacing nangate45)
+- [ ] ORFS-based PnR flow (replacing standalone Tcl scripts)
+- [ ] Docker environment detection in initialize (pre-reserved)
+- [ ] Per-stage metric extraction and PPA summary report
+
+## Current Milestone: v1.1.5 sky130hd MCP Backend
+
+**Goal:** Replace standalone nangate45 Tcl scripts with MCP Server-driven ORFS make flow on sky130hd, reaching 进阶要求 level for task2.
+
+**Target features:**
+- MCP Server (TypeScript) wrapping ORFS make targets with Docker interface pre-reserved
+- sky130hd PDK detection and config.mk/SDC auto-generation
+- /chip-agent:pnr rewrite using MCP tools for 6-stage ORFS flow
+- Per-stage metric extraction (area, WNS/TNS, DRC) and PPA summary report
+- /chip-agent:initialize updated for Docker + sky130hd detection
 
 ### Out of Scope
 
@@ -51,7 +68,7 @@ A single slash command turns a natural language hardware description into lint-c
 - Multi-corner STA — single typical corner sufficient for current scope
 - DRC/LVS — requires KLayout ruledecks and Magic; defer to future
 - Hierarchical synthesis — Chisel modules are small enough for flat synthesis
-- Non-nangate45 PDKs — single PDK simplifies current flow; multi-PDK later
+- Non-sky130hd PDKs — single PDK (sky130hd) per task2 requirement; multi-PDK later
 
 ## Context
 
@@ -102,4 +119,4 @@ PnR validated: ALU and Counter8 synthesize and route to GDS with timing MET.
 | Power in microwatts | Always report power in uW, never raw Watts | ✓ Good |
 
 ---
-*Last updated: 2026-04-01 after v1.1.2 milestone*
+*Last updated: 2026-04-01 after v1.1.5 milestone start*
