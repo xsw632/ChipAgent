@@ -1,5 +1,24 @@
 # Milestones
 
+## v1.1.2 RTL-to-GDS (Shipped: 2026-04-01)
+
+**Phases completed:** 4 phases, 5 plans
+
+**Key accomplishments:**
+- PDK environment auto-detection: `/chip-agent:initialize` discovers Yosys, OpenROAD, KLayout versions and nangate45 PDK path; pre-flight validation checks 5 required PDK files
+- SDC auto-generation from Verilog: detects sequential vs combinational modules, creates appropriate clock constraints (real clock or virtual + set_max_delay)
+- Yosys ASIC synthesis pipeline: Tcl recipe + bash wrapper producing gate-level netlists and synthesis statistics with nangate45 liberty cells
+- OpenROAD PnR + GDS export: full floorplan → place → CTS → route flow with auto-die-sizing, conditional CTS skip for combinational modules, and KLayout DEF→GDS merge
+- `/chip-agent:pnr` slash command: single command wiring synthesis through GDS with formatted timing/power/area/DRC report and auto-fix retry (up to 3 attempts, 50% clock period relaxation)
+
+**Stats:**
+- Timeline: 2 days (2026-03-31 → 2026-04-01)
+- LOC: ~8,700 total project
+- Git range: feat(09-01) → docs(phase-12)
+- New scripts: synth.sh, synth.tcl, pnr.sh, pnr.tcl, def2gds.py, generate_sdc.sh, validate-pdk.sh
+
+---
+
 ## v1.1 Refine (Shipped: 2026-03-23)
 
 **Phases completed:** 4 phases, 8 plans, 13 tasks
