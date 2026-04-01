@@ -1,5 +1,47 @@
 # Retrospective
 
+## Milestone: v1.1.2 — RTL-to-GDS
+
+**Shipped:** 2026-04-01
+**Phases:** 4 | **Plans:** 5
+
+### What Was Built
+- nangate45 PDK auto-detection and pre-flight validation (5 required PDK files)
+- SDC auto-generation classifying modules as sequential or combinational from Verilog analysis
+- Yosys ASIC synthesis pipeline (Tcl recipe + bash wrapper) producing gate-level netlists
+- OpenROAD PnR flow with auto-die-sizing, conditional CTS skip, and KLayout GDS export
+- `/chip-agent:pnr` slash command with formatted timing/power/area report and timing auto-fix retry
+
+### What Worked
+- Two-file architecture (bash wrapper + Tcl recipe) for synth.sh and pnr.sh kept concerns clean — bash handles paths/validation, Tcl handles tool logic
+- Marker-based report extraction from OpenROAD `-log` output reliably captured timing/power/area sections
+- Conditional CTS skip (IS_SEQUENTIAL flag) correctly handled both ALU (combinational) and Counter8 (sequential)
+- Auto-die-sizing heuristic (<100 cells → 70x70um, ≥100 cells → 30% utilization) worked for all test modules
+- Research phase identifying report file formats upfront (timing.rpt, power.rpt, area.rpt patterns) prevented parsing rework
+
+### What Was Inefficient
+- Phase 9 plan checkboxes (09-01, 09-02) and Phase 11 (11-01) still showed `[ ]` in ROADMAP.md despite completion — checkbox sync remains a persistent issue
+- Progress table formatting drifted across phases (some rows missing milestone column, inconsistent column alignment)
+
+### Patterns Established
+- PnR output convention: `workspace/pnr/` for artifacts, `workspace/pnr/reports/` for report files
+- Three-file architecture for PnR: pnr.sh (bash), pnr.tcl (OpenROAD), def2gds.py (KLayout)
+- Auto-fix retry: 50% clock period increase per attempt, max 3 attempts, re-run both synth and PnR
+- No synthesis retry in PnR command — synthesis failures require RTL changes
+- Power always reported in microwatts (uW), never raw Watts
+
+### Key Lessons
+1. ROADMAP checkbox sync is still the #1 process debt — plan completion should auto-update the `[ ]` to `[x]`
+2. Standalone scripts (not ORFS Makefile) proved correct for portability — no ORFS installation dependency
+3. Yosys Tcl mode requires `yosys` prefix on all commands — discovered during Phase 10, would have been caught by research if Yosys Tcl docs were checked more carefully
+4. KLayout LEF loading uses `layoutOptions` (not `.lyt` tech files) — important for future PDK support
+
+### Cost Observations
+- Sessions: ~2
+- Notable: 5 plans across 4 phases in 2 days; smaller plans (1 plan per phase for 10-12) executed faster than multi-plan phases
+
+---
+
 ## Milestone: v1.1 — Refine
 
 **Shipped:** 2026-03-23
