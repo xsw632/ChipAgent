@@ -89,7 +89,7 @@ Plans:
   3. When synthesis or PnR fails, the auto-fix loop retries up to 3 times with diagnostic adjustments before reporting failure
 **Plans**: 1 plan
 Plans:
-- [ ] 11-01-PLAN.md -- OpenROAD PnR pipeline (pnr.sh + pnr.tcl + def2gds.py)
+- [ ] 12-01-PLAN.md -- PnR slash command skill + report formatting agent + CLAUDE.md update
 
 ## Progress
 
@@ -106,7 +106,7 @@ Plans:
 | 9. Environment + SDC Foundation | 2/2 | Complete   | 2026-03-31 | - |
 | 10. Yosys Synthesis | v1.1.2 | Complete    | 2026-03-31 | 2026-03-31 |
 | 11. OpenROAD PnR + GDS Export | 1/1 | Complete    | 2026-04-01 | - |
-| 12. PnR Command + Report Integration | v1.1.2 | 0/? | Not started | - |
+| 12. PnR Command + Report Integration | v1.1.2 | 0/1 | Not started | - |
 
 ---
 *Full v1.0 details archived to `.planning/milestones/v1.0-ROADMAP.md`*
