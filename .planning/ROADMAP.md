@@ -105,7 +105,7 @@ Plans:
 | 8. Debug Command | v1.1 | 2/2 | Complete | 2026-03-20 |
 | 9. Environment + SDC Foundation | 2/2 | Complete   | 2026-03-31 | - |
 | 10. Yosys Synthesis | v1.1.2 | Complete    | 2026-03-31 | 2026-03-31 |
-| 11. OpenROAD PnR + GDS Export | 1/1 | Complete   | 2026-04-01 | - |
+| 11. OpenROAD PnR + GDS Export | 1/1 | Complete    | 2026-04-01 | - |
 | 12. PnR Command + Report Integration | v1.1.2 | 0/? | Not started | - |
 
 ---
