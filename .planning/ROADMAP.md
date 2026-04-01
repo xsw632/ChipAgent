@@ -75,7 +75,9 @@ Plans:
   3. Die area is automatically sized from synthesis cell count without manual configuration
   4. Combinational modules skip CTS (no clock tree inserted), while sequential modules get full CTS
   5. KLayout merges routed DEF with nangate45 GDS to produce `<ModuleName>.gds` in `workspace/pnr/`
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 11-01-PLAN.md -- OpenROAD PnR pipeline (pnr.sh + pnr.tcl + def2gds.py)
 
 ### Phase 12: PnR Command + Report Integration
 **Goal**: Users invoke a single slash command to run the entire RTL-to-GDS flow with human-readable results and automatic error recovery
@@ -85,7 +87,9 @@ Plans:
   1. Running `/chip-agent:pnr <ModuleName>` executes synthesis, PnR, and GDS export in sequence, stopping on failure with context
   2. A formatted PnR report summarizes timing (pass/fail with WNS/TNS), power breakdown, area, and cell count in a human-readable table
   3. When synthesis or PnR fails, the auto-fix loop retries up to 3 times with diagnostic adjustments before reporting failure
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 11-01-PLAN.md -- OpenROAD PnR pipeline (pnr.sh + pnr.tcl + def2gds.py)
 
 ## Progress
 
@@ -101,7 +105,7 @@ Plans:
 | 8. Debug Command | v1.1 | 2/2 | Complete | 2026-03-20 |
 | 9. Environment + SDC Foundation | 2/2 | Complete   | 2026-03-31 | - |
 | 10. Yosys Synthesis | v1.1.2 | Complete    | 2026-03-31 | 2026-03-31 |
-| 11. OpenROAD PnR + GDS Export | v1.1.2 | 0/? | Not started | - |
+| 11. OpenROAD PnR + GDS Export | v1.1.2 | 0/1 | Planned | - |
 | 12. PnR Command + Report Integration | v1.1.2 | 0/? | Not started | - |
 
 ---
