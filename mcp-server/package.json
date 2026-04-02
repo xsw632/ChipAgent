@@ -1,0 +1,9 @@
+{
+  "name": "chipagent-backend",
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "zod": "^3.25 || ^4.0"
+  }
+}
