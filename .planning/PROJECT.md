@@ -1,19 +1,21 @@
 # ChipAgent
 
-## Current State
+## What This Is
 
-**Shipped:** v1.1.5 sky130hd MCP Backend (2026-04-02)
+An npm-installable Claude Code plugin that provides a fully automated pipeline from natural language hardware descriptions to physical GDS layout. Users describe a hardware module in plain language, invoke `/chip-agent:workflow` for RTL generation and verification, then `/chip-agent:pnr` for physical implementation — covering requirement parsing, Chisel generation, compilation, linting, testbench generation, simulation, ORFS synthesis, place-and-route, and GDS export with formatted reports.
 
-The plugin now provides a complete NL → RTL → GDS pipeline:
-- `/chip-agent:workflow` for RTL generation and verification
-- `/chip-agent:pnr` for ORFS-driven physical implementation on sky130hd via MCP server
+## Core Value
 
-**Tech stack:** Chisel 3.6.1, Scala 2.13.10, sbt 1.10.7, FIRRTL/firtool, Verilator, MCP Server (TypeScript), ORFS make flow, sky130hd PDK.
-**Stats:** ~13,900 LOC across 15 phases, 4 milestones.
+A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog — and a second command extends it through synthesis, PnR, and GDS export with intelligent failure diagnosis, automatic parameter retry, and multi-round QoR optimization.
 
-## Next Milestone Goals
+## Current Milestone: v1.2.0 Smart Retry & QoR Optimization
 
-Not yet defined. Run `/gsd:new-milestone` to start the next milestone cycle.
+**Goal:** Add intelligent failure diagnosis, error-type-based parameter retry, and multi-round QoR optimization with configuration comparison to reach 满分要求 for task2.
+
+**Target features:**
+- Auto-diagnose flow failures by error type (timing violation, congestion, DRC, etc.)
+- Error-type-specific parameter retry (adjust PLACE_DENSITY, CLOCK_PERIOD, etc.)
+- Multi-round QoR optimization with configuration comparison table
 
 <details>
 <summary>Previous state (v1.1.5 in progress)</summary>
@@ -53,16 +55,18 @@ A single slash command turns a natural language hardware description into lint-c
 - ✓ OpenROAD PnR flow (floorplan → place → CTS → route) with auto-die-sizing and conditional CTS skip — v1.1.2
 - ✓ KLayout DEF→GDS merge producing final layout — v1.1.2
 - ✓ `/chip-agent:pnr` slash command with formatted timing/power/area reports and auto-fix retry — v1.1.2
+- ✓ MCP Server wrapping ORFS make targets for full backend flow — v1.1.5
+- ✓ sky130hd PDK support (replacing nangate45) — v1.1.5
+- ✓ ORFS-based PnR flow (replacing standalone Tcl scripts) — v1.1.5
+- ✓ Per-stage metric extraction and PPA summary report — v1.1.5
 
 ### Active
 
-<!-- v1.1.5 sky130hd MCP Backend — see REQUIREMENTS.md for full list -->
+<!-- v1.2.0 Smart Retry & QoR Optimization -->
 
-- [ ] MCP Server wrapping ORFS make targets for full backend flow
-- [ ] sky130hd PDK support (replacing nangate45)
-- [ ] ORFS-based PnR flow (replacing standalone Tcl scripts)
-- [ ] Docker environment detection in initialize (pre-reserved)
-- [ ] Per-stage metric extraction and PPA summary report
+- [ ] Auto-diagnose flow failure error types (timing violation, congestion, DRC, etc.)
+- [ ] Error-type-specific parameter retry (PLACE_DENSITY, CLOCK_PERIOD adjustment)
+- [ ] Multi-round QoR optimization with configuration comparison
 
 ## Current Milestone: v1.1.5 sky130hd MCP Backend
 
@@ -137,5 +141,5 @@ PnR validated: ALU and Counter8 synthesize and route to GDS with timing MET.
 | Power in microwatts | Always report power in uW, never raw Watts | ✓ Good |
 
 ---
-*Last updated: 2026-04-01 after v1.1.5 milestone start*
+*Last updated: 2026-04-02 after v1.2.0 milestone start*
 </details>
