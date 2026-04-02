@@ -6,6 +6,7 @@ import { registerRunStage } from "./tools/run-stage.ts";
 import { registerGetReport } from "./tools/get-report.ts";
 import { registerDiagnoseFailure } from "./tools/diagnose-failure.ts";
 import { registerCleanDesign } from "./tools/clean-design.ts";
+import { registerCompareRuns } from "./tools/compare-runs.ts";
 
 const server = new McpServer({
   name: "chipagent-backend",
@@ -18,6 +19,7 @@ registerRunStage(server);
 registerGetReport(server);
 registerDiagnoseFailure(server);
 registerCleanDesign(server);
+registerCompareRuns(server);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
