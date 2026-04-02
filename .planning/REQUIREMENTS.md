@@ -58,23 +58,23 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DIAG-01 | — | Pending |
-| DIAG-02 | — | Pending |
-| DIAG-03 | — | Pending |
-| DIAG-04 | — | Pending |
-| RETRY-01 | — | Pending |
-| RETRY-02 | — | Pending |
-| RETRY-03 | — | Pending |
-| RETRY-04 | — | Pending |
-| QOR-01 | — | Pending |
-| QOR-02 | — | Pending |
-| QOR-03 | — | Pending |
+| DIAG-01 | Phase 16 | Pending |
+| DIAG-02 | Phase 16 | Pending |
+| DIAG-03 | Phase 16 | Pending |
+| DIAG-04 | Phase 16 | Pending |
+| RETRY-01 | Phase 16 | Pending |
+| RETRY-02 | Phase 17 | Pending |
+| RETRY-03 | Phase 17 | Pending |
+| RETRY-04 | Phase 17 | Pending |
+| QOR-01 | Phase 17 | Pending |
+| QOR-02 | Phase 17 | Pending |
+| QOR-03 | Phase 17 | Pending |
 
 **Coverage:**
 - v1.2.0 requirements: 11 total
-- Mapped to phases: 0
-- Unmapped: 11 ⚠️
+- Mapped to phases: 11
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-02*
-*Last updated: 2026-04-02 after initial definition*
+*Last updated: 2026-04-02 after roadmap creation*
