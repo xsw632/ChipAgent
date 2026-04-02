@@ -23,9 +23,9 @@ Requirements for 满分要求 tier. Each maps to roadmap phases.
 
 ### QoR Optimization
 
-- [ ] **QOR-01**: New `compare_runs` MCP tool saves and retrieves run configs+metrics as JSON in workspace (qor_history.json)
+- [x] **QOR-01**: New `compare_runs` MCP tool saves and retrieves run configs+metrics as JSON in workspace (qor_history.json)
 - [ ] **QOR-02**: After all retry rounds, PnR skill displays comparison table with per-run config, metrics, and status
-- [ ] **QOR-03**: Agent recommends best run: tightest clock period that meets timing (WNS >= 0) with zero DRC violations
+- [x] **QOR-03**: Agent recommends best run: tightest clock period that meets timing (WNS >= 0) with zero DRC violations
 
 ## Future Requirements
 
@@ -66,9 +66,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RETRY-02 | Phase 17 | Pending |
 | RETRY-03 | Phase 17 | Pending |
 | RETRY-04 | Phase 17 | Pending |
-| QOR-01 | Phase 17 | Pending |
+| QOR-01 | Phase 17 | Complete |
 | QOR-02 | Phase 17 | Pending |
-| QOR-03 | Phase 17 | Pending |
+| QOR-03 | Phase 17 | Complete |
 
 **Coverage:**
 - v1.2.0 requirements: 11 total

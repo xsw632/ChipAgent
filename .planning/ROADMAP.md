@@ -113,7 +113,7 @@ Phases execute in numeric order: 16 -> 17
 | 14. Config Generation + ORFS Stage Execution | v1.1.5 | 2/2 | Complete | 2026-04-02 |
 | 15. PnR Skill Orchestration + PPA Reporting | v1.1.5 | 2/2 | Complete | 2026-04-02 |
 | 16. Diagnosis & Retry Infrastructure | 2/2 | Complete    | 2026-04-02 | - |
-| 17. Retry Orchestration & QoR Optimization | v1.2.0 | 0/? | Not started | - |
+| 17. Retry Orchestration & QoR Optimization | 1/2 | In Progress|  | - |
 
 ---
 *Full v1.0 details archived to `.planning/milestones/v1.0-ROADMAP.md`*
