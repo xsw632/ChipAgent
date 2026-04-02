@@ -24,11 +24,11 @@ Requirements for sky130hd MCP Backend milestone. Each maps to roadmap phases.
 
 - [ ] **FLOW-01**: /chip-agent:pnr skill rewritten to orchestrate via MCP tools instead of direct bash script invocation
 - [ ] **FLOW-02**: Skill auto-advances through 6 ORFS stages sequentially (synth -> floorplan -> place -> cts -> route -> finish)
-- [ ] **FLOW-03**: Per-stage metric extraction after each ORFS stage (cell count, design area, WNS, TNS, DRC violations)
+- [x] **FLOW-03**: Per-stage metric extraction after each ORFS stage (cell count, design area, WNS, TNS, DRC violations)
 
 ### Reporting
 
-- [ ] **RPT-01**: PPA summary report combining timing (WNS/TNS/clock period), power, and area metrics in formatted output
+- [x] **RPT-01**: PPA summary report combining timing (WNS/TNS/clock period), power, and area metrics in formatted output
 
 ### Environment Detection
 
@@ -89,8 +89,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CFG-02 | Phase 14 | Complete |
 | FLOW-01 | Phase 15 | Pending |
 | FLOW-02 | Phase 15 | Pending |
-| FLOW-03 | Phase 15 | Pending |
-| RPT-01 | Phase 15 | Pending |
+| FLOW-03 | Phase 15 | Complete |
+| RPT-01 | Phase 15 | Complete |
 | ENV-01 | Phase 13 | Complete |
 | ENV-02 | Phase 13 | Complete |
 | ENV-03 | Phase 13 | Complete |
