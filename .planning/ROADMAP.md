@@ -84,11 +84,11 @@ Plans:
   3. After all retry rounds complete, the user sees a comparison table showing each round's configuration, metrics (WNS, TNS, area, power), and pass/fail status
   4. The agent recommends the best run: tightest clock period with WNS >= 0 and zero DRC violations
   5. Run configurations and metrics are persisted to qor_history.json in the workspace, surviving across sessions
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 17-01: TBD
-- [ ] 17-02: TBD
+- [ ] 17-01-PLAN.md -- compare_runs MCP tool: QoR history persistence + best-run recommendation
+- [ ] 17-02-PLAN.md -- PnR skill retry loop, stage-aware restart, QoR comparison table
 
 ## Progress
 
