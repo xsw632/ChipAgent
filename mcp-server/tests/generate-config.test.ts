@@ -134,3 +134,51 @@ describe("generateSdc", () => {
     assert.ok(sdc.includes("[get_ports clk]"));
   });
 });
+
+const BASE_PARAMS = {
+  verilogContent: SEQUENTIAL_VERILOG,
+  verilogAbsPath: "/tmp/Counter.v",
+  sdcAbsPath: "/tmp/constraint.sdc",
+  coreUtilization: 40,
+} as const;
+
+describe("generateConfigMk tuning parameters", () => {
+  it("includes PLACE_DENSITY when placeDensity provided", () => {
+    const config = generateConfigMk({ ...BASE_PARAMS, placeDensity: 0.7 });
+    assert.ok(config.includes("PLACE_DENSITY = 0.7"));
+  });
+
+  it("includes GPL_TIMING_DRIVEN = 1 when gplTimingDriven is true", () => {
+    const config = generateConfigMk({ ...BASE_PARAMS, gplTimingDriven: true });
+    assert.ok(config.includes("GPL_TIMING_DRIVEN = 1"));
+  });
+
+  it("includes GPL_TIMING_DRIVEN = 0 when gplTimingDriven is false", () => {
+    const config = generateConfigMk({ ...BASE_PARAMS, gplTimingDriven: false });
+    assert.ok(config.includes("GPL_TIMING_DRIVEN = 0"));
+  });
+
+  it("includes GPL_ROUTABILITY_DRIVEN = 1 when gplRoutabilityDriven is true", () => {
+    const config = generateConfigMk({ ...BASE_PARAMS, gplRoutabilityDriven: true });
+    assert.ok(config.includes("GPL_ROUTABILITY_DRIVEN = 1"));
+  });
+
+  it("omits optional lines when params not provided (backward compat)", () => {
+    const config = generateConfigMk(BASE_PARAMS);
+    assert.ok(!config.includes("PLACE_DENSITY"));
+    assert.ok(!config.includes("GPL_TIMING_DRIVEN"));
+    assert.ok(!config.includes("GPL_ROUTABILITY_DRIVEN"));
+  });
+
+  it("includes all three optional lines when all params provided", () => {
+    const config = generateConfigMk({
+      ...BASE_PARAMS,
+      placeDensity: 0.5,
+      gplTimingDriven: true,
+      gplRoutabilityDriven: true,
+    });
+    assert.ok(config.includes("PLACE_DENSITY = 0.5"));
+    assert.ok(config.includes("GPL_TIMING_DRIVEN = 1"));
+    assert.ok(config.includes("GPL_ROUTABILITY_DRIVEN = 1"));
+  });
+});
