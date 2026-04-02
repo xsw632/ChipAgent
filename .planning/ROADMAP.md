@@ -113,7 +113,7 @@ Phases execute in numeric order: 13 -> 14 -> 15
 | 12. PnR Command + Report Integration | v1.1.2 | 1/1 | Complete | 2026-04-01 |
 | 13. MCP Server + Environment Foundation | v1.1.5 | 2/2 | Complete | 2026-04-02 |
 | 14. Config Generation + ORFS Stage Execution | v1.1.5 | 2/2 | Complete | 2026-04-02 |
-| 15. PnR Skill Orchestration + PPA Reporting | v1.1.5 | 0/2 | Not started | - |
+| 15. PnR Skill Orchestration + PPA Reporting | 1/2 | In Progress|  | - |
 
 ---
 *Full v1.0 details archived to `.planning/milestones/v1.0-ROADMAP.md`*
