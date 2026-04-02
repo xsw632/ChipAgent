@@ -4,7 +4,7 @@ Claude Code plugin that turns natural language hardware descriptions into simula
 
 - `/chip-agent:generate` -- Chisel-only: parse requirements, confirm spec, generate Scala source
 - `/chip-agent:workflow` -- Full pipeline: parse, generate, compile, lint, testbench, simulate, report
-- `/chip-agent:pnr` -- Physical implementation: synthesis, place-and-route, GDS export with formatted report
+- `/chip-agent:pnr` -- Physical implementation: ORFS make flow on sky130hd for synthesis, place-and-route, GDS export with formatted report
 
 ## Tech Stack
 
@@ -15,6 +15,9 @@ Claude Code plugin that turns natural language hardware descriptions into simula
 | sbt                | 1.10.7    | Scala build tool (pinned in build.properties) |
 | FIRRTL             | built-in  | Chisel IR compiler (+ auto-managed firtool)   |
 | Verilator          | 5.046     | Verilog simulation and lint checking          |
+| sky130hd PDK       | -         | Open-source standard cell library (SkyWater)  |
+| MCP Server         | 0.1.0     | Backend tool server for ORFS flow             |
+| @modelcontextprotocol/sdk | 1.29.0 | MCP protocol SDK for TypeScript            |
 | Claude Code Plugin | 0.1.0     | Plugin packaging and slash command framework  |
 
 ## Directory Structure
@@ -22,6 +25,8 @@ Claude Code plugin that turns natural language hardware descriptions into simula
 ```
 ChipAgent/
   .claude-plugin/plugin.json
+  .mcp.json                    # MCP server configuration
+  mcp-server/                  # MCP backend server (TypeScript)
   skills/
     generate/SKILL.md          # /chip-agent:generate (Chisel-only)
     workflow/SKILL.md         # /chip-agent:workflow (full pipeline)
@@ -84,4 +89,4 @@ Query Context7 (`/chipsalliance/chisel`) for up-to-date Chisel API usage before 
 
 - `/chip-agent:generate <description>` -- Produces Chisel source files only (steps 0-2). No compilation or verification.
 - `/chip-agent:workflow <description>` -- Runs the full 8-step pipeline: init project, parse, confirm, generate, compile, lint, testbench, simulate, report. Each stage feeds into the next; failures stop the pipeline with context for debugging.
-- `/chip-agent:pnr <ModuleName>` -- Runs Yosys synthesis + OpenROAD PnR + KLayout GDS export on compiled Verilog. Produces timing/power/area reports and GDS file. Auto-retries timing violations by relaxing clock period.
+- `/chip-agent:pnr <ModuleName>` -- Runs ORFS make flow on sky130hd for synthesis, place-and-route, and GDS export on compiled Verilog. Produces timing/power/area reports and GDS file. Auto-retries timing violations by relaxing clock period.
