@@ -1,5 +1,44 @@
 # Milestones
 
+## v1.2.0 Smart Retry & QoR Optimization (Shipped: 2026-04-02)
+
+**Phases completed:** 2 phases, 4 plans, 7 tasks
+
+**Key accomplishments:**
+- diagnose_failure MCP tool classifying 5 ORFS error types (timing_violation, congestion, drc, placement_overflow, synthesis_error) with bounded parameter suggestions
+- clean_design MCP tool wrapping `make clean_all` with 30s timeout for ORFS cache reset before retries
+- generate_config extended with optional placeDensity, gplTimingDriven, gplRoutabilityDriven tuning parameters
+- compare_runs MCP tool with JSON persistence (qor_history.json), 4 actions (save/load/recommend/clear), and deterministic best-run recommendation
+- PnR skill rewritten with 3-round retry loop: diagnose -> clean -> adjust params -> re-run from restart_from stage
+- Stage-aware restart skips synthesis when only placement/routing parameters change
+- QoR comparison table displayed after all rounds with per-run metrics and best-run recommendation
+
+**Stats:**
+- Timeline: 1 day (2026-04-02)
+- Commits: 20
+- Files: 27 files changed (+3,747 / -65)
+- New MCP tools: diagnose_failure, clean_design, compare_runs
+- Tests: 47 new (73 total), zero regressions
+- Git range: e3ff4f0 → f5d9160
+
+---
+
+## v1.1.5 sky130hd MCP Backend (Shipped: 2026-04-02)
+
+**Phases completed:** 3 phases, 6 plans
+
+**Key accomplishments:**
+- MCP Server (TypeScript) wrapping ORFS make targets for full backend flow
+- sky130hd PDK detection and config.mk/SDC auto-generation
+- /chip-agent:pnr rewrite using MCP tools for 6-stage ORFS flow
+- Per-stage metric extraction (area, WNS/TNS, DRC) and PPA summary report
+
+**Stats:**
+- Timeline: 1 day (2026-04-02)
+- Git range: feat(13-01) → docs(phase-15)
+
+---
+
 ## v1.1.2 RTL-to-GDS (Shipped: 2026-04-01)
 
 **Phases completed:** 4 phases, 5 plans

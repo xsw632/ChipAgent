@@ -1,5 +1,48 @@
 # Retrospective
 
+## Milestone: v1.2.0 — Smart Retry & QoR Optimization
+
+**Shipped:** 2026-04-02
+**Phases:** 2 | **Plans:** 4
+
+### What Was Built
+- diagnose_failure MCP tool classifying 5 ORFS error types with bounded parameter suggestions and restart-from stage mapping
+- clean_design MCP tool wrapping make clean_all with 30s timeout for ORFS cache reset
+- generate_config extended with placeDensity, gplTimingDriven, gplRoutabilityDriven tuning parameters
+- compare_runs MCP tool with JSON persistence (qor_history.json), save/load/recommend/clear actions, deterministic best-run selection
+- PnR skill rewritten with 3-round retry loop, stage-aware restart, QoR comparison table, and best-run recommendation
+
+### What Worked
+- Pure function extraction (classifyError, suggestParams, buildCleanArgs, recommendBest) made each tool independently testable -- 47 new tests with zero regressions
+- Error classification priority chain handled overlapping patterns cleanly (synthesis_error checked first, unknown as fallback)
+- Deterministic best-run selection (filter+sort) rather than LLM judgment made recommendation reliable and predictable
+- Skill-layer retry orchestration kept MCP tools simple and composable -- each tool does one thing
+- Mutable param accumulation across retry rounds prevented parameter drift without complex state management
+
+### What Was Inefficient
+- ROADMAP.md progress table still had column misalignment (phases 16-17 milestone column was missing)
+- No end-to-end testing against actual ORFS installation -- regex patterns for error classification are untested against real sky130hd logs
+
+### Patterns Established
+- Error classification via regex priority chain with structured return type (DiagnosisResult)
+- Parameter suggestion with min/max clamping to prevent unreasonable values
+- Stage-aware restart via STAGE_ORDER array slicing from diagnosis restart_from
+- QoR comparison table as standard post-pipeline output format
+- Read-append-write pattern for atomic JSON persistence (qor_history.json)
+- Retry orchestration in Skill layer (diagnose -> clean -> regenerate -> re-run)
+
+### Key Lessons
+1. Tool composability pays off: 3 new MCP tools + 1 extension enabled a complete retry loop with minimal skill-layer code
+2. Deterministic algorithms (filter+sort) are preferable to LLM judgment for selection tasks where criteria are well-defined
+3. Flat file JSON is sufficient for small datasets (<10 runs) -- no need for SQLite or database dependencies
+4. Critical error classification (abort immediately for synthesis/combinational timing) saves retry rounds from being wasted
+
+### Cost Observations
+- Sessions: ~2
+- Notable: 4 plans in a single day; fastest milestone per plan (avg ~5min/plan for implementation)
+
+---
+
 ## Milestone: v1.1.2 — RTL-to-GDS
 
 **Shipped:** 2026-04-01
