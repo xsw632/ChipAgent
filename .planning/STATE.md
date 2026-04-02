@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.2.0
 milestone_name: Smart Retry & QoR Optimization
 status: ready_to_plan
-stopped_at: Roadmap created, ready to plan Phase 16
+stopped_at: Completed 16-01 diagnose_failure tool
 last_updated: "2026-04-02"
 last_activity: 2026-04-02 — Roadmap created for v1.2.0
 progress:
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 ## Current Position
 
 Phase: 16 of 17 (Diagnosis & Retry Infrastructure)
-Plan: 0 of ? in current phase
-Status: Ready to plan
-Last activity: 2026-04-02 -- Roadmap created for v1.2.0 milestone
+Plan: 1 of 1 in current phase
+Status: In progress
+Last activity: 2026-04-02 -- Completed 16-01 diagnose_failure tool
 
 Progress: [░░░░░░░░░░] 0% (0/2 v1.2.0 phases complete)
 
@@ -49,7 +49,8 @@ Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
 - [v1.2.0]: 3 new MCP tools (diagnose_failure, clean_design, compare_runs) + 1 extended (generate_config); retry orchestration stays in Skill layer
-- [v1.2.0]: Silent timing violations (WNS < 0 on successful run) must be checked post-completion, not just on stage failure
+- [v1.2.0]: Classification priority: synthesis > placement_overflow > congestion > drc > timing_violation > unknown
+- [v1.2.0]: Sequential vs combinational timing distinguished by SDC virtual_clk pattern
 
 ### Pending Todos
 
@@ -63,5 +64,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-04-02
-Stopped at: Roadmap created for v1.2.0, ready to plan Phase 16
+Stopped at: Completed 16-01 diagnose_failure tool
 Resume file: None

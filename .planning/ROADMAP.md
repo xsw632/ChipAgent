@@ -112,7 +112,7 @@ Phases execute in numeric order: 16 -> 17
 | 13. MCP Server + Environment Foundation | v1.1.5 | 2/2 | Complete | 2026-04-02 |
 | 14. Config Generation + ORFS Stage Execution | v1.1.5 | 2/2 | Complete | 2026-04-02 |
 | 15. PnR Skill Orchestration + PPA Reporting | v1.1.5 | 2/2 | Complete | 2026-04-02 |
-| 16. Diagnosis & Retry Infrastructure | v1.2.0 | 0/2 | Not started | - |
+| 16. Diagnosis & Retry Infrastructure | 1/2 | In Progress|  | - |
 | 17. Retry Orchestration & QoR Optimization | v1.2.0 | 0/? | Not started | - |
 
 ---
