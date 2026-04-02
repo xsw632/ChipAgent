@@ -43,7 +43,7 @@
 
 **Milestone Goal:** Replace standalone nangate45 Tcl scripts with MCP Server-driven ORFS make flow on sky130hd, reaching task2 advanced requirements.
 
-- [ ] **Phase 13: MCP Server + Environment Foundation** - MCP scaffold with environment detection, sky130hd PDK validation, and nangate45 cleanup
+- [x] **Phase 13: MCP Server + Environment Foundation** - MCP scaffold with environment detection, sky130hd PDK validation, and nangate45 cleanup (completed 2026-04-02)
 - [ ] **Phase 14: Config Generation + ORFS Stage Execution** - Config.mk/SDC generation and ORFS make target execution with metric extraction
 - [ ] **Phase 15: PnR Skill Orchestration + PPA Reporting** - /chip-agent:pnr rewrite orchestrating full 6-stage flow with formatted PPA summary
 
@@ -110,7 +110,7 @@ Phases execute in numeric order: 13 -> 14 -> 15
 | 10. Yosys Synthesis | v1.1.2 | 1/1 | Complete | 2026-03-31 |
 | 11. OpenROAD PnR + GDS Export | v1.1.2 | 1/1 | Complete | 2026-04-01 |
 | 12. PnR Command + Report Integration | v1.1.2 | 1/1 | Complete | 2026-04-01 |
-| 13. MCP Server + Environment Foundation | v1.1.5 | 0/? | Not started | - |
+| 13. MCP Server + Environment Foundation | 2/2 | Complete   | 2026-04-02 | - |
 | 14. Config Generation + ORFS Stage Execution | v1.1.5 | 0/? | Not started | - |
 | 15. PnR Skill Orchestration + PPA Reporting | v1.1.5 | 0/? | Not started | - |
 

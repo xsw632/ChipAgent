@@ -32,14 +32,14 @@ Requirements for sky130hd MCP Backend milestone. Each maps to roadmap phases.
 
 ### Environment Detection
 
-- [ ] **ENV-01**: sky130hd PDK detection in /chip-agent:initialize replacing nangate45 detection
-- [ ] **ENV-02**: Docker availability detection with backend_mode field (local/docker) in env.json
-- [ ] **ENV-03**: ORFS installation detection and path resolution in env.json
+- [x] **ENV-01**: sky130hd PDK detection in /chip-agent:initialize replacing nangate45 detection
+- [x] **ENV-02**: Docker availability detection with backend_mode field (local/docker) in env.json
+- [x] **ENV-03**: ORFS installation detection and path resolution in env.json
 
 ### Cleanup
 
-- [ ] **CLN-01**: Remove nangate45-specific scripts (synth.tcl, pnr.tcl, validate-pdk.sh, def2gds.py) and replace with ORFS-based flow
-- [ ] **CLN-02**: Update CLAUDE.md tech stack table and documentation for sky130hd + MCP architecture
+- [x] **CLN-01**: Remove nangate45-specific scripts (synth.tcl, pnr.tcl, validate-pdk.sh, def2gds.py) and replace with ORFS-based flow
+- [x] **CLN-02**: Update CLAUDE.md tech stack table and documentation for sky130hd + MCP architecture
 
 ## v1.2 Requirements
 
@@ -91,11 +91,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FLOW-02 | Phase 15 | Pending |
 | FLOW-03 | Phase 15 | Pending |
 | RPT-01 | Phase 15 | Pending |
-| ENV-01 | Phase 13 | Pending |
-| ENV-02 | Phase 13 | Pending |
-| ENV-03 | Phase 13 | Pending |
-| CLN-01 | Phase 13 | Pending |
-| CLN-02 | Phase 13 | Pending |
+| ENV-01 | Phase 13 | Complete |
+| ENV-02 | Phase 13 | Complete |
+| ENV-03 | Phase 13 | Complete |
+| CLN-01 | Phase 13 | Complete |
+| CLN-02 | Phase 13 | Complete |
 
 **Coverage:**
 - v1.1.5 requirements: 16 total
