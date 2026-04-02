@@ -11,14 +11,14 @@ Requirements for sky130hd MCP Backend milestone. Each maps to roadmap phases.
 
 - [x] **MCP-01**: MCP Server scaffold with stdio transport, TypeScript source, and .mcp.json plugin registration
 - [x] **MCP-02**: `check_environment` tool verifying ORFS path, sky130hd PDK presence, and Docker availability
-- [ ] **MCP-03**: `generate_config` tool creating config.mk and constraint.sdc from module name, Verilog path, and clock info
+- [x] **MCP-03**: `generate_config` tool creating config.mk and constraint.sdc from module name, Verilog path, and clock info
 - [ ] **MCP-04**: `run_stage` tool executing individual ORFS make targets (synth/floorplan/place/cts/route/finish) with output capture
 - [ ] **MCP-05**: `get_report` tool extracting stage report files and key metrics from ORFS output directories
 
 ### Config Generation
 
-- [ ] **CFG-01**: Auto-generate config.mk with correct ORFS variables (DESIGN_NAME, PLATFORM, VERILOG_FILES, SDC_FILE, CORE_UTILIZATION)
-- [ ] **CFG-02**: Auto-generate ORFS-compatible constraint.sdc with sky130hd timing defaults (10ns clock for sequential, virtual clock for combinational)
+- [x] **CFG-01**: Auto-generate config.mk with correct ORFS variables (DESIGN_NAME, PLATFORM, VERILOG_FILES, SDC_FILE, CORE_UTILIZATION)
+- [x] **CFG-02**: Auto-generate ORFS-compatible constraint.sdc with sky130hd timing defaults (10ns clock for sequential, virtual clock for combinational)
 
 ### PnR Flow Orchestration
 
@@ -82,11 +82,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | MCP-01 | Phase 13 | Complete |
 | MCP-02 | Phase 13 | Complete |
-| MCP-03 | Phase 14 | Pending |
+| MCP-03 | Phase 14 | Complete |
 | MCP-04 | Phase 14 | Pending |
 | MCP-05 | Phase 14 | Pending |
-| CFG-01 | Phase 14 | Pending |
-| CFG-02 | Phase 14 | Pending |
+| CFG-01 | Phase 14 | Complete |
+| CFG-02 | Phase 14 | Complete |
 | FLOW-01 | Phase 15 | Pending |
 | FLOW-02 | Phase 15 | Pending |
 | FLOW-03 | Phase 15 | Pending |
