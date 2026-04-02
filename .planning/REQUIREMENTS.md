@@ -11,8 +11,8 @@ Requirements for 满分要求 tier. Each maps to roadmap phases.
 
 - [x] **DIAG-01**: Agent auto-classifies flow failures into error types (timing_violation, congestion, drc, placement_overflow, synthesis_error) from ORFS logs, reports, and stderr
 - [x] **DIAG-02**: Agent detects "silent" timing violations where all stages succeed but WNS < 0 in finish report
-- [ ] **DIAG-03**: New `clean_design` MCP tool runs `make clean_all` to reset ORFS cached artifacts before retry
-- [ ] **DIAG-04**: Existing `generate_config` MCP tool extended with optional tuning parameters (place_density, gpl_timing_driven, gpl_routability_driven)
+- [x] **DIAG-03**: New `clean_design` MCP tool runs `make clean_all` to reset ORFS cached artifacts before retry
+- [x] **DIAG-04**: Existing `generate_config` MCP tool extended with optional tuning parameters (place_density, gpl_timing_driven, gpl_routability_driven)
 
 ### Parameter Retry
 
@@ -60,8 +60,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | DIAG-01 | Phase 16 | Complete |
 | DIAG-02 | Phase 16 | Complete |
-| DIAG-03 | Phase 16 | Pending |
-| DIAG-04 | Phase 16 | Pending |
+| DIAG-03 | Phase 16 | Complete |
+| DIAG-04 | Phase 16 | Complete |
 | RETRY-01 | Phase 16 | Complete |
 | RETRY-02 | Phase 17 | Pending |
 | RETRY-03 | Phase 17 | Pending |

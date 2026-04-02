@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2.0
-milestone_name: Smart Retry & QoR Optimization
-status: ready_to_plan
-stopped_at: Completed 16-01 diagnose_failure tool
+milestone: v1.0
+milestone_name: milestone
+status: executing
+stopped_at: Completed 16-02 clean_design + generate_config tuning
 last_updated: "2026-04-02"
-last_activity: 2026-04-02 — Roadmap created for v1.2.0
+last_activity: 2026-04-02 -- Completed 16-02 clean_design + generate_config tuning
 progress:
   total_phases: 2
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
   percent: 0
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 ## Current Position
 
 Phase: 16 of 17 (Diagnosis & Retry Infrastructure)
-Plan: 1 of 1 in current phase
-Status: In progress
-Last activity: 2026-04-02 -- Completed 16-01 diagnose_failure tool
+Plan: 2 of 2 in current phase
+Status: Phase 16 complete
+Last activity: 2026-04-02 -- Completed 16-02 clean_design + generate_config tuning
 
 Progress: [░░░░░░░░░░] 0% (0/2 v1.2.0 phases complete)
 
@@ -51,6 +51,7 @@ Recent decisions affecting current work:
 - [v1.2.0]: 3 new MCP tools (diagnose_failure, clean_design, compare_runs) + 1 extended (generate_config); retry orchestration stays in Skill layer
 - [v1.2.0]: Classification priority: synthesis > placement_overflow > congestion > drc > timing_violation > unknown
 - [v1.2.0]: Sequential vs combinational timing distinguished by SDC virtual_clk pattern
+- [v1.2.0]: 30s timeout for clean_design (short operation); optional tuning params omitted when undefined for backward compat
 
 ### Pending Todos
 
@@ -64,5 +65,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-04-02
-Stopped at: Completed 16-01 diagnose_failure tool
+Stopped at: Completed 16-02 clean_design + generate_config tuning
 Resume file: None
