@@ -110,7 +110,7 @@ Phases execute in numeric order: 13 -> 14 -> 15
 | 10. Yosys Synthesis | v1.1.2 | 1/1 | Complete | 2026-03-31 |
 | 11. OpenROAD PnR + GDS Export | v1.1.2 | 1/1 | Complete | 2026-04-01 |
 | 12. PnR Command + Report Integration | v1.1.2 | 1/1 | Complete | 2026-04-01 |
-| 13. MCP Server + Environment Foundation | 2/2 | Complete   | 2026-04-02 | - |
+| 13. MCP Server + Environment Foundation | 2/2 | Complete    | 2026-04-02 | - |
 | 14. Config Generation + ORFS Stage Execution | v1.1.5 | 0/? | Not started | - |
 | 15. PnR Skill Orchestration + PPA Reporting | v1.1.5 | 0/? | Not started | - |
 
