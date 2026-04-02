@@ -6,6 +6,7 @@
 - ✅ **v1.1 Refine** -- Phases 5-8 (shipped 2026-03-23)
 - ✅ **v1.1.2 RTL-to-GDS** -- Phases 9-12 (shipped 2026-04-01)
 - ✅ **v1.1.5 sky130hd MCP Backend** -- Phases 13-15 (shipped 2026-04-02)
+- 🚧 **v1.2.0 Smart Retry & QoR Optimization** -- Phases 16-17 (in progress)
 
 ## Phases
 
@@ -48,10 +49,51 @@
 
 </details>
 
+### v1.2.0 Smart Retry & QoR Optimization (In Progress)
+
+**Milestone Goal:** Add intelligent failure diagnosis, error-type-based parameter retry, and multi-round QoR optimization to the MCP-driven PnR pipeline.
+
+- [ ] **Phase 16: Diagnosis & Retry Infrastructure** - MCP tools for error classification, design cleanup, config tuning, and failure diagnosis
+- [ ] **Phase 17: Retry Orchestration & QoR Optimization** - Skill-level retry loop with stage-aware restart, QoR history tracking, comparison table, and best-run recommendation
+
+## Phase Details
+
+### Phase 16: Diagnosis & Retry Infrastructure
+**Goal**: MCP server provides all tools needed to diagnose failures, clean cached state, and regenerate configs with tuned parameters
+**Depends on**: Phase 15 (existing MCP server and ORFS pipeline)
+**Requirements**: DIAG-01, DIAG-02, DIAG-03, DIAG-04, RETRY-01
+**Success Criteria** (what must be TRUE):
+  1. Calling `diagnose_failure` on ORFS output with a timing violation returns structured JSON classifying the error type as `timing_violation` with suggested parameter adjustments (e.g., increase clock_period)
+  2. Calling `diagnose_failure` on a successful run where WNS < 0 in finish report still detects the silent timing violation (not reported as success)
+  3. Calling `clean_design` resets ORFS cached artifacts so a subsequent `run_stage` starts fresh (no stale results)
+  4. Calling `generate_config` with optional `place_density` or other tuning parameters produces a config.mk that includes those overrides
+  5. `diagnose_failure` returns different suggested adjustments for different error types: timing -> clock_period, congestion -> place_density, placement overflow -> core_utilization
+**Plans**: TBD
+
+Plans:
+- [ ] 16-01: TBD
+- [ ] 16-02: TBD
+
+### Phase 17: Retry Orchestration & QoR Optimization
+**Goal**: PnR skill automatically retries failed flows with diagnosed parameter adjustments and presents multi-round QoR comparison with best-run recommendation
+**Depends on**: Phase 16 (diagnosis and retry tools available)
+**Requirements**: RETRY-02, RETRY-03, RETRY-04, QOR-01, QOR-02, QOR-03
+**Success Criteria** (what must be TRUE):
+  1. When a PnR flow fails with a timing violation, the skill automatically diagnoses the failure, adjusts parameters, cleans, and re-runs -- up to 3 rounds total without user intervention
+  2. When only placement parameters change (not synthesis-affecting params), retry skips synthesis and restarts from floorplan stage (stage-aware restart)
+  3. After all retry rounds complete, the user sees a comparison table showing each round's configuration, metrics (WNS, TNS, area, power), and pass/fail status
+  4. The agent recommends the best run: tightest clock period with WNS >= 0 and zero DRC violations
+  5. Run configurations and metrics are persisted to qor_history.json in the workspace, surviving across sessions
+**Plans**: TBD
+
+Plans:
+- [ ] 17-01: TBD
+- [ ] 17-02: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 13 -> 14 -> 15
+Phases execute in numeric order: 16 -> 17
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -70,6 +112,8 @@ Phases execute in numeric order: 13 -> 14 -> 15
 | 13. MCP Server + Environment Foundation | v1.1.5 | 2/2 | Complete | 2026-04-02 |
 | 14. Config Generation + ORFS Stage Execution | v1.1.5 | 2/2 | Complete | 2026-04-02 |
 | 15. PnR Skill Orchestration + PPA Reporting | v1.1.5 | 2/2 | Complete | 2026-04-02 |
+| 16. Diagnosis & Retry Infrastructure | v1.2.0 | 0/? | Not started | - |
+| 17. Retry Orchestration & QoR Optimization | v1.2.0 | 0/? | Not started | - |
 
 ---
 *Full v1.0 details archived to `.planning/milestones/v1.0-ROADMAP.md`*
