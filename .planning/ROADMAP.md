@@ -75,8 +75,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 14-01: TBD
-- [ ] 14-02: TBD
+- [ ] 14-01-PLAN.md — generate_config tool (config.mk + constraint.sdc generation)
+- [ ] 14-02-PLAN.md — run_stage + get_report tools (ORFS make execution + metric extraction)
 
 ### Phase 15: PnR Skill Orchestration + PPA Reporting
 **Goal**: Users invoke `/chip-agent:pnr` and get a complete ORFS-driven backend flow with formatted PPA summary report
@@ -110,8 +110,8 @@ Phases execute in numeric order: 13 -> 14 -> 15
 | 10. Yosys Synthesis | v1.1.2 | 1/1 | Complete | 2026-03-31 |
 | 11. OpenROAD PnR + GDS Export | v1.1.2 | 1/1 | Complete | 2026-04-01 |
 | 12. PnR Command + Report Integration | v1.1.2 | 1/1 | Complete | 2026-04-01 |
-| 13. MCP Server + Environment Foundation | 2/2 | Complete    | 2026-04-02 | - |
-| 14. Config Generation + ORFS Stage Execution | v1.1.5 | 0/? | Not started | - |
+| 13. MCP Server + Environment Foundation | v1.1.5 | 2/2 | Complete | 2026-04-02 |
+| 14. Config Generation + ORFS Stage Execution | v1.1.5 | 0/2 | Not started | - |
 | 15. PnR Skill Orchestration + PPA Reporting | v1.1.5 | 0/? | Not started | - |
 
 ---
