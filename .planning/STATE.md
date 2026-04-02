@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 15-01-PLAN.md
-last_updated: "2026-04-02T04:43:57.024Z"
+stopped_at: Completed 15-02-PLAN.md
+last_updated: "2026-04-02T04:50:31.033Z"
 last_activity: 2026-04-02 — Completed 13-01 MCP Server + Environment Foundation
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
   percent: 33
 ---
 
@@ -60,6 +60,7 @@ All v1.1.2 decisions archived with milestone.
 - [Phase 14]: Extract module name from Verilog regex, detect sequential via posedge pattern, export pure functions for testability
 - [Phase 14]: Pure parser functions exported separately for unit testability
 - [Phase 15]: parsePower extracts Total row + percentage line separately for robustness
+- [Phase 15]: Skill calls 4 MCP tools instead of synth.sh/pnr.sh scripts
 
 ### Pending Todos
 
@@ -71,6 +72,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-02T04:43:57.022Z
-Stopped at: Completed 15-01-PLAN.md
+Last session: 2026-04-02T04:50:31.032Z
+Stopped at: Completed 15-02-PLAN.md
 Resume file: None
