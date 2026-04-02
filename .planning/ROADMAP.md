@@ -68,11 +68,11 @@
   3. Calling `clean_design` resets ORFS cached artifacts so a subsequent `run_stage` starts fresh (no stale results)
   4. Calling `generate_config` with optional `place_density` or other tuning parameters produces a config.mk that includes those overrides
   5. `diagnose_failure` returns different suggested adjustments for different error types: timing -> clock_period, congestion -> place_density, placement overflow -> core_utilization
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 16-01: TBD
-- [ ] 16-02: TBD
+- [ ] 16-01-PLAN.md -- diagnose_failure MCP tool: error classification, silent timing detection, parameter suggestions
+- [ ] 16-02-PLAN.md -- clean_design tool, generate_config tuning extension, MCP server registration
 
 ### Phase 17: Retry Orchestration & QoR Optimization
 **Goal**: PnR skill automatically retries failed flows with diagnosed parameter adjustments and presents multi-round QoR comparison with best-run recommendation
@@ -112,7 +112,7 @@ Phases execute in numeric order: 16 -> 17
 | 13. MCP Server + Environment Foundation | v1.1.5 | 2/2 | Complete | 2026-04-02 |
 | 14. Config Generation + ORFS Stage Execution | v1.1.5 | 2/2 | Complete | 2026-04-02 |
 | 15. PnR Skill Orchestration + PPA Reporting | v1.1.5 | 2/2 | Complete | 2026-04-02 |
-| 16. Diagnosis & Retry Infrastructure | v1.2.0 | 0/? | Not started | - |
+| 16. Diagnosis & Retry Infrastructure | v1.2.0 | 0/2 | Not started | - |
 | 17. Retry Orchestration & QoR Optimization | v1.2.0 | 0/? | Not started | - |
 
 ---
