@@ -89,7 +89,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 15-01: TBD
+- [ ] 15-01-PLAN.md — Enhance get_report with power and synthesis area parsing
+- [ ] 15-02-PLAN.md — Rewrite pnr skill for MCP orchestration + PPA report formatting
 
 ## Progress
 
@@ -111,8 +112,8 @@ Phases execute in numeric order: 13 -> 14 -> 15
 | 11. OpenROAD PnR + GDS Export | v1.1.2 | 1/1 | Complete | 2026-04-01 |
 | 12. PnR Command + Report Integration | v1.1.2 | 1/1 | Complete | 2026-04-01 |
 | 13. MCP Server + Environment Foundation | v1.1.5 | 2/2 | Complete | 2026-04-02 |
-| 14. Config Generation + ORFS Stage Execution | 2/2 | Complete    | 2026-04-02 | - |
-| 15. PnR Skill Orchestration + PPA Reporting | v1.1.5 | 0/? | Not started | - |
+| 14. Config Generation + ORFS Stage Execution | v1.1.5 | 2/2 | Complete | 2026-04-02 |
+| 15. PnR Skill Orchestration + PPA Reporting | v1.1.5 | 0/2 | Not started | - |
 
 ---
 *Full v1.0 details archived to `.planning/milestones/v1.0-ROADMAP.md`*
