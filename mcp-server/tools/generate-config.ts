@@ -8,6 +8,9 @@ interface ConfigMkParams {
   readonly verilogAbsPath: string;
   readonly sdcAbsPath: string;
   readonly coreUtilization: number;
+  readonly placeDensity?: number;
+  readonly gplTimingDriven?: boolean;
+  readonly gplRoutabilityDriven?: boolean;
 }
 
 interface SdcParams {
@@ -30,15 +33,27 @@ function isSequential(verilogContent: string): boolean {
 
 export function generateConfigMk(params: ConfigMkParams): string {
   const designName = extractModuleName(params.verilogContent);
-  return [
+  const lines = [
     `export DESIGN_NAME = ${designName}`,
     `export PLATFORM = sky130hd`,
     `export VERILOG_FILES = ${params.verilogAbsPath}`,
     `export SDC_FILE = ${params.sdcAbsPath}`,
     `export CORE_UTILIZATION = ${params.coreUtilization}`,
     `export TNS_END_PERCENT = 100`,
-    "",
-  ].join("\n");
+  ];
+
+  if (params.placeDensity !== undefined) {
+    lines.push(`export PLACE_DENSITY = ${params.placeDensity}`);
+  }
+  if (params.gplTimingDriven !== undefined) {
+    lines.push(`export GPL_TIMING_DRIVEN = ${params.gplTimingDriven ? 1 : 0}`);
+  }
+  if (params.gplRoutabilityDriven !== undefined) {
+    lines.push(`export GPL_ROUTABILITY_DRIVEN = ${params.gplRoutabilityDriven ? 1 : 0}`);
+  }
+
+  lines.push("");
+  return lines.join("\n");
 }
 
 export function generateSdc(params: SdcParams): string {
@@ -76,6 +91,9 @@ export function registerGenerateConfig(server: McpServer): void {
       clock_port: z.string().optional().default("clock").describe("Clock port name"),
       clock_period_ns: z.number().optional().default(10).describe("Clock period in nanoseconds"),
       core_utilization: z.number().optional().default(40).describe("Core utilization percentage"),
+      place_density: z.number().min(0.2).max(0.95).optional().describe("Placement density override (0.0-1.0)"),
+      gpl_timing_driven: z.boolean().optional().describe("Enable timing-driven placement"),
+      gpl_routability_driven: z.boolean().optional().describe("Enable routability-driven placement"),
     },
     async (params): Promise<{ content: Array<{ type: "text"; text: string }> }> => {
       const verilogAbsPath = resolve(params.verilog_path);
@@ -92,6 +110,9 @@ export function registerGenerateConfig(server: McpServer): void {
         verilogAbsPath,
         sdcAbsPath,
         coreUtilization: params.core_utilization,
+        placeDensity: params.place_density,
+        gplTimingDriven: params.gpl_timing_driven,
+        gplRoutabilityDriven: params.gpl_routability_driven,
       });
 
       const sdc = generateSdc({
