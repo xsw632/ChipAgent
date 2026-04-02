@@ -30,6 +30,31 @@ export function parseDrcReport(content: string): { violations: number } {
   return { violations: matches ? matches.length : 0 };
 }
 
+export function parsePower(content: string): {
+  total_w: number | null;
+  internal_pct: number | null;
+  switching_pct: number | null;
+  leakage_pct: number | null;
+} {
+  const nullResult = { total_w: null, internal_pct: null, switching_pct: null, leakage_pct: null };
+  const totalMatch = content.match(/^Total\s+([\d.e+-]+)\s+([\d.e+-]+)\s+([\d.e+-]+)\s+([\d.e+-]+)/m);
+  if (!totalMatch) return nullResult;
+  const total_w = parseFloat(totalMatch[4]);
+  const pctMatch = content.match(/^\s+([\d.]+)%\s+([\d.]+)%\s+([\d.]+)%\s*$/m);
+  if (!pctMatch) return { total_w, internal_pct: null, switching_pct: null, leakage_pct: null };
+  return {
+    total_w,
+    internal_pct: parseFloat(pctMatch[1]),
+    switching_pct: parseFloat(pctMatch[2]),
+    leakage_pct: parseFloat(pctMatch[3]),
+  };
+}
+
+export function parseSynthArea(content: string): { synth_area: number | null } {
+  const match = content.match(/Chip area for module '\\?\w+':\s+([\d.]+)/);
+  return { synth_area: match ? parseFloat(match[1]) : null };
+}
+
 const STAGE_REPORT_MAP: Record<string, string[]> = {
   synth: ["synth_stat.txt"],
   floorplan: ["2_floorplan_final.rpt"],
@@ -65,9 +90,9 @@ export function registerGetReport(server: McpServer): void {
         const content = readFileSync(filePath, "utf-8");
 
         if (file === "synth_stat.txt") {
-          Object.assign(metrics, parseSynthStat(content));
+          Object.assign(metrics, parseSynthStat(content), parseSynthArea(content));
         } else if (file === "6_finish.rpt") {
-          Object.assign(metrics, parseFinishReport(content));
+          Object.assign(metrics, parseFinishReport(content), parsePower(content));
         } else if (file === "6_report.log") {
           Object.assign(metrics, parseRouteArea(content));
         } else if (file === "5_route_drc.rpt") {
