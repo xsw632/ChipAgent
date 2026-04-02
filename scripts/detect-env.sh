@@ -85,22 +85,54 @@ KLAYOUT_INSTALLED="$TOOL_INSTALLED"
 KLAYOUT_VERSION="$TOOL_VERSION"
 KLAYOUT_PATH="$TOOL_PATH"
 
-# Detect nangate45 PDK
-NANGATE45_INSTALLED="false"
-NANGATE45_DIR=""
-NANGATE45_CANDIDATES=(
-  "${NANGATE45_DIR_OVERRIDE:-}"
-  "${ORFS_DIR:-}/flow/platforms/nangate45"
-  "$HOME/OpenROAD-flow-scripts/flow/platforms/nangate45"
-  "/opt/OpenROAD-flow-scripts/flow/platforms/nangate45"
+# Detect sky130hd PDK
+SKY130HD_INSTALLED="false"
+SKY130HD_DIR=""
+SKY130HD_CANDIDATES=(
+  "${SKY130HD_DIR_OVERRIDE:-}"
+  "${ORFS_DIR:-}/flow/platforms/sky130hd"
+  "$HOME/OpenROAD-flow-scripts/flow/platforms/sky130hd"
+  "/opt/OpenROAD-flow-scripts/flow/platforms/sky130hd"
 )
-for candidate in "${NANGATE45_CANDIDATES[@]}"; do
-  if [ -n "$candidate" ] && [ -f "$candidate/lib/NangateOpenCellLibrary_typical.lib" ]; then
-    NANGATE45_INSTALLED="true"
-    NANGATE45_DIR="$candidate"
+for candidate in "${SKY130HD_CANDIDATES[@]}"; do
+  if [ -n "$candidate" ] && [ -f "$candidate/lib/sky130_fd_sc_hd__tt_025C_1v80.lib" ]; then
+    SKY130HD_INSTALLED="true"
+    SKY130HD_DIR="$candidate"
     break
   fi
 done
+
+# Detect ORFS root
+ORFS_INSTALLED="false"
+ORFS_DIR_DETECTED=""
+ORFS_FLOW_PATH=""
+ORFS_CANDIDATES=(
+  "${ORFS_DIR:-}"
+  "$HOME/OpenROAD-flow-scripts"
+  "/opt/OpenROAD-flow-scripts"
+)
+for candidate in "${ORFS_CANDIDATES[@]}"; do
+  if [ -n "$candidate" ] && [ -f "$candidate/flow/Makefile" ]; then
+    ORFS_INSTALLED="true"
+    ORFS_DIR_DETECTED="$candidate"
+    ORFS_FLOW_PATH="$candidate/flow"
+    break
+  fi
+done
+
+# Detect Docker
+DOCKER_INSTALLED="false"
+DOCKER_VERSION=""
+if command -v docker >/dev/null 2>&1; then
+  DOCKER_VERSION=$(docker --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+  if [ -n "$DOCKER_VERSION" ]; then
+    DOCKER_INSTALLED="true"
+  fi
+fi
+BACKEND_MODE="local"
+if [ "$DOCKER_INSTALLED" = "true" ]; then
+  BACKEND_MODE="docker"
+fi
 
 # Compute capability flags
 CAN_COMPILE="false"
@@ -123,15 +155,15 @@ CAN_SYNTHESIZE="false"
 CAN_PNR="false"
 CAN_GDS="false"
 
-if [ "$YOSYS_INSTALLED" = "true" ] && [ "$NANGATE45_INSTALLED" = "true" ]; then
+if [ "$YOSYS_INSTALLED" = "true" ] && [ "$SKY130HD_INSTALLED" = "true" ]; then
   CAN_SYNTHESIZE="true"
 fi
 
-if [ "$OPENROAD_INSTALLED" = "true" ] && [ "$NANGATE45_INSTALLED" = "true" ]; then
+if [ "$OPENROAD_INSTALLED" = "true" ] && [ "$SKY130HD_INSTALLED" = "true" ]; then
   CAN_PNR="true"
 fi
 
-if [ "$KLAYOUT_INSTALLED" = "true" ] && [ "$NANGATE45_INSTALLED" = "true" ] && [ -f "$NANGATE45_DIR/gds/NangateOpenCellLibrary.gds" ]; then
+if [ "$KLAYOUT_INSTALLED" = "true" ] && [ "$SKY130HD_INSTALLED" = "true" ] && [ -f "$SKY130HD_DIR/gds/sky130_fd_sc_hd.gds" ]; then
   CAN_GDS="true"
 fi
 
@@ -173,8 +205,14 @@ if command -v jq >/dev/null 2>&1; then
     --argjson klayout_installed "$KLAYOUT_INSTALLED" \
     --arg klayout_version "$KLAYOUT_VERSION" \
     --arg klayout_path "$KLAYOUT_PATH" \
-    --argjson nangate45_installed "$NANGATE45_INSTALLED" \
-    --arg nangate45_path "$NANGATE45_DIR" \
+    --argjson sky130hd_installed "$SKY130HD_INSTALLED" \
+    --arg sky130hd_path "$SKY130HD_DIR" \
+    --argjson orfs_installed "$ORFS_INSTALLED" \
+    --arg orfs_path "$ORFS_DIR_DETECTED" \
+    --arg orfs_flow_path "$ORFS_FLOW_PATH" \
+    --argjson docker_installed "$DOCKER_INSTALLED" \
+    --arg docker_version "$DOCKER_VERSION" \
+    --arg backend_mode "$BACKEND_MODE" \
     --argjson can_synthesize "$CAN_SYNTHESIZE" \
     --argjson can_pnr "$CAN_PNR" \
     --argjson can_gds "$CAN_GDS" \
@@ -192,15 +230,25 @@ if command -v jq >/dev/null 2>&1; then
         klayout:   { installed: $klayout_installed,   version: $klayout_version,   path: $klayout_path }
       },
       pdk: {
-        nangate45: {
-          installed: $nangate45_installed,
-          path: $nangate45_path,
-          liberty: "lib/NangateOpenCellLibrary_typical.lib",
-          tech_lef: "lef/NangateOpenCellLibrary.tech.lef",
-          cell_lef: "lef/NangateOpenCellLibrary.macro.mod.lef",
-          gds: "gds/NangateOpenCellLibrary.gds"
+        sky130hd: {
+          installed: $sky130hd_installed,
+          path: $sky130hd_path,
+          liberty: "lib/sky130_fd_sc_hd__tt_025C_1v80.lib",
+          tech_lef: "lef/sky130_fd_sc_hd.tlef",
+          cell_lef: "lef/sky130_fd_sc_hd_merged.lef",
+          gds: "gds/sky130_fd_sc_hd.gds"
         }
       },
+      orfs: {
+        installed: $orfs_installed,
+        path: $orfs_path,
+        flow_path: $orfs_flow_path
+      },
+      docker: {
+        installed: $docker_installed,
+        version: $docker_version
+      },
+      backend_mode: $backend_mode,
       capabilities: {
         can_compile:    $can_compile,
         can_lint:       $can_lint,
@@ -226,15 +274,25 @@ else
     "klayout":   { "installed": $KLAYOUT_INSTALLED, "version": "$KLAYOUT_VERSION", "path": "$KLAYOUT_PATH" }
   },
   "pdk": {
-    "nangate45": {
-      "installed": $NANGATE45_INSTALLED,
-      "path": "$NANGATE45_DIR",
-      "liberty": "lib/NangateOpenCellLibrary_typical.lib",
-      "tech_lef": "lef/NangateOpenCellLibrary.tech.lef",
-      "cell_lef": "lef/NangateOpenCellLibrary.macro.mod.lef",
-      "gds": "gds/NangateOpenCellLibrary.gds"
+    "sky130hd": {
+      "installed": $SKY130HD_INSTALLED,
+      "path": "$SKY130HD_DIR",
+      "liberty": "lib/sky130_fd_sc_hd__tt_025C_1v80.lib",
+      "tech_lef": "lef/sky130_fd_sc_hd.tlef",
+      "cell_lef": "lef/sky130_fd_sc_hd_merged.lef",
+      "gds": "gds/sky130_fd_sc_hd.gds"
     }
   },
+  "orfs": {
+    "installed": $ORFS_INSTALLED,
+    "path": "$ORFS_DIR_DETECTED",
+    "flow_path": "$ORFS_FLOW_PATH"
+  },
+  "docker": {
+    "installed": $DOCKER_INSTALLED,
+    "version": "$DOCKER_VERSION"
+  },
+  "backend_mode": "$BACKEND_MODE",
   "capabilities": {
     "can_compile":    $CAN_COMPILE,
     "can_lint":       $CAN_LINT,
@@ -313,11 +371,25 @@ else
   echo "KLayout:    [MISSING]"
 fi
 
-if [ "$NANGATE45_INSTALLED" = "true" ]; then
-  echo "PDK:        [OK] nangate45 ($NANGATE45_DIR)"
+if [ "$SKY130HD_INSTALLED" = "true" ]; then
+  echo "PDK:        [OK] sky130hd ($SKY130HD_DIR)"
 else
-  echo "PDK:        [MISSING] nangate45"
+  echo "PDK:        [MISSING] sky130hd"
 fi
+
+if [ "$ORFS_INSTALLED" = "true" ]; then
+  echo "ORFS:       [OK] $ORFS_DIR_DETECTED"
+else
+  echo "ORFS:       [MISSING]"
+fi
+
+if [ "$DOCKER_INSTALLED" = "true" ]; then
+  echo "Docker:     [OK] $DOCKER_VERSION"
+else
+  echo "Docker:     [MISSING]"
+fi
+
+echo "backend_mode: $BACKEND_MODE"
 
 echo ""
 echo "Capabilities:"
