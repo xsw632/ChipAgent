@@ -54,7 +54,7 @@
 **Milestone Goal:** Add intelligent failure diagnosis, error-type-based parameter retry, and multi-round QoR optimization to the MCP-driven PnR pipeline.
 
 - [x] **Phase 16: Diagnosis & Retry Infrastructure** - MCP tools for error classification, design cleanup, config tuning, and failure diagnosis (completed 2026-04-02)
-- [ ] **Phase 17: Retry Orchestration & QoR Optimization** - Skill-level retry loop with stage-aware restart, QoR history tracking, comparison table, and best-run recommendation
+- [x] **Phase 17: Retry Orchestration & QoR Optimization** - Skill-level retry loop with stage-aware restart, QoR history tracking, comparison table, and best-run recommendation (completed 2026-04-02)
 
 ## Phase Details
 
@@ -113,7 +113,7 @@ Phases execute in numeric order: 16 -> 17
 | 14. Config Generation + ORFS Stage Execution | v1.1.5 | 2/2 | Complete | 2026-04-02 |
 | 15. PnR Skill Orchestration + PPA Reporting | v1.1.5 | 2/2 | Complete | 2026-04-02 |
 | 16. Diagnosis & Retry Infrastructure | 2/2 | Complete    | 2026-04-02 | - |
-| 17. Retry Orchestration & QoR Optimization | 1/2 | In Progress|  | - |
+| 17. Retry Orchestration & QoR Optimization | 2/2 | Complete   | 2026-04-02 | - |
 
 ---
 *Full v1.0 details archived to `.planning/milestones/v1.0-ROADMAP.md`*
