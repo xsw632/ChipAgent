@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: in-progress
-stopped_at: Completed 17-01 compare_runs QoR history tool
-last_updated: "2026-04-02T09:17:40.236Z"
-last_activity: 2026-04-02 -- Completed 17-01 compare_runs QoR history tool
+status: completed
+stopped_at: Completed 17-02-PLAN.md -- all v1.2.0 plans done
+last_updated: "2026-04-02T10:17:51.354Z"
+last_activity: 2026-04-02 -- Completed 17-02 PnR retry orchestration and QoR comparison
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
-  percent: 90
+  completed_plans: 4
+  percent: 100
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 ## Current Position
 
 Phase: 17 of 17 (Retry Orchestration & QoR Optimization)
-Plan: 1 of 2 in current phase
-Status: Plan 17-01 complete, Plan 17-02 pending
-Last activity: 2026-04-02 -- Completed 17-01 compare_runs QoR history tool
+Plan: 2 of 2 in current phase (COMPLETE)
+Status: All plans complete -- v1.2.0 feature set done
+Last activity: 2026-04-02 -- Completed 17-02 PnR retry orchestration and QoR comparison
 
-Progress: [█████████░] 90% (9/10 plans complete)
+Progress: [██████████] 100% (10/10 plans complete)
 
 ## Performance Metrics
 
@@ -56,6 +56,9 @@ Recent decisions affecting current work:
 - [v1.2.0]: Four compare_runs actions (save/load/recommend/clear) in single tool for cohesion
 - [v1.2.0]: Flat file JSON for qor_history.json -- sufficient for <10 runs per design
 - [Phase 17]: recommendBest uses deterministic filter+sort for best-run selection
+- [Phase 17]: Retry loop uses mutable current_params that accumulate adjustments across rounds
+- [Phase 17]: Critical severity errors abort retry immediately -- synthesis and combinational timing not parameter-fixable
+- [Phase 17]: clean_design mandatory before every retry to prevent ORFS stale cache
 
 ### Pending Todos
 
@@ -68,6 +71,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-02T09:17:40.235Z
-Stopped at: Completed 17-01 compare_runs QoR history tool
+Last session: 2026-04-02T10:17:51.352Z
+Stopped at: Completed 17-02-PLAN.md -- all v1.2.0 plans done
 Resume file: None

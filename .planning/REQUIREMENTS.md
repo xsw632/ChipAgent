@@ -17,14 +17,14 @@ Requirements for 满分要求 tier. Each maps to roadmap phases.
 ### Parameter Retry
 
 - [x] **RETRY-01**: New `diagnose_failure` MCP tool parses ORFS output and returns structured error classification with suggested parameter adjustments
-- [ ] **RETRY-02**: PnR skill implements retry loop: diagnose failure → adjust parameters → clean → regenerate config → re-run (max 3 rounds)
-- [ ] **RETRY-03**: Retry adjusts parameters based on error type: timing → increase clock_period, congestion → decrease place_density, placement overflow → decrease core_utilization
-- [ ] **RETRY-04**: Retry uses stage-aware restart: only re-run from the earliest affected stage (skip synth when only placement params change)
+- [x] **RETRY-02**: PnR skill implements retry loop: diagnose failure → adjust parameters → clean → regenerate config → re-run (max 3 rounds)
+- [x] **RETRY-03**: Retry adjusts parameters based on error type: timing → increase clock_period, congestion → decrease place_density, placement overflow → decrease core_utilization
+- [x] **RETRY-04**: Retry uses stage-aware restart: only re-run from the earliest affected stage (skip synth when only placement params change)
 
 ### QoR Optimization
 
 - [x] **QOR-01**: New `compare_runs` MCP tool saves and retrieves run configs+metrics as JSON in workspace (qor_history.json)
-- [ ] **QOR-02**: After all retry rounds, PnR skill displays comparison table with per-run config, metrics, and status
+- [x] **QOR-02**: After all retry rounds, PnR skill displays comparison table with per-run config, metrics, and status
 - [x] **QOR-03**: Agent recommends best run: tightest clock period that meets timing (WNS >= 0) with zero DRC violations
 
 ## Future Requirements
@@ -63,11 +63,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DIAG-03 | Phase 16 | Complete |
 | DIAG-04 | Phase 16 | Complete |
 | RETRY-01 | Phase 16 | Complete |
-| RETRY-02 | Phase 17 | Pending |
-| RETRY-03 | Phase 17 | Pending |
-| RETRY-04 | Phase 17 | Pending |
+| RETRY-02 | Phase 17 | Complete |
+| RETRY-03 | Phase 17 | Complete |
+| RETRY-04 | Phase 17 | Complete |
 | QOR-01 | Phase 17 | Complete |
-| QOR-02 | Phase 17 | Pending |
+| QOR-02 | Phase 17 | Complete |
 | QOR-03 | Phase 17 | Complete |
 
 **Coverage:**
