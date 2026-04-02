@@ -9,14 +9,14 @@ Requirements for 满分要求 tier. Each maps to roadmap phases.
 
 ### Error Diagnosis
 
-- [ ] **DIAG-01**: Agent auto-classifies flow failures into error types (timing_violation, congestion, drc, placement_overflow, synthesis_error) from ORFS logs, reports, and stderr
-- [ ] **DIAG-02**: Agent detects "silent" timing violations where all stages succeed but WNS < 0 in finish report
+- [x] **DIAG-01**: Agent auto-classifies flow failures into error types (timing_violation, congestion, drc, placement_overflow, synthesis_error) from ORFS logs, reports, and stderr
+- [x] **DIAG-02**: Agent detects "silent" timing violations where all stages succeed but WNS < 0 in finish report
 - [ ] **DIAG-03**: New `clean_design` MCP tool runs `make clean_all` to reset ORFS cached artifacts before retry
 - [ ] **DIAG-04**: Existing `generate_config` MCP tool extended with optional tuning parameters (place_density, gpl_timing_driven, gpl_routability_driven)
 
 ### Parameter Retry
 
-- [ ] **RETRY-01**: New `diagnose_failure` MCP tool parses ORFS output and returns structured error classification with suggested parameter adjustments
+- [x] **RETRY-01**: New `diagnose_failure` MCP tool parses ORFS output and returns structured error classification with suggested parameter adjustments
 - [ ] **RETRY-02**: PnR skill implements retry loop: diagnose failure → adjust parameters → clean → regenerate config → re-run (max 3 rounds)
 - [ ] **RETRY-03**: Retry adjusts parameters based on error type: timing → increase clock_period, congestion → decrease place_density, placement overflow → decrease core_utilization
 - [ ] **RETRY-04**: Retry uses stage-aware restart: only re-run from the earliest affected stage (skip synth when only placement params change)
@@ -58,11 +58,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DIAG-01 | Phase 16 | Pending |
-| DIAG-02 | Phase 16 | Pending |
+| DIAG-01 | Phase 16 | Complete |
+| DIAG-02 | Phase 16 | Complete |
 | DIAG-03 | Phase 16 | Pending |
 | DIAG-04 | Phase 16 | Pending |
-| RETRY-01 | Phase 16 | Pending |
+| RETRY-01 | Phase 16 | Complete |
 | RETRY-02 | Phase 17 | Pending |
 | RETRY-03 | Phase 17 | Pending |
 | RETRY-04 | Phase 17 | Pending |
