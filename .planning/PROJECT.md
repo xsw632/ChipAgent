@@ -1,5 +1,23 @@
 # ChipAgent
 
+## Current State
+
+**Shipped:** v1.1.5 sky130hd MCP Backend (2026-04-02)
+
+The plugin now provides a complete NL → RTL → GDS pipeline:
+- `/chip-agent:workflow` for RTL generation and verification
+- `/chip-agent:pnr` for ORFS-driven physical implementation on sky130hd via MCP server
+
+**Tech stack:** Chisel 3.6.1, Scala 2.13.10, sbt 1.10.7, FIRRTL/firtool, Verilator, MCP Server (TypeScript), ORFS make flow, sky130hd PDK.
+**Stats:** ~13,900 LOC across 15 phases, 4 milestones.
+
+## Next Milestone Goals
+
+Not yet defined. Run `/gsd:new-milestone` to start the next milestone cycle.
+
+<details>
+<summary>Previous state (v1.1.5 in progress)</summary>
+
 ## What This Is
 
 An npm-installable Claude Code plugin that provides a fully automated pipeline from natural language hardware descriptions to physical GDS layout. Users describe a RISC-V module in plain language, invoke `/chip-agent:workflow` for RTL generation and verification, then `/chip-agent:pnr` for physical implementation — covering requirement parsing, Chisel generation, compilation, linting, testbench generation, simulation, Yosys synthesis, OpenROAD place-and-route, and KLayout GDS export with formatted reports and auto-fix retry.
@@ -120,3 +138,4 @@ PnR validated: ALU and Counter8 synthesize and route to GDS with timing MET.
 
 ---
 *Last updated: 2026-04-01 after v1.1.5 milestone start*
+</details>
