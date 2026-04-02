@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 14-01-PLAN.md
-last_updated: "2026-04-02T03:16:08.508Z"
+stopped_at: Completed 14-02-PLAN.md
+last_updated: "2026-04-02T03:17:36.003Z"
 last_activity: 2026-04-02 — Completed 13-01 MCP Server + Environment Foundation
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 33
 ---
 
@@ -58,6 +58,7 @@ All v1.1.2 decisions archived with milestone.
 - [Phase 13]: backend_mode defaults to local, set to docker when Docker available
 - [Phase 13]: synth.sh/pnr.sh replaced with migration stubs pointing to ORFS make flow
 - [Phase 14]: Extract module name from Verilog regex, detect sequential via posedge pattern, export pure functions for testability
+- [Phase 14]: Pure parser functions exported separately for unit testability
 
 ### Pending Todos
 
@@ -69,6 +70,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-02T03:16:08.506Z
-Stopped at: Completed 14-01-PLAN.md
+Last session: 2026-04-02T03:17:36.001Z
+Stopped at: Completed 14-02-PLAN.md
 Resume file: None
