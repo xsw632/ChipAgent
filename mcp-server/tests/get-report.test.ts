@@ -5,6 +5,8 @@ import {
   parseSynthStat,
   parseRouteArea,
   parseDrcReport,
+  parsePower,
+  parseSynthArea,
 } from "../tools/get-report.ts";
 
 describe("parseFinishReport", () => {
@@ -78,5 +80,49 @@ violation type: Spacing
 `;
     const result = parseDrcReport(content);
     assert.equal(result.violations, 2);
+  });
+});
+
+describe("parsePower", () => {
+  it("extracts power metrics from ORFS 6_finish.rpt format", () => {
+    const content = `
+==========================================================================
+ finish power_report
+
+--------------------------------------------------------------------------
+Group                  Internal  Switching    Leakage      Total
+                          Power      Power      Power      Power (Watts)
+----------------------------------------------------------------
+Sequential             1.00e-03   2.00e-04   5.00e-06   1.21e-03
+Combinational          9.10e-04   1.44e-03   2.05e-05   2.37e-03
+Total                  1.91e-03   1.64e-03   2.55e-05   3.57e-03 100.0%
+                          53.4%      45.9%       0.7%
+`;
+    const result = parsePower(content);
+    assert.equal(result.total_w, 3.57e-03);
+    assert.equal(result.internal_pct, 53.4);
+    assert.equal(result.switching_pct, 45.9);
+    assert.equal(result.leakage_pct, 0.7);
+  });
+
+  it("returns all nulls when power table not found", () => {
+    const result = parsePower("no power info here");
+    assert.equal(result.total_w, null);
+    assert.equal(result.internal_pct, null);
+    assert.equal(result.switching_pct, null);
+    assert.equal(result.leakage_pct, null);
+  });
+});
+
+describe("parseSynthArea", () => {
+  it("extracts chip area from synth_stat.txt", () => {
+    const content = `Chip area for module '\\ALU8': 1234.567890\n`;
+    const result = parseSynthArea(content);
+    assert.equal(result.synth_area, 1234.56789);
+  });
+
+  it("returns null when pattern not found", () => {
+    const result = parseSynthArea("no area here");
+    assert.equal(result.synth_area, null);
   });
 });
