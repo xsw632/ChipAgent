@@ -1,0 +1,54 @@
+[
+  {
+    "round": 1,
+    "config": {
+      "clock_period_ns": 5,
+      "core_utilization": 55
+    },
+    "metrics": {
+      "wns": -0.5,
+      "tns": -2.5,
+      "area": 1558,
+      "total_power_w": 0.000159,
+      "drc_violations": 0,
+      "cell_count": 183
+    },
+    "status": "fail",
+    "error_type": "timing",
+    "timestamp": "2026-04-12T07:28:43.957Z"
+  },
+  {
+    "round": 2,
+    "config": {
+      "clock_period_ns": 8,
+      "core_utilization": 45
+    },
+    "metrics": {
+      "wns": 0.1,
+      "tns": 0,
+      "area": 1561,
+      "total_power_w": 0.000099,
+      "drc_violations": 0,
+      "cell_count": 183
+    },
+    "status": "pass",
+    "timestamp": "2026-04-12T07:28:44.948Z"
+  },
+  {
+    "round": 3,
+    "config": {
+      "clock_period_ns": 10,
+      "core_utilization": 40
+    },
+    "metrics": {
+      "wns": 0.2,
+      "tns": 0,
+      "area": 1578,
+      "total_power_w": 0.00008,
+      "drc_violations": 0,
+      "cell_count": 183
+    },
+    "status": "pass",
+    "timestamp": "2026-04-12T07:28:45.866Z"
+  }
+]
