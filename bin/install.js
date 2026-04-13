@@ -1,24 +1,132 @@
 #!/usr/bin/env node
 "use strict";
 
-const { cpSync, mkdirSync, existsSync, chmodSync, readdirSync } = require("fs");
+const {
+  cpSync,
+  mkdirSync,
+  existsSync,
+  chmodSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} = require("fs");
 const { join, resolve } = require("path");
+const { spawnSync } = require("child_process");
 
 const SOURCE = resolve(__dirname, "..");
 const HOME = process.env.HOME;
+const NODE_EXECUTABLE = process.execPath;
+const NPM_EXEC_PATH = process.env.npm_execpath;
 
-// Install skills as slash commands (like gsd, ccg)
-const COMMANDS_DEST = join(HOME, ".claude", "commands", "chip-agent");
+if (!HOME) {
+  console.error("ERROR: HOME is not set.");
+  process.exit(1);
+}
 
-// Install supporting files (scripts, CLAUDE.md) alongside
-const SUPPORT_DEST = join(HOME, ".claude", "plugins", "chip-agent");
+const CLAUDE_DIR = join(HOME, ".claude");
+const COMMANDS_DEST = join(CLAUDE_DIR, "commands", "chip-agent");
+const SUPPORT_DEST = join(CLAUDE_DIR, "plugins", "chip-agent");
+const MCP_SERVER_DEST = join(SUPPORT_DEST, "mcp-server");
+const MCP_ENTRYPOINT = join(MCP_SERVER_DEST, "index.ts");
+const USER_CONFIG_PATHS = [join(HOME, ".claude.json"), join(CLAUDE_DIR, "settings.json")];
 
-// 1. Copy skills/*.md -> ~/.claude/commands/chip-agent/
+function runCommand(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    stdio: "pipe",
+    encoding: "utf8",
+    ...options,
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  return result;
+}
+
+function ensureNodeSupportsStripTypes() {
+  const result = runCommand(NODE_EXECUTABLE, [
+    "--experimental-strip-types",
+    "--input-type=module",
+    "--eval",
+    "await Promise.resolve()",
+  ]);
+
+  if (result.status !== 0) {
+    const detail = (result.stderr || result.stdout || "Unknown error").trim();
+    console.error("ERROR: Installed Node.js does not support --experimental-strip-types.");
+    console.error(detail);
+    process.exit(1);
+  }
+}
+
+function installMcpDependencies() {
+  const npmCommand = NPM_EXEC_PATH ? NODE_EXECUTABLE : "npm";
+  const npmArgs = NPM_EXEC_PATH ? [NPM_EXEC_PATH, "install", "--omit=dev"] : ["install", "--omit=dev"];
+  const result = runCommand(npmCommand, npmArgs, { cwd: MCP_SERVER_DEST });
+
+  if (result.status !== 0) {
+    const detail = (result.stderr || result.stdout || "Unknown error").trim();
+    console.error("ERROR: Failed to install chipagent-backend dependencies.");
+    console.error(detail);
+    console.error(`Retry with: cd \"${MCP_SERVER_DEST}\" && npm install --omit=dev`);
+    process.exit(1);
+  }
+}
+
+function readJsonFile(filePath) {
+  return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+function writeJsonFile(filePath, data) {
+  writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+}
+
+function upsertMcpConfig() {
+  const entry = {
+    type: "stdio",
+    command: "node",
+    args: ["--experimental-strip-types", MCP_ENTRYPOINT],
+  };
+
+  for (const configPath of USER_CONFIG_PATHS) {
+    if (!existsSync(configPath)) continue;
+
+    let config;
+    try {
+      config = readJsonFile(configPath);
+    } catch (error) {
+      console.error(`ERROR: Could not parse existing Claude config at ${configPath}.`);
+      console.error(String(error));
+      process.exit(1);
+    }
+
+    writeJsonFile(configPath, {
+      ...config,
+      mcpServers: {
+        ...(config.mcpServers || {}),
+        "chipagent-backend": entry,
+      },
+    });
+    return configPath;
+  }
+
+  const configPath = USER_CONFIG_PATHS[0];
+  writeJsonFile(configPath, {
+    mcpServers: {
+      "chipagent-backend": entry,
+    },
+  });
+  return configPath;
+}
+
 const skillsDir = join(SOURCE, "skills");
 if (!existsSync(skillsDir)) {
   console.error("ERROR: No skills/ directory found at " + SOURCE);
   process.exit(1);
 }
+
+ensureNodeSupportsStripTypes();
 
 mkdirSync(COMMANDS_DEST, { recursive: true });
 let skillCount = 0;
@@ -35,8 +143,7 @@ for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
   }
 }
 
-// 2. Copy supporting files to plugins dir
-const SUPPORT_ITEMS = ["scripts", "hooks", "agents", ".claude-plugin", "CLAUDE.md"];
+const SUPPORT_ITEMS = ["scripts", "hooks", "agents", ".claude-plugin", "CLAUDE.md", "mcp-server"];
 mkdirSync(SUPPORT_DEST, { recursive: true });
 
 for (const item of SUPPORT_ITEMS) {
@@ -45,7 +152,14 @@ for (const item of SUPPORT_ITEMS) {
   cpSync(src, join(SUPPORT_DEST, item), { recursive: true });
 }
 
-// Make scripts executable
+if (!existsSync(MCP_ENTRYPOINT)) {
+  console.error(`ERROR: MCP server entrypoint not found at ${MCP_ENTRYPOINT}`);
+  process.exit(1);
+}
+
+installMcpDependencies();
+const mcpConfigPath = upsertMcpConfig();
+
 const scriptsDir = join(SUPPORT_DEST, "scripts");
 if (existsSync(scriptsDir)) {
   for (const f of readdirSync(scriptsDir)) {
@@ -60,7 +174,9 @@ if (skillCount === 0) {
   process.exit(1);
 }
 
-console.log(`\nchip-agent installed successfully!`);
+console.log("\nchip-agent installed successfully!");
 console.log(`  ${skillCount} command(s) -> ${COMMANDS_DEST}`);
 console.log(`  Support files -> ${SUPPORT_DEST}`);
-console.log(`\nRestart Claude Code, then type /chip-agent:generate to use.`);
+console.log(`  MCP backend -> ${MCP_ENTRYPOINT}`);
+console.log(`  MCP config -> ${mcpConfigPath}`);
+console.log("\nRestart Claude Code, then use /chip-agent:generate or /chip-agent:pnr.");

@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { dirname, join, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -31,19 +32,44 @@ interface EnvironmentResult {
   backend_mode: "local" | "docker";
 }
 
-function findOrfs(): OrfsResult {
-  const candidates: string[] = [];
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-  if (process.env["ORFS_DIR"]) {
-    candidates.push(process.env["ORFS_DIR"]);
+/**
+ * Build a list of candidate directories where ORFS might be installed,
+ * ordered by priority. Each candidate is checked for the existence of
+ * `flow/Makefile` to confirm a valid installation.
+ */
+function getOrfsCandidates(): ReadonlyArray<string> {
+  const candidates: Array<string> = [];
+
+  // 1. ORFS_DIR environment variable (explicit override)
+  const envDir = process.env["ORFS_DIR"];
+  if (envDir) {
+    candidates.push(envDir);
   }
-  if (process.env["HOME"]) {
-    candidates.push(join(process.env["HOME"], "OpenROAD-flow-scripts"));
+
+  // 2. Walk upward from this file's directory to find a sibling
+  //    OpenROAD-flow-scripts/ directory. This works whether the file
+  //    lives in the source repo or in the installed plugin copy
+  //    (which may be nested deeper).
+  let dir = __dirname;
+  for (let i = 0; i < 10; i++) {
+    candidates.push(join(dir, "OpenROAD-flow-scripts"));
+    const parent = dirname(dir);
+    if (parent === dir) break; // filesystem root
+    dir = parent;
   }
-  candidates.push("/opt/OpenROAD-flow-scripts");
+
+  return candidates;
+}
+
+export function findOrfs(): OrfsResult {
+  const candidates = getOrfsCandidates();
 
   for (const candidate of candidates) {
     const flowMakefile = join(candidate, "flow", "Makefile");
+
     if (existsSync(flowMakefile)) {
       return {
         installed: true,
@@ -56,7 +82,7 @@ function findOrfs(): OrfsResult {
   return { installed: false, path: null, flow_path: null };
 }
 
-function findSky130hd(orfsFlowPath: string | null): Sky130hdResult {
+export function findSky130hd(orfsFlowPath: string | null): Sky130hdResult {
   if (!orfsFlowPath) {
     return { installed: false, path: null, liberty: null, tech_lef: null, cell_lef: null, gds: null };
   }

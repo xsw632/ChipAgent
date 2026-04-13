@@ -59,6 +59,14 @@ Some other line.
     assert.equal(result.utilization, 79);
   });
 
+  it("extracts decimal area and utilization values", () => {
+    const content = `Design area 6299.5 um^2 48.5% utilization.
+`;
+    const result = parseRouteArea(content);
+    assert.equal(result.area, 6299.5);
+    assert.equal(result.utilization, 48.5);
+  });
+
   it("returns nulls when pattern not found", () => {
     const result = parseRouteArea("no area info");
     assert.equal(result.area, null);

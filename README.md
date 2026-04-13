@@ -8,15 +8,23 @@ A Claude Code plugin that turns natural language hardware descriptions into simu
 npx chip-agent
 ```
 
+This installs:
+- `/chip-agent:*` slash commands into `~/.claude/commands/chip-agent`
+- plugin support files into `~/.claude/plugins/chip-agent`
+- the persistent `chipagent-backend` MCP server and its runtime dependencies
+
+For normal use, you do not need the repo-local `.mcp.json`; that file is only for local development of this repository.
+
 ## Usage
 
-In Claude Code, use these slash commands:
+In Claude Code, common slash commands include:
 
 | Command | What it does |
 |---------|-------------|
 | `/chip-agent:workflow <desc>` | Full pipeline: parse → generate → compile → lint → testbench → simulate → report |
 | `/chip-agent:generate <desc>` | Chisel source generation only (no compilation or verification) |
 | `/chip-agent:debug` | Analyze simulation failures using spec, source, logs, and VCD waveforms |
+| `/chip-agent:pnr` | Run place-and-route helpers through the installed MCP backend |
 
 ### Example
 
