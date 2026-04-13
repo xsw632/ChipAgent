@@ -12,6 +12,7 @@
     "agents/",
     "hooks/",
     "scripts/",
+    "mcp-server/",
     "CLAUDE.md"
   ],
   "keywords": ["claude-code", "plugin", "chisel", "verilog", "hardware"],
