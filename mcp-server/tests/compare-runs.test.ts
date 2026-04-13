@@ -180,4 +180,72 @@ describe("recommendBest", () => {
     const result = recommendBest(runs);
     assert.equal(result, null);
   });
+
+  it("breaks area ties by lowest total_power_w", () => {
+    const runs = [
+      makeRun({
+        round: 1,
+        config: { clock_period_ns: 10, core_utilization: 40 },
+        metrics: { wns: 0.5, tns: 0, area: 1200, drc_violations: 0, total_power_w: 0.005 },
+      }),
+      makeRun({
+        round: 2,
+        config: { clock_period_ns: 10, core_utilization: 40 },
+        metrics: { wns: 0.3, tns: 0, area: 1200, drc_violations: 0, total_power_w: 0.003 },
+      }),
+    ];
+    const best = recommendBest(runs);
+    assert.equal(best?.round, 2);
+  });
+
+  it("treats missing total_power_w as Infinity", () => {
+    const runs = [
+      makeRun({
+        round: 1,
+        config: { clock_period_ns: 10, core_utilization: 40 },
+        metrics: { wns: 0.5, tns: 0, area: 1200, drc_violations: 0 },
+      }),
+      makeRun({
+        round: 2,
+        config: { clock_period_ns: 10, core_utilization: 40 },
+        metrics: { wns: 0.3, tns: 0, area: 1200, drc_violations: 0, total_power_w: 0.003 },
+      }),
+    ];
+    const best = recommendBest(runs);
+    assert.equal(best?.round, 2);
+  });
+
+  it("clock_period_ns still takes priority over area and power", () => {
+    const runs = [
+      makeRun({
+        round: 1,
+        config: { clock_period_ns: 8, core_utilization: 40 },
+        metrics: { wns: 0.1, tns: 0, area: 2000, drc_violations: 0, total_power_w: 0.01 },
+      }),
+      makeRun({
+        round: 2,
+        config: { clock_period_ns: 10, core_utilization: 40 },
+        metrics: { wns: 0.5, tns: 0, area: 1000, drc_violations: 0, total_power_w: 0.001 },
+      }),
+    ];
+    const best = recommendBest(runs);
+    assert.equal(best?.round, 1);
+  });
+
+  it("stable sort: first in list wins when all three metrics are equal", () => {
+    const runs = [
+      makeRun({
+        round: 1,
+        config: { clock_period_ns: 10, core_utilization: 40 },
+        metrics: { wns: 0.5, tns: 0, area: 1200, drc_violations: 0, total_power_w: 0.003 },
+      }),
+      makeRun({
+        round: 2,
+        config: { clock_period_ns: 10, core_utilization: 40 },
+        metrics: { wns: 0.3, tns: 0, area: 1200, drc_violations: 0, total_power_w: 0.003 },
+      }),
+    ];
+    const best = recommendBest(runs);
+    assert.equal(best?.round, 1);
+  });
 });

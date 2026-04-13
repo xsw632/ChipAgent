@@ -18,9 +18,9 @@ export function parseSynthStat(content: string): { cell_count: number | null } {
 }
 
 export function parseRouteArea(content: string): { area: number | null; utilization: number | null } {
-  const match = content.match(/Design area (\d+) um\^2 (\d+)% utilization/);
+  const match = content.match(/Design area ([\d.]+) um\^2 ([\d.]+)% utilization/);
   return match
-    ? { area: parseInt(match[1], 10), utilization: parseInt(match[2], 10) }
+    ? { area: parseFloat(match[1]), utilization: parseFloat(match[2]) }
     : { area: null, utilization: null };
 }
 
@@ -61,8 +61,12 @@ const STAGE_REPORT_MAP: Record<string, string[]> = {
   place: ["3_detailed_place.rpt"],
   cts: ["4_cts_final.rpt"],
   route: ["5_route_drc.rpt"],
-  finish: ["6_finish.rpt", "6_report.log"],
+  finish: ["6_finish.rpt"],
 };
+
+function readIfExists(filePath: string): string | null {
+  return existsSync(filePath) ? readFileSync(filePath, "utf-8") : null;
+}
 
 export function registerGetReport(server: McpServer): void {
   server.tool(
@@ -75,6 +79,7 @@ export function registerGetReport(server: McpServer): void {
     },
     async ({ design_name, stage, orfs_flow_path }) => {
       const reportDir = join(orfs_flow_path, "reports", "sky130hd", design_name, "base");
+      const logDir = join(orfs_flow_path, "logs", "sky130hd", design_name, "base");
 
       if (!existsSync(reportDir)) {
         const result = { stage, error: `Report not found. Run stage '${stage}' first.`, report_path: reportDir };
@@ -93,8 +98,6 @@ export function registerGetReport(server: McpServer): void {
           Object.assign(metrics, parseSynthStat(content), parseSynthArea(content));
         } else if (file === "6_finish.rpt") {
           Object.assign(metrics, parseFinishReport(content), parsePower(content));
-        } else if (file === "6_report.log") {
-          Object.assign(metrics, parseRouteArea(content));
         } else if (file === "5_route_drc.rpt") {
           Object.assign(metrics, parseDrcReport(content));
         } else {
@@ -102,7 +105,20 @@ export function registerGetReport(server: McpServer): void {
         }
       }
 
-      const result = { stage, metrics, report_path: reportDir };
+      if (stage === "finish") {
+        const finishLogPath = join(logDir, "6_report.log");
+        const finishLogContent = readIfExists(finishLogPath);
+        if (finishLogContent) {
+          Object.assign(metrics, parseRouteArea(finishLogContent));
+        }
+      }
+
+      const result = {
+        stage,
+        metrics,
+        report_path: reportDir,
+        log_path: stage === "finish" ? join(logDir, "6_report.log") : undefined,
+      };
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     },
   );

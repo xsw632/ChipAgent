@@ -44,7 +44,10 @@ export function recommendBest(runs: readonly QorRun[]): QorRun | null {
     if (cpA !== cpB) return cpA - cpB;
     const areaA = (a.metrics.area as number) ?? Infinity;
     const areaB = (b.metrics.area as number) ?? Infinity;
-    return areaA - areaB;
+    if (areaA !== areaB) return areaA - areaB;
+    const powerA = (a.metrics.total_power_w as number | undefined) ?? Infinity;
+    const powerB = (b.metrics.total_power_w as number | undefined) ?? Infinity;
+    return powerA - powerB;
   });
 
   return sorted[0];
@@ -64,8 +67,8 @@ export function registerCompareRuns(server: McpServer): void {
       run: z
         .object({
           round: z.number(),
-          config: z.record(z.unknown()),
-          metrics: z.record(z.unknown()),
+          config: z.any(),
+          metrics: z.any(),
           status: z.enum(["pass", "fail"]),
           error_type: z.string().optional(),
           timestamp: z.string().optional(),
@@ -146,7 +149,7 @@ export function registerCompareRuns(server: McpServer): void {
                     total_runs: history.length,
                     recommendation: best,
                     message: best
-                      ? `Best run: round ${best.round} (clock=${best.config.clock_period_ns}ns, WNS=${best.metrics.wns}ns, area=${best.metrics.area})`
+                      ? `Best run: round ${best.round} (clock=${best.config.clock_period_ns}ns, WNS=${best.metrics.wns}ns, area=${best.metrics.area}, power=${best.metrics.total_power_w ?? 'N/A'}W)`
                       : "No passing run found with WNS >= 0 and zero DRC violations",
                   },
                   null,
