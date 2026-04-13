@@ -5,7 +5,7 @@ milestone_name: Refine
 status: milestone_complete
 stopped_at: "Milestone v1.1 archived"
 last_updated: "2026-03-23T05:44:00.000Z"
-last_activity: "2026-04-13 -- Completed quick task 4: QoR PnR power-aware recommendation"
+last_activity: "2026-04-13 -- Completed quick task 4: 多轮QoR参数对比优化PnR流程"
 progress:
   total_phases: 4
   completed_phases: 4
@@ -65,7 +65,7 @@ None.
 | 1 | Research and document testing strategies for complex modules in chip-agent | 2026-03-18 | 21053b0 | [1-research-and-document-testing-strategies](./quick/1-research-and-document-testing-strategies/) |
 | 2 | Create testbench-generator agent with UVM-inspired C++ architecture | 2026-03-18 | f933650 | [2-create-testbench-generator-agent-with-uv](./quick/2-create-testbench-generator-agent-with-uv/) |
 | 3 | Refactor generate to chisel-only, rename workflow to auto-toolchain, simplify CLAUDE.md | 2026-03-20 | 7af147d | [3-refactor-generate-to-chisel-only-rename-](./quick/3-refactor-generate-to-chisel-only-rename-/) |
-| 4 | Power-aware QoR recommendation with mandatory multi-round comparison and dynamic parameter generation | 2026-04-13 | d3d09f9 | [4-qor-pnr](./quick/4-qor-pnr/) |
+| 4 | 多轮QoR参数对比优化PnR流程 | 2026-04-13 | ad82b71 | [4-qor-pnr](./quick/4-qor-pnr/) |
 
 ### Blockers/Concerns
 
