@@ -224,6 +224,10 @@ if [ "$CHIPYARD_INSTALLED" = "true" ] && [ "$RISCV_INSTALLED" = "true" ]; then
   CAN_CHIPYARD="true"
 fi
 
+# json_escape: Escape strings for safe embedding in JSON heredoc output
+# Handles backslashes and double quotes that would break JSON syntax
+json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
 # Get timestamp
 DETECTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -330,22 +334,22 @@ if command -v jq >/dev/null 2>&1; then
 else
   cat > "$OUTPUT_FILE" <<ENDJSON
 {
-  "detected_at": "$DETECTED_AT",
+  "detected_at": "$(json_escape "$DETECTED_AT")",
   "tools": {
-    "java":      { "installed": $JAVA_INSTALLED, "version": "$JAVA_VERSION", "path": "$JAVA_PATH" },
-    "sbt":       { "installed": $SBT_INSTALLED, "version": "$SBT_VERSION", "path": "$SBT_PATH" },
-    "scala":     { "installed": $SCALA_INSTALLED, "version": "$SCALA_VERSION", "path": "$SCALA_PATH" },
-    "verilator": { "installed": $VERILATOR_INSTALLED, "version": "$VERILATOR_VERSION", "path": "$VERILATOR_PATH" },
-    "make":      { "installed": $MAKE_INSTALLED, "version": "$MAKE_VERSION", "path": "$MAKE_PATH" },
-    "gpp":       { "installed": $GPP_INSTALLED, "version": "$GPP_VERSION", "path": "$GPP_PATH" },
-    "yosys":     { "installed": $YOSYS_INSTALLED, "version": "$YOSYS_VERSION", "path": "$YOSYS_PATH" },
-    "openroad":  { "installed": $OPENROAD_INSTALLED, "version": "$OPENROAD_VERSION", "path": "$OPENROAD_PATH" },
-    "klayout":   { "installed": $KLAYOUT_INSTALLED, "version": "$KLAYOUT_VERSION", "path": "$KLAYOUT_PATH" }
+    "java":      { "installed": $JAVA_INSTALLED, "version": "$(json_escape "$JAVA_VERSION")", "path": "$(json_escape "$JAVA_PATH")" },
+    "sbt":       { "installed": $SBT_INSTALLED, "version": "$(json_escape "$SBT_VERSION")", "path": "$(json_escape "$SBT_PATH")" },
+    "scala":     { "installed": $SCALA_INSTALLED, "version": "$(json_escape "$SCALA_VERSION")", "path": "$(json_escape "$SCALA_PATH")" },
+    "verilator": { "installed": $VERILATOR_INSTALLED, "version": "$(json_escape "$VERILATOR_VERSION")", "path": "$(json_escape "$VERILATOR_PATH")" },
+    "make":      { "installed": $MAKE_INSTALLED, "version": "$(json_escape "$MAKE_VERSION")", "path": "$(json_escape "$MAKE_PATH")" },
+    "gpp":       { "installed": $GPP_INSTALLED, "version": "$(json_escape "$GPP_VERSION")", "path": "$(json_escape "$GPP_PATH")" },
+    "yosys":     { "installed": $YOSYS_INSTALLED, "version": "$(json_escape "$YOSYS_VERSION")", "path": "$(json_escape "$YOSYS_PATH")" },
+    "openroad":  { "installed": $OPENROAD_INSTALLED, "version": "$(json_escape "$OPENROAD_VERSION")", "path": "$(json_escape "$OPENROAD_PATH")" },
+    "klayout":   { "installed": $KLAYOUT_INSTALLED, "version": "$(json_escape "$KLAYOUT_VERSION")", "path": "$(json_escape "$KLAYOUT_PATH")" }
   },
   "pdk": {
     "sky130hd": {
       "installed": $SKY130HD_INSTALLED,
-      "path": "$SKY130HD_DIR",
+      "path": "$(json_escape "$SKY130HD_DIR")",
       "liberty": "lib/sky130_fd_sc_hd__tt_025C_1v80.lib",
       "tech_lef": "lef/sky130_fd_sc_hd.tlef",
       "cell_lef": "lef/sky130_fd_sc_hd_merged.lef",
@@ -354,20 +358,20 @@ else
   },
   "orfs": {
     "installed": $ORFS_INSTALLED,
-    "path": "$ORFS_DIR_DETECTED",
-    "flow_path": "$ORFS_FLOW_PATH"
+    "path": "$(json_escape "$ORFS_DIR_DETECTED")",
+    "flow_path": "$(json_escape "$ORFS_FLOW_PATH")"
   },
   "docker": {
     "installed": $DOCKER_INSTALLED,
-    "version": "$DOCKER_VERSION"
+    "version": "$(json_escape "$DOCKER_VERSION")"
   },
   "chipyard": {
     "installed": $CHIPYARD_INSTALLED,
-    "path": "$CHIPYARD_DIR_DETECTED",
+    "path": "$(json_escape "$CHIPYARD_DIR_DETECTED")",
     "riscv_installed": $RISCV_INSTALLED,
-    "riscv_path": "$RISCV_PATH"
+    "riscv_path": "$(json_escape "$RISCV_PATH")"
   },
-  "backend_mode": "$BACKEND_MODE",
+  "backend_mode": "$(json_escape "$BACKEND_MODE")",
   "capabilities": {
     "can_compile":    $CAN_COMPILE,
     "can_lint":       $CAN_LINT,
