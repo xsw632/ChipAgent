@@ -27,7 +27,7 @@ Detect the local toolchain environment and report which ChipAgent capabilities a
    ```
    <plugin-root>/scripts/detect-env.sh
    ```
-   This script detects installed versions of Java, sbt, Scala, Verilator, Make, g++, Yosys, OpenROAD, and KLayout, detects the sky130hd PDK, ORFS installation, and Docker availability, computes capability flags, and writes the results to `.chipagent/env.json`. The script output includes a human-readable summary.
+   This script detects installed versions of Java, sbt, Scala, Verilator, Make, g++, Yosys, OpenROAD, and KLayout, detects the sky130hd PDK, ORFS installation, Docker availability, Chipyard installation, and RISCV toolchain, computes capability flags, and writes the results to `.chipagent/env.json`. The script output includes a human-readable summary.
 
 3. **Read the detection results** using the Read tool:
    ```
@@ -52,6 +52,7 @@ Detect the local toolchain environment and report which ChipAgent capabilities a
      - **Can Synthesize** (requires Yosys + sky130hd PDK + ORFS): whether RTL synthesis is possible
      - **Can PnR** (requires OpenROAD + sky130hd PDK): whether place-and-route is possible
      - **Can GDS** (requires KLayout + sky130hd PDK + GDS cell library): whether GDS export is possible
+     - **Can Chipyard** (requires Chipyard + RISCV toolchain): whether Chipyard RTL generation is possible
    - For any missing tools, provide install instructions:
      - Java: Install JDK 11+ (`apt install default-jdk` or download from https://adoptium.net)
      - sbt: Install from https://www.scala-sbt.org/download
@@ -65,6 +66,8 @@ Detect the local toolchain environment and report which ChipAgent capabilities a
    - sky130hd PDK: detected automatically from OpenROAD-flow-scripts installation at flow/platforms/sky130hd/
    - ORFS: detected automatically from OpenROAD-flow-scripts installation (flow/Makefile)
    - Docker: detected if available, determines backend_mode (local/docker)
+   - Chipyard: Clone from https://github.com/ucb-bar/chipyard and follow setup instructions at https://chipyard.readthedocs.io
+   - RISCV: Install via Chipyard's `scripts/setup-tools.sh` or set `RISCV` env var to toolchain path
    - Note that the Scala version in `build.sbt` (2.13.10) is independent of the system Scala version
 
 ## Input
@@ -73,5 +76,5 @@ Detect the local toolchain environment and report which ChipAgent capabilities a
 
 ## Output
 
-- `.chipagent/env.json` -- Machine-readable environment detection results (tools, PDK, capabilities)
+- `.chipagent/env.json` -- Machine-readable environment detection results (tools, PDK, Chipyard, RISCV, capabilities)
 - Updated CLAUDE.md Tech Stack table with detected local versions
