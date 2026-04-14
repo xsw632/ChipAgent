@@ -147,9 +147,12 @@ if command -v docker >/dev/null 2>&1; then
     DOCKER_INSTALLED="true"
   fi
 fi
-BACKEND_MODE="local"
-if [ "$DOCKER_INSTALLED" = "true" ]; then
+if [ -n "${CHIPAGENT_BACKEND_MODE:-}" ]; then
+  BACKEND_MODE="$CHIPAGENT_BACKEND_MODE"
+elif [ "$DOCKER_INSTALLED" = "true" ]; then
   BACKEND_MODE="docker"
+else
+  BACKEND_MODE="local"
 fi
 
 # Detect Chipyard
