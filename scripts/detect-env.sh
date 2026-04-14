@@ -11,21 +11,39 @@ OUTPUT_FILE="$OUTPUT_DIR/env.json"
 
 mkdir -p "$OUTPUT_DIR"
 
+# get_version_output: Retrieve version string for a tool (no eval, dispatch pattern)
+# Args: command_name
+# Output: raw version output (first line)
+get_version_output() {
+  local cmd="$1"
+  case "$cmd" in
+    java)      java -version 2>&1 | head -1 ;;
+    sbt)       sbt --batch --version 2>&1 | tail -1 ;;
+    scala)     scala -version 2>&1 | head -1 ;;
+    verilator) verilator --version 2>&1 | head -1 ;;
+    make)      make --version 2>&1 | head -1 ;;
+    g++)       g++ --version 2>&1 | head -1 ;;
+    yosys)     yosys --version 2>&1 | head -1 ;;
+    openroad)  openroad -version 2>&1 | head -1 ;;
+    klayout)   klayout -v 2>&1 | head -1 ;;
+    *) echo "" ;;
+  esac
+}
+
 # detect_tool: Check if a tool is installed, extract version and path
-# Args: tool_name command_name version_command version_regex
+# Args: tool_name command_name version_regex
 # Output: Sets TOOL_INSTALLED, TOOL_VERSION, TOOL_PATH variables
 detect_tool() {
   local tool_name="$1"
   local command_name="$2"
-  local version_command="$3"
-  local version_regex="$4"
+  local version_regex="$3"
 
   local tool_path
   tool_path=$(command -v "$command_name" 2>/dev/null || true)
 
   if [ -n "$tool_path" ]; then
     local version_output
-    version_output=$(eval "$version_command" 2>&1 || true)
+    version_output=$(get_version_output "$command_name" 2>&1 || true)
     local version
     version=$(echo "$version_output" | grep -oE "$version_regex" | head -1 || true)
 
@@ -39,48 +57,48 @@ detect_tool() {
   fi
 }
 
-# Detect all 6 tools
-detect_tool "java" "java" "java -version 2>&1 | head -1" '[0-9]+\.[0-9]+\.[0-9]+([_\.][0-9]+)?'
+# Detect all 9 tools
+detect_tool "java" "java" '[0-9]+\.[0-9]+\.[0-9]+([_\.][0-9]+)?'
 JAVA_INSTALLED="$TOOL_INSTALLED"
 JAVA_VERSION="$TOOL_VERSION"
 JAVA_PATH="$TOOL_PATH"
 
-detect_tool "sbt" "sbt" "sbt --batch --version 2>&1 | tail -1" '[0-9]+\.[0-9]+\.[0-9]+'
+detect_tool "sbt" "sbt" '[0-9]+\.[0-9]+\.[0-9]+'
 SBT_INSTALLED="$TOOL_INSTALLED"
 SBT_VERSION="$TOOL_VERSION"
 SBT_PATH="$TOOL_PATH"
 
-detect_tool "scala" "scala" "scala -version 2>&1 | head -1" '[0-9]+\.[0-9]+\.[0-9]+'
+detect_tool "scala" "scala" '[0-9]+\.[0-9]+\.[0-9]+'
 SCALA_INSTALLED="$TOOL_INSTALLED"
 SCALA_VERSION="$TOOL_VERSION"
 SCALA_PATH="$TOOL_PATH"
 
-detect_tool "verilator" "verilator" "verilator --version 2>&1 | head -1" '[0-9]+\.[0-9]+'
+detect_tool "verilator" "verilator" '[0-9]+\.[0-9]+'
 VERILATOR_INSTALLED="$TOOL_INSTALLED"
 VERILATOR_VERSION="$TOOL_VERSION"
 VERILATOR_PATH="$TOOL_PATH"
 
-detect_tool "make" "make" "make --version 2>&1 | head -1" '[0-9]+\.[0-9]+'
+detect_tool "make" "make" '[0-9]+\.[0-9]+'
 MAKE_INSTALLED="$TOOL_INSTALLED"
 MAKE_VERSION="$TOOL_VERSION"
 MAKE_PATH="$TOOL_PATH"
 
-detect_tool "gpp" "g++" "g++ --version 2>&1 | head -1" '[0-9]+\.[0-9]+\.[0-9]+'
+detect_tool "gpp" "g++" '[0-9]+\.[0-9]+\.[0-9]+'
 GPP_INSTALLED="$TOOL_INSTALLED"
 GPP_VERSION="$TOOL_VERSION"
 GPP_PATH="$TOOL_PATH"
 
-detect_tool "yosys" "yosys" "yosys --version 2>&1 | head -1" '[0-9]+\.[0-9]+(\+[0-9]+)?'
+detect_tool "yosys" "yosys" '[0-9]+\.[0-9]+(\+[0-9]+)?'
 YOSYS_INSTALLED="$TOOL_INSTALLED"
 YOSYS_VERSION="$TOOL_VERSION"
 YOSYS_PATH="$TOOL_PATH"
 
-detect_tool "openroad" "openroad" "openroad -version 2>&1 | head -1" '[0-9]+Q[0-9]'
+detect_tool "openroad" "openroad" '[0-9]+Q[0-9]'
 OPENROAD_INSTALLED="$TOOL_INSTALLED"
 OPENROAD_VERSION="$TOOL_VERSION"
 OPENROAD_PATH="$TOOL_PATH"
 
-detect_tool "klayout" "klayout" "klayout -v 2>&1 | head -1" '[0-9]+\.[0-9]+\.[0-9]+'
+detect_tool "klayout" "klayout" '[0-9]+\.[0-9]+\.[0-9]+'
 KLAYOUT_INSTALLED="$TOOL_INSTALLED"
 KLAYOUT_VERSION="$TOOL_VERSION"
 KLAYOUT_PATH="$TOOL_PATH"
@@ -197,7 +215,7 @@ if [ "$OPENROAD_INSTALLED" = "true" ] && [ "$SKY130HD_INSTALLED" = "true" ]; the
   CAN_PNR="true"
 fi
 
-if [ "$KLAYOUT_INSTALLED" = "true" ] && [ "$SKY130HD_INSTALLED" = "true" ] && [ -f "$SKY130HD_DIR/gds/sky130_fd_sc_hd.gds" ]; then
+if [ "$KLAYOUT_INSTALLED" = "true" ] && [ "$SKY130HD_INSTALLED" = "true" ] && [ -n "$SKY130HD_DIR" ] && [ -f "$SKY130HD_DIR/gds/sky130_fd_sc_hd.gds" ]; then
   CAN_GDS="true"
 fi
 
@@ -364,14 +382,6 @@ ENDJSON
 fi
 
 # Print summary to stdout
-status_label() {
-  if [ "$1" = "true" ]; then
-    printf "[OK] %-10s" "$2"
-  else
-    printf "[MISSING] %s" ""
-  fi
-}
-
 echo ""
 echo "=== ChipAgent Environment Detection ==="
 
