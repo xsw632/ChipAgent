@@ -134,6 +134,40 @@ if [ "$DOCKER_INSTALLED" = "true" ]; then
   BACKEND_MODE="docker"
 fi
 
+# Detect Chipyard
+CHIPYARD_INSTALLED="false"
+CHIPYARD_DIR_DETECTED=""
+CHIPYARD_CANDIDATES=(
+  "${CHIPYARD_DIR:-}"
+  "$HOME/chipyard"
+  "$HOME/Desktop/chipyard"
+  "/opt/chipyard"
+)
+for candidate in "${CHIPYARD_CANDIDATES[@]}"; do
+  if [ -n "$candidate" ] && [ -f "$candidate/build.sbt" ] && [ -d "$candidate/generators/chipyard/src/main/scala" ]; then
+    CHIPYARD_INSTALLED="true"
+    CHIPYARD_DIR_DETECTED="$candidate"
+    break
+  fi
+done
+
+# Detect RISCV toolchain
+RISCV_INSTALLED="false"
+RISCV_PATH=""
+RISCV_CANDIDATES=(
+  "${RISCV:-}"
+  "${CHIPYARD_DIR_DETECTED:+$CHIPYARD_DIR_DETECTED/.conda-env/riscv-tools}"
+  "${CHIPYARD_DIR_DETECTED:+$CHIPYARD_DIR_DETECTED/riscv-tools}"
+  "/opt/riscv"
+)
+for candidate in "${RISCV_CANDIDATES[@]}"; do
+  if [ -n "$candidate" ] && [ -f "$candidate/bin/riscv64-unknown-elf-gcc" ]; then
+    RISCV_INSTALLED="true"
+    RISCV_PATH="$candidate"
+    break
+  fi
+done
+
 # Compute capability flags
 CAN_COMPILE="false"
 CAN_LINT="false"
@@ -165,6 +199,11 @@ fi
 
 if [ "$KLAYOUT_INSTALLED" = "true" ] && [ "$SKY130HD_INSTALLED" = "true" ] && [ -f "$SKY130HD_DIR/gds/sky130_fd_sc_hd.gds" ]; then
   CAN_GDS="true"
+fi
+
+CAN_CHIPYARD="false"
+if [ "$CHIPYARD_INSTALLED" = "true" ] && [ "$RISCV_INSTALLED" = "true" ]; then
+  CAN_CHIPYARD="true"
 fi
 
 # Get timestamp
@@ -216,6 +255,11 @@ if command -v jq >/dev/null 2>&1; then
     --argjson can_synthesize "$CAN_SYNTHESIZE" \
     --argjson can_pnr "$CAN_PNR" \
     --argjson can_gds "$CAN_GDS" \
+    --argjson chipyard_installed "$CHIPYARD_INSTALLED" \
+    --arg chipyard_path "$CHIPYARD_DIR_DETECTED" \
+    --argjson riscv_installed "$RISCV_INSTALLED" \
+    --arg riscv_path "$RISCV_PATH" \
+    --argjson can_chipyard "$CAN_CHIPYARD" \
     '{
       detected_at: $detected_at,
       tools: {
@@ -248,6 +292,12 @@ if command -v jq >/dev/null 2>&1; then
         installed: $docker_installed,
         version: $docker_version
       },
+      chipyard: {
+        installed: $chipyard_installed,
+        path: $chipyard_path,
+        riscv_installed: $riscv_installed,
+        riscv_path: $riscv_path
+      },
       backend_mode: $backend_mode,
       capabilities: {
         can_compile:    $can_compile,
@@ -255,7 +305,8 @@ if command -v jq >/dev/null 2>&1; then
         can_simulate:   $can_simulate,
         can_synthesize: $can_synthesize,
         can_pnr:        $can_pnr,
-        can_gds:        $can_gds
+        can_gds:        $can_gds,
+        can_chipyard:   $can_chipyard
       }
     }' > "$OUTPUT_FILE"
 else
@@ -292,6 +343,12 @@ else
     "installed": $DOCKER_INSTALLED,
     "version": "$DOCKER_VERSION"
   },
+  "chipyard": {
+    "installed": $CHIPYARD_INSTALLED,
+    "path": "$CHIPYARD_DIR_DETECTED",
+    "riscv_installed": $RISCV_INSTALLED,
+    "riscv_path": "$RISCV_PATH"
+  },
   "backend_mode": "$BACKEND_MODE",
   "capabilities": {
     "can_compile":    $CAN_COMPILE,
@@ -299,7 +356,8 @@ else
     "can_simulate":   $CAN_SIMULATE,
     "can_synthesize": $CAN_SYNTHESIZE,
     "can_pnr":        $CAN_PNR,
-    "can_gds":        $CAN_GDS
+    "can_gds":        $CAN_GDS,
+    "can_chipyard":   $CAN_CHIPYARD
   }
 }
 ENDJSON
@@ -389,6 +447,18 @@ else
   echo "Docker:     [MISSING]"
 fi
 
+if [ "$CHIPYARD_INSTALLED" = "true" ]; then
+  echo "Chipyard:   [OK] $CHIPYARD_DIR_DETECTED"
+else
+  echo "Chipyard:   [MISSING]"
+fi
+
+if [ "$RISCV_INSTALLED" = "true" ]; then
+  echo "RISCV:      [OK] $RISCV_PATH"
+else
+  echo "RISCV:      [MISSING]"
+fi
+
 echo "backend_mode: $BACKEND_MODE"
 
 echo ""
@@ -422,6 +492,11 @@ if [ "$CAN_GDS" = "true" ]; then
   echo "  GDS:        YES"
 else
   echo "  GDS:        NO"
+fi
+if [ "$CAN_CHIPYARD" = "true" ]; then
+  echo "  Chipyard:   YES"
+else
+  echo "  Chipyard:   NO"
 fi
 
 echo ""
