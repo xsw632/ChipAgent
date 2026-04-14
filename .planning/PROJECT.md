@@ -42,6 +42,7 @@ A single slash command turns a natural language hardware description into lint-c
 - v1.2.0: Auto-diagnose flow failure error types (timing violation, congestion, DRC, placement overflow, synthesis error)
 - v1.2.0: Error-type-specific parameter retry (PLACE_DENSITY, CLOCK_PERIOD, CORE_UTILIZATION adjustment)
 - v1.2.0: Multi-round QoR optimization with configuration comparison table and best-run recommendation
+- v1.3: Chipyard environment detection in initialize skill with RISCV toolchain validation
 
 ## Current Milestone: v1.3 Chipyard Integration & Full-Flow Automation
 
@@ -58,7 +59,6 @@ A single slash command turns a natural language hardware description into lint-c
 
 ### Active
 
-- CY-01: Chipyard environment detection in initialize skill (local/Docker, RISCV toolchain validation)
 - CY-02: `/chip-agent:chipyard` command for Chipyard RTL generation with config parameter
 - CY-03: `/chip-agent:sram-mapping` analysis of generated RTL for memory instances
 - CY-04: Workspace integration -- chipyard output saved to MyDesign for pnr handoff
