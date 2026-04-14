@@ -62,7 +62,7 @@
 
 **Milestone Goal:** Integrate Chipyard RTL generation with SRAM analysis and ORFS PnR for tinyRocket processor end-to-end flow.
 
-- [ ] **Phase 18: Chipyard Environment Detection** - Extend initialize skill and detect-env.sh to discover Chipyard installation and RISCV toolchain
+- [x] **Phase 18: Chipyard Environment Detection** - Extend initialize skill and detect-env.sh to discover Chipyard installation and RISCV toolchain (completed 2026-04-14)
 - [ ] **Phase 19: Chipyard RTL Generation Command** - Implement `/chip-agent:chipyard` skill for Verilog generation from Chipyard configs
 - [ ] **Phase 20: SRAM Mapping Analysis** - Implement `/chip-agent:sram-mapping` skill for memory instance identification and sky130hd macro mapping
 - [ ] **Phase 21: End-to-End tinyRocket Validation** - Validate full pipeline from chipyard generation through PnR with tinyRocket
@@ -81,8 +81,8 @@
 **Plans**: 2 plans
 
 Plans:
-- [ ] 18-01-PLAN.md -- Extend detect-env.sh with Chipyard/RISCV detection, can_chipyard capability, and JSON/stdout output
-- [ ] 18-02-PLAN.md -- Extend initialize SKILL.md with Chipyard/RISCV status display and install guidance
+- [x] 18-01-PLAN.md -- Extend detect-env.sh with Chipyard/RISCV detection, can_chipyard capability, and JSON/stdout output
+- [x] 18-02-PLAN.md -- Extend initialize SKILL.md with Chipyard/RISCV status display and install guidance
 
 ### Phase 19: Chipyard RTL Generation Command
 **Goal**: Users can generate Verilog RTL from any Chipyard config via a single slash command, with output ready for PnR
@@ -153,7 +153,7 @@ Phases execute in numeric order: 18 -> 19 -> 20 -> 21
 | 15. PnR Skill Orchestration + PPA Reporting | v1.1.5 | 2/2 | Complete | 2026-04-02 |
 | 16. Diagnosis & Retry Infrastructure | v1.2.0 | 2/2 | Complete | 2026-04-02 |
 | 17. Retry Orchestration & QoR Optimization | v1.2.0 | 2/2 | Complete | 2026-04-02 |
-| 18. Chipyard Environment Detection | v1.3 | 0/2 | Planned | - |
+| 18. Chipyard Environment Detection | v1.3 | 2/2 | Complete    | 2026-04-14 |
 | 19. Chipyard RTL Generation Command | v1.3 | 0/? | Not started | - |
 | 20. SRAM Mapping Analysis | v1.3 | 0/? | Not started | - |
 | 21. End-to-End tinyRocket Validation | v1.3 | 0/? | Not started | - |
