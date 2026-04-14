@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Chipyard Integration & Full-Flow Automation
-status: defining_requirements
-stopped_at: Defining requirements for v1.3
+status: roadmap_created
+stopped_at: Roadmap created, ready to plan Phase 18
 last_updated: "2026-04-14"
-last_activity: 2026-04-14 -- Milestone v1.3 started
+last_activity: 2026-04-14 -- Roadmap created for v1.3 (Phases 18-21)
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -18,16 +18,19 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-02)
+See: .planning/PROJECT.md (updated 2026-04-14)
 
-**Core value:** A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog -- and a second command extends it through synthesis, PnR, and GDS export with intelligent failure diagnosis, automatic parameter retry, and multi-round QoR optimization.
-**Current focus:** Planning next milestone
+**Core value:** A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog -- and a second command extends it through synthesis, PnR, and GDS export with intelligent failure handling. v1.3 adds Chipyard integration for complete processor RTL generation.
+**Current focus:** Phase 18 -- Chipyard Environment Detection
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Status: Defining requirements
-Last activity: 2026-04-14 -- Milestone v1.3 started
+Phase: 18 of 21 (Chipyard Environment Detection)
+Plan: 0 of ? in current phase
+Status: Ready to plan
+Last activity: 2026-04-14 -- Roadmap created for v1.3
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -44,6 +47,10 @@ Last activity: 2026-04-14 -- Milestone v1.3 started
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
+Recent decisions affecting current work:
+
+- Two-step split: chipyard generates RTL + SRAM analysis, then pnr handles backend flow
+- SV concatenation for ORFS: merge Chipyard's split SV files into single .v for compatibility
 
 ### Pending Todos
 
@@ -56,7 +63,7 @@ None.
 | 1 | Research and document testing strategies for complex modules in chip-agent | 2026-03-18 | 21053b0 | [1-research-and-document-testing-strategies](./quick/1-research-and-document-testing-strategies/) |
 | 2 | Create testbench-generator agent with UVM-inspired C++ architecture | 2026-03-18 | f933650 | [2-create-testbench-generator-agent-with-uv](./quick/2-create-testbench-generator-agent-with-uv/) |
 | 3 | Refactor generate to chisel-only, rename workflow to auto-toolchain, simplify CLAUDE.md | 2026-03-20 | 7af147d | [3-refactor-generate-to-chisel-only-rename-](./quick/3-refactor-generate-to-chisel-only-rename-/) |
-| 4 | 多轮QoR参数对比优化PnR流程 | 2026-04-13 | ad82b71 | [4-qor-pnr](./quick/4-qor-pnr/) |
+| 4 | QoR PnR power-aware recommendation plan | 2026-04-13 | ad82b71 | [4-qor-pnr](./quick/4-qor-pnr/) |
 
 | 5 | 实现 /chip-agent:load_workspace — 修复 .mcp.json 路径 + Docker 模式 MCP 工具 | 2026-04-14 | — | [260414-lse-chip-agent-load-workspace-mcp-server](./quick/260414-lse-chip-agent-load-workspace-mcp-server/) |
 
@@ -69,5 +76,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-04-14
-Stopped at: Completed quick task 5: 实现 /chip-agent:load_workspace
+Stopped at: Roadmap created for v1.3 (Phases 18-21)
 Resume file: None
