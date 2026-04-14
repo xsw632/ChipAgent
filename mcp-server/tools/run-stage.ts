@@ -1,10 +1,38 @@
-import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { spawn, execSync } from "node:child_process";
+import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+interface WorkspaceConfig {
+  workspace_dir: string;
+  mcp_server_path: string;
+  backend_mode: string;
+  docker_image?: string;
+  docker_volumes?: string[];
+  docker_workdir?: string;
+  orfs_flow_path?: string;
+  docker_results_dir?: string;
+}
+
 export const VALID_STAGES = ["synth", "floorplan", "place", "cts", "route", "finish"] as const;
 type Stage = (typeof VALID_STAGES)[number];
+
+/**
+ * Read ~/.chipagent/workspace.json for workspace configuration.
+ * Returns null if the file does not exist.
+ */
+function readWorkspaceConfig(): WorkspaceConfig | null {
+  try {
+    const configPath = join(homedir(), ".chipagent", "workspace.json");
+    if (!existsSync(configPath)) return null;
+    const content = readFileSync(configPath, "utf-8");
+    return JSON.parse(content) as WorkspaceConfig;
+  } catch {
+    return null;
+  }
+}
 
 export function buildMakeArgs(
   stage: string,
@@ -28,6 +56,25 @@ function extractDesignName(configMkPath: string): string {
   }
 }
 
+function hostPath(workspaceDir: string, containerPath: string): string {
+  // Convert a container /workspace path to the corresponding host absolute path
+  if (containerPath.startsWith("/workspace")) {
+    return containerPath.replace("/workspace", workspaceDir);
+  }
+  return containerPath;
+}
+
+function containerPath(workspaceDir: string, hostPath: string): string {
+  // Convert a host absolute path to the corresponding container /workspace path
+  return hostPath.replace(workspaceDir, "/workspace");
+}
+
+function ensureDir(dir: string): void {
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+}
+
 function tailLines(text: string, n: number): string {
   const lines = text.split("\n");
   return lines.slice(-n).join("\n");
@@ -43,9 +90,15 @@ export function registerRunStage(server: McpServer): void {
       orfs_flow_path: z.string().describe("Absolute path to ORFS flow/ directory"),
     },
     async ({ stage, config_mk_path, orfs_flow_path }) => {
-      const { args, cwd, env } = buildMakeArgs(stage, config_mk_path, orfs_flow_path);
-      const designName = extractDesignName(config_mk_path);
-      const logPath = `${orfs_flow_path}/logs/sky130hd/${designName}/base/`;
+      const workspaceConfig = readWorkspaceConfig();
+      const designName = extractDesignName(configMkPath);
+
+      // logPath uses the container path (for display), but in Docker mode
+      // the actual results are at the mounted results_dir path
+      const containerLogPath = `${orfs_flow_path}/logs/sky130hd/${designName}/base/`;
+      const hostLogPath = workspaceConfig?.backend_mode === "docker" && workspaceConfig.docker_results_dir
+        ? `${workspaceConfig.docker_results_dir}/OpenROAD-flow-scripts/flow/logs/sky130hd/${designName}/base/`
+        : containerLogPath;
 
       const result = await new Promise<{
         success: boolean;
@@ -56,11 +109,57 @@ export function registerRunStage(server: McpServer): void {
         let stdout = "";
         let stderr = "";
 
-        const proc = spawn("make", args, {
-          cwd,
-          env: env as NodeJS.ProcessEnv,
-          stdio: ["ignore", "pipe", "pipe"],
-        });
+        let proc: ReturnType<typeof spawn>;
+
+        if (workspaceConfig?.backend_mode === "docker") {
+          const workspaceDir = workspaceConfig.workspace_dir;
+          const dockerImage = workspaceConfig.docker_image ?? "openroad/orfs:latest";
+          const dockerWorkdir = workspaceConfig.docker_workdir ?? "/OpenROAD-flow-scripts/flow";
+          const resultsDir = workspaceConfig.docker_results_dir ?? workspaceDir;
+
+          // Build docker run volumes: workspace mount + ORFS results mount
+          const volumes: string[] = [
+            `${workspaceDir}:/workspace`,
+            `${resultsDir}:${dockerWorkdir}`,
+          ];
+
+          // Ensure host-side results directories exist so ORFS can write into them
+          const hostResultsDir = `${resultsDir}/OpenROAD-flow-scripts/flow`;
+          const hostReportsDir = `${hostResultsDir}/reports/sky130hd/${designName}/base`;
+          const hostLogsDir = `${hostResultsDir}/logs/sky130hd/${designName}/base`;
+          const hostResults2Dir = `${hostResultsDir}/results/sky130hd/${designName}/base`;
+          ensureDir(hostReportsDir);
+          ensureDir(hostLogsDir);
+          ensureDir(hostResults2Dir);
+
+          // Container paths for DESIGN_CONFIG and results
+          const containerConfigPath = containerPath(workspaceDir, config_mk_path);
+
+          const dockerArgs = [
+            "run",
+            "--rm",
+            ...volumes.flatMap((v) => ["-v", v]),
+            "-w",
+            dockerWorkdir,
+            dockerImage,
+            "make",
+            stage,
+            `DESIGN_CONFIG=${containerConfigPath}`,
+          ];
+
+          proc = spawn("docker", dockerArgs, {
+            env: { ...process.env },
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+        } else {
+          // Local mode: run make directly
+          const { args, cwd, env } = buildMakeArgs(stage, config_mk_path, orfs_flow_path);
+          proc = spawn("make", args, {
+            cwd,
+            env: env as NodeJS.ProcessEnv,
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+        }
 
         proc.stdout.on("data", (chunk: Buffer) => {
           stdout += chunk.toString();
@@ -90,7 +189,7 @@ export function registerRunStage(server: McpServer): void {
         });
       });
 
-      const output = { ...result, stage, log_path: logPath };
+      const output = { ...result, stage, log_path: hostLogPath };
       return { content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }] };
     },
   );

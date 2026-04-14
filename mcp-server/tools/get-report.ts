@@ -1,7 +1,26 @@
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+
+interface WorkspaceConfig {
+  workspace_dir: string;
+  backend_mode: string;
+  docker_results_dir?: string;
+  orfs_flow_path?: string;
+}
+
+function readWorkspaceConfig(): WorkspaceConfig | null {
+  try {
+    const configPath = join(homedir(), ".chipagent", "workspace.json");
+    if (!existsSync(configPath)) return null;
+    const content = readFileSync(configPath, "utf-8");
+    return JSON.parse(content) as WorkspaceConfig;
+  } catch {
+    return null;
+  }
+}
 
 export function parseFinishReport(content: string): Record<string, string> {
   const metrics: Record<string, string> = {};
@@ -78,8 +97,23 @@ export function registerGetReport(server: McpServer): void {
       orfs_flow_path: z.string().describe("Absolute path to ORFS flow/ directory"),
     },
     async ({ design_name, stage, orfs_flow_path }) => {
-      const reportDir = join(orfs_flow_path, "reports", "sky130hd", design_name, "base");
-      const logDir = join(orfs_flow_path, "logs", "sky130hd", design_name, "base");
+      const workspaceConfig = readWorkspaceConfig();
+
+      // In Docker mode, reports are written to the mounted results directory on the host,
+      // not to the original orfs_flow_path (which is the container-internal path).
+      let reportDir: string;
+      let logDir: string;
+
+      if (workspaceConfig?.backend_mode === "docker" && workspaceConfig.docker_results_dir) {
+        // Reports live at docker_results_dir/OpenROAD-flow-scripts/flow/...
+        const resultsBase = `${workspaceConfig.docker_results_dir}/OpenROAD-flow-scripts/flow`;
+        reportDir = join(resultsBase, "reports", "sky130hd", design_name, "base");
+        logDir = join(resultsBase, "logs", "sky130hd", design_name, "base");
+      } else {
+        // Local mode: use the orfs_flow_path directly
+        reportDir = join(orfs_flow_path, "reports", "sky130hd", design_name, "base");
+        logDir = join(orfs_flow_path, "logs", "sky130hd", design_name, "base");
+      }
 
       if (!existsSync(reportDir)) {
         const result = { stage, error: `Report not found. Run stage '${stage}' first.`, report_path: reportDir };

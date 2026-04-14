@@ -4,8 +4,8 @@ milestone: v1.2.0
 milestone_name: Smart Retry & QoR Optimization
 status: completed
 stopped_at: Milestone v1.2.0 archived
-last_updated: "2026-04-02"
-last_activity: 2026-04-13 -- Completed quick task 4: 多轮QoR参数对比优化PnR流程
+last_updated: "2026-04-14"
+last_activity: 2026-04-14 -- Completed quick task 5: 实现 /chip-agent:load_workspace
 progress:
   total_phases: 2
   completed_phases: 2
@@ -37,7 +37,7 @@ Last activity: 2026-04-13 -- Milestone v1.2.0 archived
 - v1.1.2: 5 plans in ~2 days
 - v1.1.5: 6 plans in ~1 day
 - v1.2.0: 4 plans in ~1 day (~5min/plan)
-- Quick tasks: 4
+- Quick tasks: 5
 
 ## Accumulated Context
 
@@ -58,13 +58,16 @@ None.
 | 3 | Refactor generate to chisel-only, rename workflow to auto-toolchain, simplify CLAUDE.md | 2026-03-20 | 7af147d | [3-refactor-generate-to-chisel-only-rename-](./quick/3-refactor-generate-to-chisel-only-rename-/) |
 | 4 | 多轮QoR参数对比优化PnR流程 | 2026-04-13 | ad82b71 | [4-qor-pnr](./quick/4-qor-pnr/) |
 
+| 5 | 实现 /chip-agent:load_workspace — 修复 .mcp.json 路径 + Docker 模式 MCP 工具 | 2026-04-14 | — | [260414-lse-chip-agent-load-workspace-mcp-server](./quick/260414-lse-chip-agent-load-workspace-mcp-server/) |
+
 ### Blockers/Concerns
 
 - ORFS error regex patterns need validation against actual sky130hd log output
 - Hold violation detection not yet in existing get_report
+- MCP server requires Claude Code restart to pick up .mcp.json path changes
 
 ## Session Continuity
 
-Last session: 2026-04-13
-Stopped at: Completed quick task 4-qor-pnr
+Last session: 2026-04-14
+Stopped at: Completed quick task 5: 实现 /chip-agent:load_workspace
 Resume file: None
