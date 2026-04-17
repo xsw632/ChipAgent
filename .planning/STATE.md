@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2.0
-milestone_name: Smart Retry & QoR Optimization
-status: completed
-stopped_at: Milestone v1.2.0 archived
+milestone: v1.3
+milestone_name: Chipyard Integration & Full-Flow Automation
+status: defining_requirements
+stopped_at: Defining requirements for v1.3
 last_updated: "2026-04-14"
-last_activity: 2026-04-14 -- Completed quick task 5: 实现 /chip-agent:load_workspace
+last_activity: 2026-04-14 -- Milestone v1.3 started
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 ## Current Position
 
-Phase: All complete
-Status: v1.2.0 shipped and archived
-Last activity: 2026-04-13 -- Milestone v1.2.0 archived
+Phase: Not started (defining requirements)
+Status: Defining requirements
+Last activity: 2026-04-14 -- Milestone v1.3 started
 
 ## Performance Metrics
 

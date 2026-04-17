@@ -43,9 +43,26 @@ A single slash command turns a natural language hardware description into lint-c
 - v1.2.0: Error-type-specific parameter retry (PLACE_DENSITY, CLOCK_PERIOD, CORE_UTILIZATION adjustment)
 - v1.2.0: Multi-round QoR optimization with configuration comparison table and best-run recommendation
 
+## Current Milestone: v1.3 Chipyard Integration & Full-Flow Automation
+
+**Goal:** Integrate Chipyard RTL generation with SRAM analysis and ORFS PnR for tinyRocket processor end-to-end flow.
+
+**Target features:**
+- Chipyard environment detection in `/chip-agent:initialize` (local path vs Docker, RISCV toolchain)
+- `/chip-agent:chipyard <config>` generating Verilog RTL from Chipyard (e.g. TinyRocketConfig)
+- `/chip-agent:sram-mapping` analyzing RTL for SRAM macro instances and sky130hd mapping strategy
+- Seamless handoff: chipyard output → workspace → `/chip-agent:pnr` picks up for backend flow
+- End-to-end validation: tinyRocket from spec to PPA report
+
+**Flow:** ① User Spec → ② Chipyard RTL → ③ SRAM Mapping → (handoff) → ④ ORFS Synth → ⑤ Place → ⑥ CTS+Route → ⑦ PPA Report
+
 ### Active
 
-(None -- planning next milestone)
+- CY-01: Chipyard environment detection in initialize skill (local/Docker, RISCV toolchain validation)
+- CY-02: `/chip-agent:chipyard` command for Chipyard RTL generation with config parameter
+- CY-03: `/chip-agent:sram-mapping` analysis of generated RTL for memory instances
+- CY-04: Workspace integration -- chipyard output saved to MyDesign for pnr handoff
+- CY-05: End-to-end tinyRocket validation through full pipeline
 
 ### Out of Scope
 
@@ -67,9 +84,9 @@ A single slash command turns a natural language hardware description into lint-c
 ## Context
 
 Shipped v1.2.0 Smart Retry & QoR Optimization. Full NL-to-GDS pipeline with intelligent failure handling.
-Tech stack: Chisel 3.6.1, Scala 2.13.10, sbt 1.10.7, FIRRTL/firtool, Verilator 5.046, ORFS (Yosys + OpenROAD), sky130hd PDK, MCP Server (TypeScript).
+Tech stack: Chisel 3.6.1, Scala 2.13.10, sbt 1.10.7, FIRRTL/firtool, Verilator 5.046, ORFS (Yosys + OpenROAD), sky130hd PDK, MCP Server (TypeScript), Chipyard.
 7 MCP tools: run_stage, generate_config, get_report, diagnose_failure, clean_design, compare_runs + environment detection.
-3 slash commands: `/chip-agent:generate`, `/chip-agent:workflow`, `/chip-agent:pnr`.
+3 slash commands: `/chip-agent:generate`, `/chip-agent:workflow`, `/chip-agent:pnr` + 2 new: `/chip-agent:chipyard`, `/chip-agent:sram-mapping`.
 PnR pipeline: 6-stage ORFS flow with 3-round retry loop, stage-aware restart, QoR comparison table, and best-run recommendation.
 73 unit tests across MCP server, zero regressions.
 
@@ -120,6 +137,25 @@ PnR pipeline: 6-stage ORFS flow with 3-round retry loop, stage-aware restart, Qo
 | Mutable param accumulation in retry | Prevents parameter drift by never resetting between rounds | Good |
 | Critical errors abort retry | Synthesis/combinational timing not parameter-fixable; saves time | Good |
 | Mandatory clean_design before retry | Prevents ORFS stale cache issues | Good |
+| Two-step split: chipyard + pnr | Chipyard handles RTL+SRAM analysis, pnr handles backend; cleaner separation | Good |
+| SV concatenation for ORFS | Merge Chipyard's split SV files into single .v for ORFS compatibility | Good |
+
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd-transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd-complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
 
 ---
-*Last updated: 2026-04-02 after v1.2.0 milestone*
+*Last updated: 2026-04-14 starting v1.3 milestone*
