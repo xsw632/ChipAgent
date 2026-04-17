@@ -20,17 +20,17 @@
 - [ ] **CYR-05**: Concatenates split SV files into single .v file, saves to `MyDesign/<Config>/workspace/generated/<Config>.v` for ORFS compatibility
 - [ ] **CYR-06**: Displays generation summary: config name, output path, file count, top module, mems.conf contents
 
-### SRAM Mapping Analysis (SRM)
+### Integrated SRAM Mapping (SRM)
 
-- [ ] **SRM-01**: `/chip-agent:sram-mapping <verilog_path>` scans Verilog for SRAM macro instances (reg arrays, mems.conf, rf_combMem, ram_combMem)
-- [ ] **SRM-02**: Traces instantiation hierarchy for each memory module (leaf to ChipTop)
-- [ ] **SRM-03**: Enumerates available sky130hd SRAM macros, computes best mapping strategy per memory
-- [ ] **SRM-04**: Generates formatted mapping report and `sram_mapping.json` for downstream reference
+- [ ] **SRM-01**: `/chip-agent:chipyard <config>` automatically scans generated RTL for SRAM macro instances (reg arrays, mems.conf, rf_combMem, ram_combMem)
+- [ ] **SRM-02**: The integrated flow traces instantiation hierarchy for each memory module (leaf to ChipTop)
+- [ ] **SRM-03**: The integrated flow enumerates available sky130hd SRAM macros and computes best mapping strategy per memory
+- [ ] **SRM-04**: The staged workspace contains a formatted mapping report and `sram_mapping.json` for downstream reference
 
 ### End-to-End Integration (E2E)
 
-- [ ] **E2E-01**: tinyRocket end-to-end validation: `/chip-agent:chipyard tinyrocket` produces Verilog that `/chip-agent:pnr TinyRocketConfig` can process through full ORFS flow
-- [ ] **E2E-02**: `/chip-agent:chipyard` completion prompts user to run SRAM mapping and PnR as next steps
+- [ ] **E2E-01**: tinyRocket end-to-end validation: `/chip-agent:chipyard tinyrocket` produces a staged workspace that `/chip-agent:pnr TinyRocketConfig` can process through the ORFS flow
+- [ ] **E2E-02**: `/chip-agent:chipyard` completion output gives clear next-step guidance to run `/chip-agent:pnr <Config>` on the staged workspace
 
 ## Deferred Requirements
 
@@ -74,12 +74,12 @@
 | CYR-04 | Phase 19 | Pending |
 | CYR-05 | Phase 19 | Pending |
 | CYR-06 | Phase 19 | Pending |
-| SRM-01 | Phase 20 | Pending |
-| SRM-02 | Phase 20 | Pending |
-| SRM-03 | Phase 20 | Pending |
-| SRM-04 | Phase 20 | Pending |
-| E2E-01 | Phase 21 | Pending |
-| E2E-02 | Phase 21 | Pending |
+| SRM-01 | Phase 19 | Pending |
+| SRM-02 | Phase 19 | Pending |
+| SRM-03 | Phase 19 | Pending |
+| SRM-04 | Phase 19 | Pending |
+| E2E-01 | Phase 19 | Pending |
+| E2E-02 | Phase 19 | Pending |
 
 **Coverage:**
 - v1.3 requirements: 15 total

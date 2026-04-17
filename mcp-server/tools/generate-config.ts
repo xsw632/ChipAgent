@@ -11,15 +11,20 @@ interface ConfigMkParams {
   readonly placeDensity?: number;
   readonly gplTimingDriven?: boolean;
   readonly gplRoutabilityDriven?: boolean;
+  readonly overrideModuleName?: string;
 }
 
 interface SdcParams {
   readonly verilogContent: string;
   readonly clockPort: string;
   readonly clockPeriodNs: number;
+  readonly overrideModuleName?: string;
 }
 
-function extractModuleName(verilogContent: string): string {
+function resolveModuleName(verilogContent: string, overrideName?: string): string {
+  if (overrideName) {
+    return overrideName;
+  }
   const match = verilogContent.match(/^module\s+(\w+)/m);
   if (!match) {
     throw new Error("Could not extract module name from Verilog content");
@@ -27,12 +32,16 @@ function extractModuleName(verilogContent: string): string {
   return match[1];
 }
 
+function extractModuleName(verilogContent: string): string {
+  return resolveModuleName(verilogContent);
+}
+
 function isSequential(verilogContent: string): boolean {
   return /always\s+@\s*\(\s*posedge/.test(verilogContent);
 }
 
 export function generateConfigMk(params: ConfigMkParams): string {
-  const designName = extractModuleName(params.verilogContent);
+  const designName = resolveModuleName(params.verilogContent, params.overrideModuleName);
   const lines = [
     `export DESIGN_NAME = ${designName}`,
     `export PLATFORM = sky130hd`,
@@ -60,7 +69,7 @@ export function generateSdc(params: SdcParams): string {
   const { clockPort, clockPeriodNs, verilogContent } = params;
 
   if (isSequential(verilogContent)) {
-    const designName = extractModuleName(verilogContent);
+    const designName = resolveModuleName(verilogContent, params.overrideModuleName);
     return [
       `current_design ${designName}`,
       `create_clock -name core_clock -period ${clockPeriodNs} [get_ports ${clockPort}]`,
@@ -113,12 +122,14 @@ export function registerGenerateConfig(server: McpServer): void {
         placeDensity: params.place_density,
         gplTimingDriven: params.gpl_timing_driven,
         gplRoutabilityDriven: params.gpl_routability_driven,
+        overrideModuleName: params.module_name,
       });
 
       const sdc = generateSdc({
         verilogContent,
         clockPort: params.clock_port,
         clockPeriodNs: params.clock_period_ns,
+        overrideModuleName: params.module_name,
       });
 
       writeFileSync(configPath, configMk, "utf-8");
@@ -127,7 +138,7 @@ export function registerGenerateConfig(server: McpServer): void {
       const result = {
         config_mk: configPath,
         constraint_sdc: sdcAbsPath,
-        design_name: extractModuleName(verilogContent),
+        design_name: resolveModuleName(verilogContent, params.module_name),
       };
 
       return {

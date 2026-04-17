@@ -7,7 +7,7 @@
 - v1.1.2 RTL-to-GDS -- Phases 9-12 (shipped 2020-04-01)
 - v1.1.5 sky130hd MCP Backend -- Phases 13-15 (shipped 2020-04-02)
 - v1.2.0 Smart Retry & QoR Optimization -- Phases 16-17 (shipped 2020-04-02)
-- v1.3 Chipyard Integration & Full-Flow Automation -- Phases 18-21 (in progress)
+- v1.3 Chipyard Integration & Full-Flow Automation -- Phases 18-19 (in progress)
 
 ## Phases
 
@@ -60,10 +60,10 @@
 
 ### v1.3 Chipyard Integration & Full-Flow Automation (In Progress)
 
-**Milestone Goal:** Integrate Chipyard RTL generation with SRAM analysis and ORFS PnR for tinyRocket processor end-to-end flow.
+**Milestone Goal:** Integrate Chipyard RTL generation, SRAM analysis, workspace staging, and ORFS handoff into a single `/chip-agent:chipyard` flow for tinyRocket-class processor designs.
 
 - [x] **Phase 18: Chipyard Environment Detection** - Extend initialize skill and detect-env.sh to discover Chipyard installation and RISCV toolchain (completed 2020-04-14)
-- [ ] **Phase 19: Chipyard RTL Generation Command** - Implement `/chip-agent:chipyard` skill for Verilog generation from Chipyard configs
+- [ ] **Phase 19: Unified Chipyard Flow** - Implement `/chip-agent:chipyard` to generate RTL, run SRAM mapping, stage artifacts into `MyDesign/`, and hand off cleanly to `/chip-agent:pnr`
 
 ## Phase Details
 
@@ -82,18 +82,18 @@ Plans:
 - [x] 18-01-PLAN.md -- Extend detect-env.sh with Chipyard/RISCV detection, can_chipyard capability, and JSON/stdout output
 - [x] 18-02-PLAN.md -- Extend initialize SKILL.md with Chipyard/RISCV status display and install guidance
 
-### Phase 19: Chipyard RTL Generation Command
-**Goal**: Users can generate Verilog RTL from any Chipyard config via a single slash command, with output ready for PnR
+### Phase 19: Unified Chipyard Flow
+**Goal**: Users can run `/chip-agent:chipyard <config>` to generate Chipyard RTL, analyze SRAM structures, stage artifacts into `MyDesign/<Config>/workspace/`, and then hand off to `/chip-agent:pnr <Config>`
 **Depends on**: Phase 18
-**Requirements**: CYR-01, CYR-02, CYR-03, CYR-04, CYR-05, CYR-06
+**Requirements**: CYR-01, CYR-02, CYR-03, CYR-04, CYR-05, CYR-06, SRM-01, SRM-02, SRM-03, SRM-04, E2E-02
 **Success Criteria** (what must be TRUE):
   1. Running `/chip-agent:chipyard tinyrocket` auto-maps the shorthand to `TinyRocketConfig` and generates Verilog RTL via Chipyard's make flow
-  2. The skill validates the environment (sbt, firtool, Java, RISCV) and config class existence before starting generation, with clear error messages for missing prerequisites
-  3. Generated Verilog files are concatenated into a single `.v` file saved to `MyDesign/<Config>/workspace/generated/<Config>.v` for ORFS compatibility
-  4. User sees a generation summary showing config name, output path, file count, top module, and mems.conf contents
-  5. Generation handles 10-30 minute timeout gracefully with progress feedback
+  2. The skill resolves Chipyard environment from `.chipagent/env.json` or explicit override, validates sbt/firtool/Java/RISCV, and verifies the config class before generation
+  3. Generated RTL is concatenated into a single `.v` file at `MyDesign/<Config>/workspace/generated/<Config>.v` for ORFS compatibility
+  4. The same command automatically runs SRAM mapping on the generated RTL and writes structured mapping output into the staged workspace
+  5. User sees a summary showing config name, output path, file count, top module, mems.conf contents, mapping output location, and the exact next-step handoff to `/chip-agent:pnr <Config>`
+  6. The flow handles long-running generation with progress updates and produces a staged workspace that does not require manual file shuffling before PnR
 **Plans**: TBD
-**UI hint**: yes
 
 Plans:
 - [ ] 19-01: TBD

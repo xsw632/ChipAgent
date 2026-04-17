@@ -5,6 +5,10 @@ Claude Code plugin that turns natural language hardware descriptions into simula
 - `/chip-agent:generate` -- Chisel-only: parse requirements, confirm spec, generate Scala source
 - `/chip-agent:workflow` -- Full pipeline: parse, generate, compile, lint, testbench, simulate, report
 - `/chip-agent:pnr` -- Physical implementation: ORFS make flow on sky130hd for synthesis, place-and-route, GDS export with formatted report
+- `/chip-agent:chipyard` -- Unified Chipyard flow: generate RTL, run SRAM mapping, stage artifacts into MyDesign, then hand off to PnR
+- `/chip-agent:chipyard-pnr` -- Chipyard+SRAM PnR: nosram preprocessing, SRAM override generation, ABC exclusion, OOM management, full ORFS flow for Chipyard SoCs
+- `/chip-agent:chipyard-rtl` -- Low-level helper flow for direct Chipyard RTL generation/debugging
+- `/chip-agent:sram-mapping` -- Analyze RTL for SRAM macro instances and determine sky130hd mapping strategy
 
 ## Tech Stack
 
@@ -30,6 +34,11 @@ ChipAgent/
   skills/
     generate/SKILL.md          # /chip-agent:generate (Chisel-only)
     workflow/SKILL.md         # /chip-agent:workflow (full pipeline)
+    pnr/SKILL.md              # /chip-agent:pnr (ORFS PnR flow)
+    chipyard/SKILL.md         # /chip-agent:chipyard (unified Chipyard flow)
+    chipyard-pnr/SKILL.md     # /chip-agent:chipyard-pnr (Chipyard+SRAM PnR flow)
+    chipyard-rtl/SKILL.md     # /chip-agent:chipyard-rtl (RTL generation only)
+    sram-mapping/SKILL.md     # /chip-agent:sram-mapping (SRAM analysis)
   agents/
     requirement-parser.md      # Parses NL → JSON spec
     chisel-generator.md        # Generates Chisel source from spec
@@ -89,4 +98,5 @@ Query Context7 (`/chipsalliance/chisel`) for up-to-date Chisel API usage before 
 
 - `/chip-agent:generate <description>` -- Produces Chisel source files only (steps 0-2). No compilation or verification.
 - `/chip-agent:workflow <description>` -- Runs the full 8-step pipeline: init project, parse, confirm, generate, compile, lint, testbench, simulate, report. Each stage feeds into the next; failures stop the pipeline with context for debugging.
-- `/chip-agent:pnr <ModuleName>` -- Runs ORFS make flow on sky130hd for synthesis, place-and-route, and GDS export on compiled Verilog. Produces timing/power/area reports and GDS file. Auto-retries timing violations by relaxing clock period.
+- `/chip-agent:pnr <ModuleName>` -- Runs ORFS make flow on sky130hd for synthesis, place-and-route, and GDS export on compiled Verilog. Produces timing/power/area reports and GDS file. Auto-retries timing violations by relaxing clock period. **Automatically redirects to chipyard-pnr for Chipyard+SRAM designs.**
+- `/chip-agent:chipyard-pnr <ConfigName>` -- Specialized PnR flow for Chipyard-generated SoCs with SRAM macros. Handles nosram preprocessing, SRAM override Verilog generation, ABC exclusion patch verification, OOM management, and all Chipyard-specific pitfalls.
