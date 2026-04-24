@@ -69,7 +69,11 @@ function installMcpDependencies() {
     const detail = (result.stderr || result.stdout || "Unknown error").trim();
     console.error("ERROR: Failed to install chipagent-backend dependencies.");
     console.error(detail);
+<<<<<<< HEAD
     console.error(`Retry with: cd \"${MCP_SERVER_DEST}\" && npm install --omit=dev`);
+=======
+    console.error(`Retry with: cd "${MCP_SERVER_DEST}" && npm install --omit=dev`);
+>>>>>>> main
     process.exit(1);
   }
 }

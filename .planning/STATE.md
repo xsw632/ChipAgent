@@ -1,16 +1,25 @@
 ---
 gsd_state_version: 1.0
+<<<<<<< HEAD
 milestone: v1.1
 milestone_name: Refine
 status: milestone_complete
 stopped_at: "Milestone v1.1 archived"
 last_updated: "2026-03-23T05:44:00.000Z"
 last_activity: "2026-04-13 -- Completed quick task 4: 多轮QoR参数对比优化PnR流程"
+=======
+milestone: v1.3
+milestone_name: Chipyard Integration & Full-Flow Automation
+status: executing
+stopped_at: Phase 19 context gathered
+last_updated: "2026-04-14T10:49:05.907Z"
+last_activity: 2026-04-14
+>>>>>>> main
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
+  total_phases: 2
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
   percent: 100
 ---
 
@@ -18,25 +27,27 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-23)
+See: .planning/PROJECT.md (updated 2026-04-14)
 
-**Core value:** A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog with a complete test report.
-**Current focus:** Planning next milestone
+**Core value:** A single slash command turns a natural language hardware description into lint-clean, simulation-verified Verilog -- and a second command extends it through synthesis, PnR, and GDS export with intelligent failure handling. v1.3 adds Chipyard integration for complete processor RTL generation.
+**Current focus:** Phase 18 — Chipyard Environment Detection
 
 ## Current Position
 
-Phase: 8 of 8 (all complete)
-Plan: All plans complete
-Status: Milestone v1.1 Shipped
-Last activity: 2026-03-23 - Archived v1.1 milestone
+Phase: 19
+Plan: Not started
+Status: Executing Phase 18
+Last activity: 2026-04-14
 
-Progress: [██████████] 100% (v1.1 scope)
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
 **Velocity:**
+
 - v1.0: 9 plans in ~55 min (~6min/plan)
 - v1.1: 8 plans in ~77 min (~10min/plan)
+<<<<<<< HEAD
 - Quick tasks: 4
 
 **By Phase (v1.1):**
@@ -47,12 +58,22 @@ Progress: [██████████] 100% (v1.1 scope)
 | 06 | 2 | 8min | 4min |
 | 07 | 2 | 46min | 23min |
 | 08 | 2 | 9min | 4.5min |
+=======
+- v1.1.2: 5 plans in ~2 days
+- v1.1.5: 6 plans in ~1 day
+- v1.2.0: 4 plans in ~1 day (~5min/plan)
+- Quick tasks: 5
+>>>>>>> main
 
 ## Accumulated Context
 
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
+Recent decisions affecting current work:
+
+- Two-step split: chipyard generates RTL + SRAM analysis, then pnr handles backend flow
+- SV concatenation for ORFS: merge Chipyard's split SV files into single .v for compatibility
 
 ### Pending Todos
 
@@ -65,14 +86,28 @@ None.
 | 1 | Research and document testing strategies for complex modules in chip-agent | 2026-03-18 | 21053b0 | [1-research-and-document-testing-strategies](./quick/1-research-and-document-testing-strategies/) |
 | 2 | Create testbench-generator agent with UVM-inspired C++ architecture | 2026-03-18 | f933650 | [2-create-testbench-generator-agent-with-uv](./quick/2-create-testbench-generator-agent-with-uv/) |
 | 3 | Refactor generate to chisel-only, rename workflow to auto-toolchain, simplify CLAUDE.md | 2026-03-20 | 7af147d | [3-refactor-generate-to-chisel-only-rename-](./quick/3-refactor-generate-to-chisel-only-rename-/) |
+<<<<<<< HEAD
 | 4 | 多轮QoR参数对比优化PnR流程 | 2026-04-13 | ad82b71 | [4-qor-pnr](./quick/4-qor-pnr/) |
+=======
+| 4 | QoR PnR power-aware recommendation plan | 2026-04-13 | ad82b71 | [4-qor-pnr](./quick/4-qor-pnr/) |
+
+| 5 | 实现 /chip-agent:load_workspace — 修复 .mcp.json 路径 + Docker 模式 MCP 工具 | 2026-04-14 | — | [260414-lse-chip-agent-load-workspace-mcp-server](./quick/260414-lse-chip-agent-load-workspace-mcp-server/) |
+>>>>>>> main
 
 ### Blockers/Concerns
 
-All resolved.
+- ORFS error regex patterns need validation against actual sky130hd log output
+- Hold violation detection not yet in existing get_report
+- MCP server requires Claude Code restart to pick up .mcp.json path changes
 
 ## Session Continuity
 
+<<<<<<< HEAD
 Last session: 2026-04-13
 Stopped at: Completed quick task 4-qor-pnr
 Resume file: None
+=======
+Last session: 2026-04-14T10:40:35.003Z
+Stopped at: Phase 19 context gathered
+Resume file: /home/mingzhenjia/ChipAgent/.planning/phases/19-chipyard-rtl-generation-command/19-CONTEXT.md
+>>>>>>> main

@@ -46,7 +46,35 @@ Set up variables:
 
 ```bash
 PLUGIN_ROOT="<plugin-root>"
+<<<<<<< HEAD
 MODULE="$ARGUMENTS"   # first argument: bare module name (PascalCase)
+=======
+RAW_MODULE="$ARGUMENTS"   # first argument: module name (any case)
+```
+
+**Normalize the module name** so frontend and backend accept the same spelling. Rule (matches `/chip-agent:chipyard`): if the argument is all-lowercase, capitalize the first letter and append `Config`; otherwise take it as-is. If the resulting directory does not exist but a `<Name>Config` directory does, fall back to that.
+
+```bash
+if [ -z "$RAW_MODULE" ]; then
+    echo "Usage: /chip-agent:pnr <ModuleName>"; exit 1
+fi
+if echo "$RAW_MODULE" | grep -qE '[A-Z]'; then
+    MODULE="$RAW_MODULE"
+else
+    FIRST=$(echo "${RAW_MODULE:0:1}" | tr '[:lower:]' '[:upper:]')
+    MODULE="${FIRST}${RAW_MODULE:1}Config"
+fi
+# Fallback: if normalized dir missing but bare-PascalCase Config variant exists, use it
+if [ ! -d "$PLUGIN_ROOT/MyDesign/$MODULE" ] && [ -d "$PLUGIN_ROOT/MyDesign/${MODULE}Config" ]; then
+    MODULE="${MODULE}Config"
+fi
+# Final fallback: case-insensitive directory match in MyDesign/ (handles e.g. tinyrocket -> TinyRocketConfig)
+if [ ! -d "$PLUGIN_ROOT/MyDesign/$MODULE" ]; then
+    MATCH=$(ls "$PLUGIN_ROOT/MyDesign" 2>/dev/null | grep -i "^${RAW_MODULE}\(Config\)\?$" | head -1)
+    if [ -n "$MATCH" ]; then MODULE="$MATCH"; fi
+fi
+echo "Resolved module: $MODULE"
+>>>>>>> main
 ```
 
 Check that compiled Verilog exists:
@@ -60,7 +88,34 @@ test -f "$PLUGIN_ROOT/MyDesign/$MODULE/workspace/generated/$MODULE.v"
   No compiled Verilog found for <ModuleName>.
   Run `/chip-agent:workflow <description>` first.
   ```
+<<<<<<< HEAD
 - If **exists**: continue to Step 1.
+=======
+- If **exists**: continue.
+
+**Chipyard detection:** Check if this is a Chipyard-generated design:
+
+```bash
+test -f "$PLUGIN_ROOT/MyDesign/$MODULE/workspace/generated/sram_mapping.json"
+```
+
+Also check spec.json:
+
+```bash
+grep -q '"source".*"chipyard"' "$PLUGIN_ROOT/MyDesign/$MODULE/workspace/spec.json" 2>/dev/null
+```
+
+If either condition is true, this is a Chipyard+SRAM design. **STOP and redirect:**
+
+```
+Chipyard+SRAM design detected for <ModuleName>.
+This requires the specialized chipyard-pnr flow (nosram preprocessing, SRAM override generation, ABC exclusion, OOM management).
+
+Run: /chip-agent:chipyard-pnr <ModuleName>
+```
+
+Do NOT proceed with the standard-cell-only PnR pipeline below. The Chipyard flow has critical pitfalls (ABC SIGABRT, module redefinition, OOM) that this skill does not handle.
+>>>>>>> main
 
 ### Step 1 -- Check Environment
 
@@ -85,9 +140,17 @@ Extract and save for subsequent steps:
 1. Read `MyDesign/$MODULE/workspace/spec.json` if it exists. Extract:
    - `clock_port` (default: `"clock"` if absent)
    - `clock_period_ns` (default: `10` if absent)
+<<<<<<< HEAD
 
 2. Call `mcp__chipagent-backend__generate_config` with:
    - `module_name`: `$MODULE`
+=======
+   - `top_module` (default: use first module in Verilog if absent)
+   - `source` (optional, used for informational purposes)
+
+2. Call `mcp__chipagent-backend__generate_config` with:
+   - `module_name`: `top_module` from spec.json (for Chipyard flows this will be `ChipTop`), or `$MODULE` if no `top_module` specified
+>>>>>>> main
    - `verilog_path`: absolute path to `MyDesign/$MODULE/workspace/generated/$MODULE.v`
    - `workspace_dir`: absolute path to `MyDesign/$MODULE/workspace`
    - `clock_port`: from spec.json or `"clock"`

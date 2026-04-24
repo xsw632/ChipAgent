@@ -1,211 +1,321 @@
 # Feature Landscape
 
-**Domain:** Modular slash commands, workspace isolation, and environment detection for a Claude Code EDA plugin
-**Researched:** 2026-03-19
-**Milestone:** v1.1 (Refine -- decompose monolithic pipeline into modular commands)
+**Domain:** Smart retry, error diagnosis, and QoR optimization for ORFS-based PnR pipeline
+**Researched:** 2026-04-02
+**Milestone:** v1.2.0 Smart Retry & QoR Optimization
+**Target level:** task2 满分要求 (failure diagnosis, parameter retry, multi-round QoR comparison)
 
-## Context
+## Context: What Exists vs What Is New
 
-v1.0 shipped a monolithic `/chip-agent:generate` pipeline that runs all 7 stages sequentially in a single conversation turn. v1.1 decomposes this into standalone slash commands, adds per-module workspace isolation, and introduces environment detection. This feature landscape covers ONLY the new v1.1 features -- v1.0 capabilities (NL parsing, Chisel generation, compilation, lint, testbench, simulation, reporting) are already built and working.
+The existing v1.1.5 PnR pipeline provides:
+- 6-stage ORFS flow (synth -> floorplan -> place -> cts -> route -> finish) via MCP tools
+- Per-stage metric extraction (cell_count, synth_area, WNS, TNS, DRC violations, power, area, utilization)
+- PPA summary report via pnr-report-formatter agent
+- Simple clock period relaxation retry (50% increase, 3 attempts) -- **currently described in PROJECT.md key decisions but NOT implemented in v1.1.5 pnr SKILL.md** (the skill stops on failure)
+
+**Existing MCP tools (already built):**
+- `check_environment` -- verifies ORFS + sky130hd installation
+- `generate_config` -- creates config.mk + constraint.sdc (accepts `clock_period_ns`, `core_utilization`)
+- `run_stage` -- executes ORFS make target, returns stdout/stderr/exit_code
+- `get_report` -- extracts structured metrics from ORFS report files
+
+**What v1.2.0 adds on top:**
+1. Error classification from stage failure outputs (stderr + metrics)
+2. Error-type-specific parameter adjustment strategies
+3. Regenerate config and re-run from the failed stage
+4. Multi-round run tracking with configuration comparison table
+
+**Key constraint:** All new features build on existing MCP tools. No new MCP tools are strictly required -- the skill layer (orchestration) handles diagnosis, retry decisions, and comparison logic. However, a `clean_stage` MCP tool would simplify re-running from a specific stage.
+
+---
 
 ## Table Stakes
 
-Features users expect from a multi-command plugin with per-module workspace isolation. Missing = the refactoring feels incomplete or the UX regresses from v1.0.
+Features the task2 满分要求 rubric explicitly requires. Missing = not reaching 满分 tier.
 
-| Feature | Why Expected | Complexity | Depends On (existing) | Notes |
-|---------|--------------|------------|----------------------|-------|
-| Standalone slash commands for each pipeline stage | The entire point of v1.1. Users must be able to run `/chip-agent:lint` or `/chip-agent:simulate` independently without invoking the full pipeline. | Med | Existing agents, scripts | Each of the 7 pipeline stages (parse, generate-chisel, compile, lint, testbench, simulate, report) becomes its own skill. Not all need their own agent -- lint, compile, simulate are thin wrappers around existing scripts. |
-| Refactored `/chip-agent:generate` as orchestrator | The existing end-to-end flow must keep working unchanged from a user perspective. Internally, `generate` delegates to sub-skills rather than inlining all logic. | Med | All standalone commands | Generate skill becomes a sequencer that invokes sub-skills in order. Must preserve the 3-attempt auto-fix retry logic for both lint and simulation stages. |
-| `/chip-agent:initialize` environment detection | First-run experience. Users need to know whether their system can run the pipeline before wasting time on a module that will fail at compile. Existing `setup.sh` does parts of this but only runs at install time and also downloads dependencies. | Low | None (greenfield) | Detects Java, sbt, Scala, Verilator, Make, g++ versions and paths. Reports missing or incompatible tools with install guidance. Should be idempotent and fast (no side effects -- detection only, not installation). |
-| Per-module workspace isolation | When generating multiple modules (ALU, RegFile, Decoder), their artifacts must not collide. The current flat `generated/` and `sim/` directories cannot handle sequential multi-module work without manual cleanup. | High | compile.sh, lint.sh, simulate.sh | Requires `workspace/<ModuleName>/` structure with spec, generated, sim subdirectories. All scripts must accept workspace path parameters or environment variables. This is the highest-complexity table-stakes item because it touches every script. |
-| Spec file as inter-stage contract (Hybrid Option C) | Pipeline stages need to communicate structured data (module name, ports, operations). Currently this data lives only in conversation context, which breaks when running commands standalone. PROJECT.md specifies "Hybrid spec-file communication" as a target. | Med | Workspace isolation, requirement-parser agent | JSON spec file written to `workspace/<ModuleName>/spec.json`. Downstream stages (generate-chisel, testbench, debug) read it from disk rather than depending on conversation history. Simple stages (compile, lint, simulate) do not need the spec -- they work on files directly. |
-| Help and command discoverability | Users must know what commands are available and what arguments they accept. | Low | Skill frontmatter | Claude Code provides this natively via `/` autocomplete when skills have good `description` and `argument-hint` frontmatter fields. No custom help command needed -- the platform handles discovery. Each skill's description should be clear enough that Claude can also invoke it automatically when relevant. |
-| Consistent error reporting across commands | Each standalone command must produce clear, structured error output that a user (or the orchestrator generate skill) can act on. When lint fails, the output must be parseable to determine what to fix. | Low | All commands | Standardize on: exit code 0 = pass, non-zero = fail. Stdout contains structured results. Already partially done in v1.0 scripts. Formalize the convention across all skills and scripts. |
-| Backward-compatible workspace layout | The existing flat `generated/` and `sim/` directories must still work for users who invoke the old-style pipeline without explicitly naming a workspace. | Low | Workspace isolation | Default workspace for unnamed modules falls back to the legacy flat structure. A `--workspace` argument or module name triggers the per-module isolation. Ensures v1.0 muscle memory still works. |
+| # | Feature | Why Expected | Complexity | Dependencies | Notes |
+|---|---------|-------------|------------|--------------|-------|
+| T1 | **Error type classification** | 满分要求: "流程失败自动诊断错误类型（时序违例、拥塞、DRC 等）" | Med | Existing `run_stage` stderr + `get_report` metrics | Parse stage failure output to classify into: timing violation (WNS < 0), routing congestion (`[ERROR GRT-0118]` or high overflow), DRC violations (violation count > 0), synthesis failure (yosys error), setup/hold violation (negative slack in specific paths), max slew/cap/fanout violations. Must handle both exit-code failures AND "succeeded but with violations" cases. |
+| T2 | **Error-type-specific parameter retry** | 满分要求: "按错误类型实施参数重试（调整 PLACE_DENSITY、CLOCK_PERIOD）" | High | T1 (diagnosis), existing `generate_config` tool | Each error type maps to specific parameter adjustments. Regenerate config.mk/SDC with new parameters, clean affected stages, re-run from the earliest affected stage. Max 3 retry rounds per error type. Must avoid infinite loops. |
+| T3 | **Multi-round QoR comparison** | 满分要求: "支持多轮 QoR 优化，对比不同配置结果" | Med | T2 (multiple successful runs) | Track each run's configuration + PPA results. Display side-by-side comparison table showing run number, parameters changed, and resulting metrics. Highlight best run for each metric category. |
+
+---
+
+## Table Stakes -- Detailed Specification
+
+### T1: Error Type Classification
+
+**Error taxonomy for ORFS stages:**
+
+| Error Type | Detection Method | Affected Stages | Confidence |
+|-----------|-----------------|-----------------|------------|
+| **Timing violation (setup)** | WNS < 0 in finish/route get_report metrics | route, finish | HIGH -- WNS is directly reported |
+| **Timing violation (hold)** | Hold slack < 0 in timing report | cts, route | MEDIUM -- requires parsing raw report text |
+| **Routing congestion** | stderr contains `[ERROR GRT-0118]` or `Routing congestion too high` | route | HIGH -- distinctive error message |
+| **DRC violations** | `violations > 0` in route get_report metrics | route, finish | HIGH -- directly reported |
+| **Synthesis failure** | `run_stage` returns `success: false` for synth stage | synth | HIGH -- exit code based |
+| **Max slew/cap/fanout** | stderr contains `max slew violation` / `max capacitance violation` / `max fanout violation` | place, cts, route | MEDIUM -- log pattern matching |
+| **Placement density overflow** | stderr contains `placement overflow` or `not enough sites` | place | MEDIUM -- log pattern matching |
+| **Timeout** | `run_stage` returns stderr `"Process timed out"` | any | HIGH -- existing timeout detection |
+
+**Implementation approach:** Parse both `run_stage` stderr AND `get_report` metrics after each stage. Return a structured diagnosis object:
+
+```typescript
+interface Diagnosis {
+  error_type: 'timing_setup' | 'timing_hold' | 'congestion' | 'drc' | 'synthesis' | 'slew_cap_fanout' | 'placement_overflow' | 'timeout' | 'unknown';
+  stage: string;
+  severity: 'critical' | 'warning';
+  details: string;       // human-readable description
+  suggested_action: string; // what parameter to adjust
+}
+```
+
+**"Succeeded but with violations" handling:** Even when `run_stage` returns `success: true`, check metrics:
+- After route: if `violations > 0`, classify as DRC warning
+- After finish: if `WNS < 0`, classify as timing violation (the flow "completed" but timing is not met)
+- This is the most common case -- ORFS does not always fail on timing violations, it completes and reports them
+
+### T2: Error-Type-Specific Parameter Retry
+
+**Parameter adjustment strategies per error type:**
+
+| Error Type | Parameter to Adjust | Adjustment Strategy | Restart From Stage | Max Retries |
+|-----------|-------------------|--------------------|--------------------|-------------|
+| **Timing (setup)** | `clock_period_ns` | Increase by 50% per attempt (existing pattern) | synth (clock period affects synthesis) | 3 |
+| **Timing (hold)** | `HOLD_SLACK_MARGIN` | Set to 0.1ns, then 0.2ns, then 0.3ns | cts (hold repair happens post-CTS) | 3 |
+| **Routing congestion** | `PLACE_DENSITY` | Decrease by 0.1 per attempt (e.g., 0.6 -> 0.5 -> 0.4) | place (density affects placement) | 3 |
+| **Routing congestion (severe)** | `CORE_UTILIZATION` | Decrease by 10 per attempt (e.g., 40 -> 30 -> 20) | floorplan (changes die size) | 3 |
+| **DRC violations** | `DETAILED_ROUTE_END_ITERATION` | Increase from 64 to 128, then 256 | route | 2 |
+| **Max slew/cap** | `SETUP_SLACK_MARGIN` | Set to -0.1ns (allow more repair iterations) | place | 2 |
+| **Placement overflow** | `CORE_UTILIZATION` | Decrease by 10 per attempt | floorplan | 3 |
+
+**Retry workflow:**
+1. Diagnose error type (T1)
+2. Look up adjustment strategy for that error type
+3. Call `generate_config` with adjusted parameters (existing MCP tool already accepts `clock_period_ns` and `core_utilization`)
+4. For parameters not in `generate_config` (PLACE_DENSITY, HOLD_SLACK_MARGIN, etc.): append to config.mk directly via Write tool
+5. Clean stages from restart point onward (call `make clean_<stage>` via Bash or new MCP tool)
+6. Re-run stages from restart point
+7. Re-diagnose; if same error persists after max retries, report failure with all attempts
+
+**Key insight:** The existing `generate_config` MCP tool only accepts `clock_period_ns` and `core_utilization`. Additional parameters (PLACE_DENSITY, HOLD_SLACK_MARGIN, DETAILED_ROUTE_END_ITERATION) need to be either:
+- Option A: Added as optional parameters to `generate_config` (requires MCP tool update)
+- Option B: Appended to config.mk after generation via file editing (no MCP change needed)
+
+**Recommendation: Option A** -- extend `generate_config` to accept additional optional parameters. Keeps all config generation in one place. The config.mk template already uses `?=` for some values (like TNS_END_PERCENT), so adding more is straightforward.
+
+### T3: Multi-Round QoR Comparison
+
+**Run tracking data structure:**
+
+```typescript
+interface RunRecord {
+  run_number: number;
+  config: {
+    clock_period_ns: number;
+    core_utilization: number;
+    place_density: number;
+    // any other adjusted parameters
+  };
+  trigger: string;  // 'initial' | 'timing_retry' | 'congestion_retry' | etc.
+  metrics: {
+    wns: number;
+    tns: number;
+    total_power_uw: number;
+    area_um2: number;
+    cell_count: number;
+    drc_violations: number;
+    utilization_pct: number;
+  };
+  timing_met: boolean;
+  drc_clean: boolean;
+}
+```
+
+**Comparison table format:**
+
+```
+=== QoR Comparison: ALU8 (3 runs) ===
+
+| # | Trigger       | Clock(ns) | Density | Util | WNS(ns) | TNS(ns) | Power(uW) | Area(um2) | DRC | Status |
+|---|---------------|-----------|---------|------|---------|---------|-----------|-----------|-----|--------|
+| 1 | initial       | 10.0      | 0.60    | 40%  | -0.23   | -1.45   | 45.2      | 1234      |  0  | TIMING |
+| 2 | timing_retry  | 15.0      | 0.60    | 40%  |  0.15   |  0.00   | 38.1      | 1234      |  0  | PASS   |
+| 3 | timing_retry  | 22.5      | 0.60    | 40%  |  2.34   |  0.00   | 32.5      | 1234      |  0  | PASS   |
+
+Best timing:  Run 3 (WNS = 2.34 ns)
+Best power:   Run 3 (32.5 uW)
+Best area:    Run 1 (1234 um2)
+Recommended:  Run 2 (timing met with tightest clock period)
+```
+
+**Selection heuristic:** Recommend the run with the tightest clock period that still meets timing (WNS >= 0) and has zero DRC violations. This maximizes performance while ensuring design closure.
+
+---
 
 ## Differentiators
 
-Features that set the plugin apart from manual EDA workflows. Not expected, but valuable.
+Features that go beyond the rubric requirements. Not required for 满分 but demonstrate deeper understanding.
 
-| Feature | Value Proposition | Complexity | Depends On | Notes |
-|---------|-------------------|------------|------------|-------|
-| Intelligent module name routing | When a user says `/chip-agent:lint ALU`, the plugin automatically resolves the module name to its workspace path, finds the Verilog files, and runs lint. No explicit path arguments needed. | Med | Workspace isolation, spec file | Scan `workspace/*/spec.json` to resolve module names. Fall back to asking if ambiguous (multiple workspaces or no match). |
-| Spec-aware failure recovery | When lint or simulation fails, the orchestrator re-reads the spec from disk and only re-invokes the failing stage plus its downstream stages, rather than restarting from NL parsing. | Med | Spec file contract | The testbench-generator agent reads `spec.json` from the workspace. The orchestrator tracks which stages succeeded and resumes from the first failure. |
-| Machine-readable environment capability output | `/chip-agent:initialize` writes an `env.json` with structured tool versions and boolean capabilities (can_compile, can_lint, can_simulate). Other commands can read it to gracefully degrade (e.g., skip lint if Verilator is not found, with a warning). | Low | Initialize command | JSON file at project root (`.chipagent/env.json` or `workspace/env.json`). Simple schema: tool name, version, path, satisfies-minimum boolean. |
-| Incremental build skip | Skip sbt compilation entirely if the Chisel source file has not changed since the last successful build (comparing file modification times). sbt already does incremental compilation internally, but the JVM startup alone takes 5-10 seconds -- skipping the entire invocation saves real time. | Med | Workspace isolation | Compare `.scala` source mtime against `generated/*.v` mtime. If Verilog is newer, skip `compile.sh`. This is a script-level optimization, not application-level caching. |
-| Module registry listing | `/chip-agent:list` scans workspaces and shows all modules with their current verification status (parsed, compiled, lint-passed, sim-passed) based on which artifacts exist on disk. | Low | Workspace isolation | Filesystem presence IS the status: `spec.json` = parsed, `*.v` = compiled, `lint-warnings.log` = lint-ran, `sim_result.log` = simulated. No database or state file needed. |
-| Debug failure analysis | `/chip-agent:debug <ModuleName>` reads simulation failure logs and cross-references them with the spec and Chisel source to suggest targeted fixes, linking Verilator error output back to the original specification. | Med | Workspace isolation, simulation logs | New agent that reads `workspace/<Module>/sim/logs/sim_result.log`, the spec, and the Chisel source. Produces a diagnosis with specific fix suggestions. |
-| Parallel multi-module linting | When the workspace contains multiple completed modules, lint all of them concurrently rather than sequentially. | Low | Workspace isolation, lint command | Each module's Verilog is in its own `workspace/<Module>/generated/` directory. Lint runs are independent and can execute in parallel. |
+| # | Feature | Value Proposition | Complexity | Dependencies | Notes |
+|---|---------|-------------------|------------|--------------|-------|
+| D1 | **MCP `clean_stage` tool** | Clean specific stage outputs to enable selective re-run without full `clean_all` | Low | Existing MCP server | `make clean_<stage>` via ORFS. Without this, retry must re-run ALL stages from scratch, wasting 5-10 min per attempt. Critical for efficient retry. |
+| D2 | **Cascading stage clean** | When retrying from stage N, automatically clean stages N through finish | Low | D1 | ORFS stages are dependent -- cleaning "place" requires also cleaning cts, route, finish. Automate this cascade. |
+| D3 | **Extend `generate_config` with tuning params** | Add PLACE_DENSITY, HOLD_SLACK_MARGIN, SETUP_SLACK_MARGIN, DETAILED_ROUTE_END_ITERATION as optional params | Low | Existing `generate_config` tool | Keeps all config generation in MCP tool instead of file-editing workarounds. |
+| D4 | **Run history persistence** | Save run records to `workspace/pnr/run_history.json` for cross-session comparison | Low | T3 | Enables comparing runs across separate `/chip-agent:pnr` invocations, not just within one session. |
+| D5 | **metadata.json extraction** | Read ORFS-generated metadata.json for comprehensive metrics instead of individual report parsing | Low | Existing MCP tools | ORFS generates `metadata-<design>-base.json` after finish stage with ALL metrics in METRICS2.1 JSON format. More reliable than individual report file parsing. |
+| D6 | **Congestion heatmap reference** | After routing, note the path to `final_congestion.webp` visualization in the report | Low | Finish stage complete | ORFS auto-generates visualization images. Referencing them helps users understand congestion issues. |
+| D7 | **Pareto-optimal run selection** | Identify Pareto-optimal runs across power/performance/area tradeoff space | Med | T3 (multiple runs) | Instead of simple "best per metric", identify runs that are not dominated on any axis. More sophisticated recommendation. |
+
+---
 
 ## Anti-Features
 
-Features to explicitly NOT build in v1.1. These are tempting but counterproductive.
+Features to explicitly NOT build. These would waste time or cause problems.
 
-| Anti-Feature | Why Avoid | What to Do Instead |
-|--------------|-----------|-------------------|
-| Custom help command | Claude Code already provides `/` autocomplete, skill descriptions, and argument hints. Building a custom `/chip-agent:help` duplicates platform functionality and adds maintenance burden. | Write clear `description` and `argument-hint` frontmatter for each skill. Let Claude Code's native discovery handle the rest. |
-| GUI or web dashboard | Out of scope per PROJECT.md constraints. CLI-only through Claude Code. A dashboard adds enormous complexity without matching the conversational workflow. | Use structured terminal output with clear formatting. The report stage already produces a clean text summary. |
-| Cross-module dependency graph | Tracking inter-module dependencies ("RegFile depends on ALU") across workspaces is build-system territory (FuseSoC, Chipyard). ChipAgent generates modules; sbt handles Scala-level compilation dependencies. | Let sbt resolve Scala compilation dependencies naturally. Top modules pull in sub-modules via Chisel's `Module(new SubModule)` syntax. Document this rather than reimplementing it. |
-| Persistent state machine across sessions | Tracking "ALU is at lint stage, RegFile is at simulate stage" introduces cross-session state management. Claude Code conversations are stateless between sessions. Persisted state creates synchronization problems. | Use filesystem presence as implicit state: `spec.json` exists = parsed, `*.v` exists = compiled, `sim_result.log` exists = simulated. The filesystem IS the state machine. No database, no state file, no synchronization bugs. |
-| Interactive step-by-step pipeline mode | Pausing at every stage for confirmation (beyond the existing Step 1.5 spec confirmation) adds friction without value. The 3-attempt auto-fix already handles most failures automatically. | Keep the confirm-once-then-run-to-completion pattern from v1.0. Standalone commands provide manual control when users want to inspect intermediate results. |
-| Plugin self-update mechanism | npm handles updates via `npm update chip-agent`. Building custom update logic reinvents package management. | Bump `version` in `plugin.json` and `package.json`. npm distribution handles the rest. |
-| File watch / auto-re-run mode | Automatically re-running pipeline stages when source files change sounds useful but creates infinite loops with the existing PostToolUse hook (this nearly happened in v1.0 with the compile hook). | Keep explicit invocation via slash commands. The existing PostToolUse hook on Write/Edit for compile.sh is the right level of automation -- it triggers on agent-written files, not on all file changes. |
-| Sophisticated caching (hash-based, content-addressable) | sbt already has incremental compilation. Verilator compilation is fast (seconds). Adding a hash-based cache layer adds complexity far exceeding the time savings. | Use simple file mtime comparison for skip-if-unchanged checks. If the output file exists and is newer than the input, skip the stage. No cache invalidation logic needed. |
-| Agent teams / parallel pipeline stages | Claude Code supports agent teams, but the pipeline stages are inherently sequential (compile before lint, lint before simulate). Parallelizing independent modules is simple shell-level parallelism, not agent-team orchestration. | For multi-module parallelism, use simple script-level `&` or `parallel`. Save agent teams for genuinely independent analytical tasks. |
+| # | Anti-Feature | Why Avoid | What to Do Instead |
+|---|-------------|-----------|-------------------|
+| A1 | **AutoTuner integration** | ORFS AutoTuner (Ray-based hyperparameter tuning) is a heavy ML framework requiring Ray, NEVERGRAD, etc. Massive dependency for marginal benefit on small designs. | Use simple rule-based parameter adjustment (T2). For ALU-class designs, 3 retry rounds are sufficient. |
+| A2 | **RTL modification for timing closure** | Synthesis failures or deep timing violations may require RTL changes. This crosses the RTL/backend boundary and is explicitly out of scope (PROJECT.md: "No synthesis retry"). | Report synthesis failures as unrecoverable. Suggest user modify RTL and re-run. |
+| A3 | **Multi-corner STA** | Out of scope per PROJECT.md. Single typical corner is sufficient. | Use single corner (sky130hd typical lib). |
+| A4 | **Parallel multi-config exploration** | Running multiple ORFS flows simultaneously with different configs. Requires container orchestration complexity. | Run configs sequentially, track results, compare after all complete. |
+| A5 | **User-interactive parameter selection** | Prompting user mid-flow to choose retry parameters. Breaks "no human in the loop" principle. | Fully automatic diagnosis and retry. Present comparison table only at the end. |
+| A6 | **Exhaustive parameter sweep** | Trying all combinations of clock period, density, utilization, etc. Combinatorial explosion (3^3 = 27 runs at ~5 min each = 2+ hours). | Use error-type-directed single-parameter adjustment. Only change the parameter relevant to the diagnosed error. |
+| A7 | **Custom Tcl script injection** | Allowing users to inject custom OpenROAD Tcl commands for optimization. Breaks the ORFS make flow abstraction. | All tuning via config.mk variables only, which ORFS Makefile respects. |
+
+---
 
 ## Feature Dependencies
 
 ```
-/chip-agent:initialize  (no dependencies -- runs independently, writes env.json)
-
-Workspace Isolation Convention (directory structure + script parameter changes)
-  |
-  +-- Spec File Contract (spec.json as inter-stage communication)
-  |     |
-  |     +-- /chip-agent:parse  (NL input -> spec.json in workspace)
-  |     |     |
-  |     |     +-- /chip-agent:generate-chisel  (spec.json -> .scala source)
-  |     |           |
-  |     |           +-- /chip-agent:compile  (.scala -> .v in workspace/generated/)
-  |     |                 |
-  |     |                 +-- /chip-agent:lint  (.v files -> lint pass/fail)
-  |     |                 |
-  |     |                 +-- /chip-agent:testbench  (spec.json + .v -> .cpp testbench)
-  |     |                       |
-  |     |                       +-- /chip-agent:simulate  (.v + .cpp -> sim_result.log)
-  |     |                             |
-  |     |                             +-- /chip-agent:report  (sim_result.log -> formatted output)
-  |     |
-  |     +-- /chip-agent:debug  (spec.json + sim_result.log -> diagnosis)
-  |
-  +-- /chip-agent:list  (scans workspace directories -> module status table)
-
-/chip-agent:generate  (orchestrator -- invokes the full chain above sequentially)
-  Depends on: ALL standalone commands
-  Preserves: Step 1.5 user confirmation, 3-attempt auto-fix for lint and sim
+Existing v1.1.5 pipeline
+    |
+    v
+T1 (error classification) -----> T2 (parameter retry)
+    |                                  |
+    |                                  v
+    |                          D1 (clean_stage tool)
+    |                          D2 (cascading clean)
+    |                          D3 (extend generate_config)
+    |                                  |
+    |                                  v
+    +------------------------------> T3 (QoR comparison)
+                                       |
+                                       v
+                                D4 (run history persistence)
+                                D7 (Pareto selection)
 ```
 
-Critical path for implementation: Workspace Isolation -> Spec File Contract -> Script Parameterization -> Standalone Skills -> Orchestrator Refactor.
+Key ordering constraints:
+- T1 (diagnosis) must exist before T2 (retry) can make informed parameter decisions
+- T2 (retry) produces multiple runs, which T3 (comparison) needs
+- D1 (clean_stage) is highly desirable before T2, otherwise retry re-runs all 6 stages
+- D3 (extend generate_config) is highly desirable before T2, otherwise config editing is awkward
+- T3 can display results even from a single run (comparison with "no change" baseline)
 
-## Workspace Directory Structure
+**Critical path for implementation:** D1 + D3 -> T1 -> T2 -> T3
 
-Based on research of EDA workspace isolation patterns (FuseSoC build trees with separate `work_root`, Chipyard per-generator directory layout, Verilator `--Mdir` for per-module build isolation):
+---
 
-```
-workspace/
-  <ModuleName>/                    # Per-module isolation boundary
-    spec.json                      # Inter-stage contract (JSON from parser)
-    generated/                     # Verilog output (--target-dir per module)
-      <ModuleName>.v
-      <ModuleName>.sv
-      chisel-warnings.vlt          # Verilator waiver file if needed
-      lint-warnings.log
-    sim/                           # Simulation artifacts
-      tb_<ModuleName>.cpp          # C++ testbench
-      obj_dir/                     # Verilator build (isolated via --Mdir)
-        V<ModuleName>              # Simulation binary
-        V<ModuleName>.mk
-      logs/
-        sim_result.log             # Verification results
-```
+## Error Type Detail: ORFS Stage Failure Signatures
 
-Key design decisions:
-- **Chisel source stays in `chisel-project/src/main/scala/chipagent/`** because sbt compilation requires a single project root with a single `build.sbt`. Cannot split Scala sources across workspace directories. The workspace is for outputs and metadata, not Scala source.
-- **`generated/` uses `--target-dir workspace/<Module>/generated/`** to isolate Verilog output per module, overriding the default flat `generated/` directory.
-- **`sim/obj_dir/` uses `--Mdir workspace/<Module>/sim/obj_dir/`** to isolate Verilator build artifacts per module, preventing `V<ModuleName>.mk` collisions.
-- **Cleanup is `rm -rf workspace/<ModuleName>/`** -- simple and complete. No partial cleanup needed.
-- **Legacy compatibility**: When no module name is specified, fall back to the existing flat `generated/` and `sim/` directories. This preserves v1.0 behavior for simple single-module workflows.
+**These are the specific patterns to match in `run_stage` stderr and `get_report` metrics.**
 
-## Slash Command Naming
+### Synthesis Stage (synth)
+| Pattern | Meaning |
+|---------|---------|
+| `ERROR: .*can't open file` | Missing Verilog input |
+| `ERROR: .*syntax error` | RTL syntax error (unrecoverable) |
+| exit_code != 0 | General synthesis failure (unrecoverable -- needs RTL fix) |
 
-Based on Claude Code plugin conventions (kebab-case names, `plugin-name:command-name` namespacing for plugins, skills as directories with `SKILL.md`):
+### Floorplan Stage
+| Pattern | Meaning |
+|---------|---------|
+| `not enough sites` | Die area too small for cell count -- decrease CORE_UTILIZATION |
+| `No valid sites` | Floorplan impossible -- decrease CORE_UTILIZATION significantly |
 
-| Command | Skill Path | Purpose | Needs Agent | disable-model-invocation |
-|---------|-----------|---------|-------------|--------------------------|
-| `/chip-agent:initialize` | `skills/initialize/SKILL.md` | Environment detection and validation | No | true (manual only) |
-| `/chip-agent:parse` | `skills/parse/SKILL.md` | NL description to JSON spec | Yes (requirement-parser) | true |
-| `/chip-agent:generate-chisel` | `skills/generate-chisel/SKILL.md` | JSON spec to Chisel source | Yes (chisel-generator) | true |
-| `/chip-agent:compile` | `skills/compile/SKILL.md` | Chisel to Verilog via sbt | No (script wrapper) | true |
-| `/chip-agent:lint` | `skills/lint/SKILL.md` | Verilator lint check | No (script wrapper) | true |
-| `/chip-agent:testbench` | `skills/testbench/SKILL.md` | Generate C++ testbench | Yes (testbench-generator) | true |
-| `/chip-agent:simulate` | `skills/simulate/SKILL.md` | Run Verilator simulation | No (script wrapper) | true |
-| `/chip-agent:report` | `skills/report/SKILL.md` | Format verification report | No (text formatting) | true |
-| `/chip-agent:generate` | `skills/generate/SKILL.md` | Full pipeline orchestrator | Yes (delegates to above) | true |
-| `/chip-agent:debug` | `skills/debug/SKILL.md` | Analyze simulation failures | Yes (new debug agent) | true |
-| `/chip-agent:list` | `skills/list/SKILL.md` | Show workspace modules | No (filesystem scan) | true |
+### Placement Stage (place)
+| Pattern | Meaning |
+|---------|---------|
+| `Placement overflow` | Cells don't fit -- decrease PLACE_DENSITY or CORE_UTILIZATION |
+| `cannot place` | Hard placement failure |
 
-All commands use `disable-model-invocation: true` because they have side effects (running builds, writing files) and should only be invoked explicitly by the user or by the orchestrator skill. Claude should not autonomously decide to compile or simulate.
+### CTS Stage (cts)
+| Pattern | Meaning |
+|---------|---------|
+| `no clock found` | Design has no clock (should have been detected earlier as combinational) |
+| hold slack violations in report | Hold timing issues -- adjust HOLD_SLACK_MARGIN |
 
-Migration note: The existing `skills/generate.md` (flat file in the legacy commands format) should migrate to `skills/generate/SKILL.md` (directory with SKILL.md) to follow the recommended skills format and support future addition of supporting files (e.g., pipeline stage templates, reference documentation).
+### Route Stage (route)
+| Pattern | Meaning |
+|---------|---------|
+| `[ERROR GRT-0118]` or `Routing congestion too high` | Congestion -- decrease PLACE_DENSITY |
+| `violations > 0` in DRC report | DRC issues -- increase DETAILED_ROUTE_END_ITERATION |
 
-## Environment Detection Feature Spec
+### Finish Stage (finish)
+| Pattern | Meaning |
+|---------|---------|
+| WNS < 0 in metrics | Setup timing violation -- increase clock period |
+| TNS < -threshold | Widespread timing issues -- increase clock period more aggressively |
 
-`/chip-agent:initialize` detects and reports system readiness without installing anything.
+---
 
-| Check | Detection Method | Required For | Minimum Version |
-|-------|-----------------|-------------|-----------------|
-| Java JDK | `java -version 2>&1` | Compilation | 11+ |
-| sbt | `sbt --version 2>&1` or read `project/build.properties` | Compilation | 1.10+ |
-| Scala | Read `build.sbt` scalaVersion setting (managed by sbt) | Compilation | 2.13.10 exactly |
-| Verilator | `verilator --version 2>&1` | Lint + simulation | 5.008+ |
-| Make | `make --version 2>&1` | Simulation (builds Verilator model) | Any |
-| g++ / C++ compiler | `g++ --version 2>&1` or `c++ --version 2>&1` | Simulation (compiles testbench) | C++17 support |
-| firtool | Auto-managed by Chisel 3.6.x firtool-resolver | Informational only | N/A |
+## Parameters Available in Existing generate_config Tool
 
-Output: Human-readable summary to stdout AND structured JSON to `.chipagent/env.json`:
+Currently `generate_config` accepts:
+- `module_name` (required)
+- `verilog_path` (required)
+- `workspace_dir` (required)
+- `clock_port` (optional, default "clock")
+- `clock_period_ns` (optional, default 10)
+- `core_utilization` (optional, default 40)
 
-```json
-{
-  "timestamp": "2026-03-19T12:00:00Z",
-  "tools": {
-    "java":      { "found": true, "version": "17.0.2", "path": "/usr/bin/java",      "satisfies": true },
-    "sbt":       { "found": true, "version": "1.10.7", "path": "/usr/bin/sbt",       "satisfies": true },
-    "scala":     { "found": true, "version": "2.13.10", "source": "build.sbt",       "satisfies": true },
-    "verilator": { "found": true, "version": "5.024",  "path": "/usr/bin/verilator", "satisfies": true },
-    "make":      { "found": true, "version": "4.3",    "path": "/usr/bin/make",      "satisfies": true },
-    "gpp":       { "found": true, "version": "11.4.0", "path": "/usr/bin/g++",       "satisfies": true }
-  },
-  "capabilities": {
-    "can_compile": true,
-    "can_lint": true,
-    "can_simulate": true
-  },
-  "overall": "ready"
-}
-```
+**Parameters to add for retry support:**
 
-Compared to the existing `setup.sh`: initialize is detection-only (no `sbt update`, no dependency download). It runs in seconds, not minutes. `setup.sh` remains available for actual first-time installation but is separate from detection.
+| Parameter | Type | Default | What It Controls |
+|-----------|------|---------|-----------------|
+| `place_density` | number (0.0-1.0) | 0.60 | Cell placement density -- lower = less congestion |
+| `setup_slack_margin` | number (ns) | 0 | Margin for setup repair -- negative allows underfixing |
+| `hold_slack_margin` | number (ns) | 0 | Margin for hold repair |
+| `detailed_route_end_iteration` | number | 64 | Max detail routing iterations -- more = fewer DRC |
+| `routing_layer_adjustment` | number (0.0-1.0) | 0.5 | Layer capacity adjustment -- lower = less congestion |
+
+These map directly to ORFS config.mk variables (use `export VAR = value` lines).
+
+---
 
 ## MVP Recommendation
 
-Prioritize for v1.1 in this order (based on dependency chain):
+Prioritize for 满分要求:
 
-1. **Workspace isolation directory structure + script parameterization** -- Foundation for everything else. Without per-module isolation, standalone commands have nowhere to read/write without collisions. Update `compile.sh`, `lint.sh`, `simulate.sh` to accept workspace path arguments.
-2. **Spec file as inter-stage contract** -- Required for standalone commands to work without conversation context. The parser writes `spec.json`; the generator and testbench agents read it.
-3. **Standalone slash commands (script-wrappers first)** -- Start with compile, lint, simulate, report (thin wrappers around parameterized scripts). Then add parse, generate-chisel, testbench (agent-backed, more complex).
-4. **Refactored `/chip-agent:generate` orchestrator** -- Once standalone commands work individually, refactor the generate skill to delegate to them in sequence. Verify the full pipeline still passes the ALU acceptance test.
-5. **`/chip-agent:initialize` environment detection** -- Low complexity, high first-run value. Can be built independently and in parallel with items 1-4.
+1. **D1** (clean_stage MCP tool) -- enables efficient retry without re-running all stages (15 min)
+2. **D3** (extend generate_config) -- adds tuning parameters to MCP tool (15 min)
+3. **T1** (error classification) -- parse stderr + metrics into structured diagnosis (1-2 hr)
+4. **T2** (parameter retry) -- error-to-parameter mapping + retry loop in pnr skill (2-3 hr)
+5. **T3** (QoR comparison) -- run tracking + comparison table formatting (1 hr)
 
-Defer to v1.2+:
-- **`/chip-agent:list` module registry**: Nice-to-have, not critical for pipeline function. Simple filesystem scan.
-- **`/chip-agent:debug` failure analysis**: Valuable but requires significant prompt engineering for root-cause mapping.
-- **Incremental build skip**: sbt already handles incremental compilation internally. The wrapper optimization saves 5-10 seconds of JVM startup -- a polish item.
-- **Intelligent module name routing**: Requires workspace scanning conventions to stabilize first.
-- **Workspace archival**: Useful for CI integration but not for the primary interactive workflow.
+**Total estimated effort:** 5-7 hours
+
+**Defer:** D2 (cascading clean -- can be done inline in skill), D4-D7 (nice-to-haves)
+
+**Implementation order rationale:**
+- D1 and D3 are infrastructure that T2 needs -- build them first
+- T1 is the diagnostic brain that T2 relies on for decisions
+- T2 is the core retry loop that produces multiple runs
+- T3 presents results from T2's multiple runs
+- All three T-features compose into a single enhanced `/chip-agent:pnr` skill
+
+---
 
 ## Sources
 
-- [Claude Code Plugins Reference](https://code.claude.com/docs/en/plugins-reference) -- Official plugin directory structure, skill format, namespacing with `plugin-name:command-name`, `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_DATA}` environment variables, hook event types (HIGH confidence)
-- [Claude Code Skills Documentation](https://code.claude.com/docs/en/skills) -- Skill frontmatter (`disable-model-invocation`, `allowed-tools`, `argument-hint`, `context: fork`), naming conventions (kebab-case), supporting files in skill directories, `$ARGUMENTS` substitution (HIGH confidence)
-- [Command Line Interface Guidelines](https://clig.dev/) -- CLI subcommand design best practices: verb-noun structure, consistent flags, discoverability (HIGH confidence)
-- [FuseSoC Documentation](https://fusesoc.readthedocs.io/en/stable/user/overview.html) -- EDA workspace isolation via build trees copied to separate directories, EDAM metadata as tool-agnostic interface between stages (HIGH confidence)
-- [Verilator Documentation -- Verilating](https://verilator.org/guide/latest/verilating.html) -- `--Mdir` for per-module build isolation, `--prefix` for naming control, `--binary`/`--exe` build modes (HIGH confidence)
-- [Chipyard Documentation](https://chipyard.readthedocs.io/en/stable/Customization/Incorporating-Verilog-Blocks.html) -- Per-generator project directory layout with separate `build.sbt` and source trees (MEDIUM confidence)
-- [Edalize EDA Tool Abstraction](https://github.com/olofk/edalize) -- `work_root` workspace isolation pattern, setup/build/run stage separation (MEDIUM confidence)
-- [Enforcing JVM Version in SBT](https://www.baeldung.com/scala/sbt-enforcing-jvm-version) -- Java version detection via `sys.props`, build-level enforcement patterns (MEDIUM confidence)
-- [Claude Code Customization Guide](https://alexop.dev/posts/claude-code-customization-guide-claudemd-skills-subagents/) -- Community patterns for organizing skills, agents, and hooks in plugins (MEDIUM confidence)
-
----
-*Feature landscape for: ChipAgent v1.1 -- Modular Slash Commands, Workspace Isolation, Environment Detection*
-*Researched: 2026-03-19*
-*Supersedes: v1.0 feature landscape from 2026-03-16*
+- [ORFS Flow Variables (tunable parameters)](https://openroad-flow-scripts.readthedocs.io/en/latest/user/FlowVariables.html)
+- [ORFS Flow Variables (GitHub)](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/master/docs/user/FlowVariables.md)
+- [ORFS Flow Tutorial](https://openroad-flow-scripts.readthedocs.io/en/latest/tutorials/FlowTutorial.html)
+- [ORFS Metrics Documentation](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/master/docs/contrib/Metrics.md)
+- [ORFS AutoTuner Instructions](https://openroad-flow-scripts.readthedocs.io/en/latest/user/InstructionsForAutoTuner.html)
+- [ORFS Routing Congestion Issue #1655](https://github.com/The-OpenROAD-Project/OpenROAD/issues/1655)
+- [METRICS2.1 Paper (IEEE CEDA)](https://vlsicad.ucsd.edu/Publications/Conferences/388/c388.pdf)
+- [OpenROAD MCP for AI timing closure](https://dev.to/luarss/openroad-mcp-let-ai-close-your-timing-47h6)
+- [ORFS DeepWiki](https://deepwiki.com/The-OpenROAD-Project/OpenROAD-flow-scripts)
+- [Automated QoR improvement with coding agents (arXiv)](https://arxiv.org/html/2601.06268)

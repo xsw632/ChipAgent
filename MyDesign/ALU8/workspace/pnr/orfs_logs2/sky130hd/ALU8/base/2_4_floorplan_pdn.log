@@ -1,0 +1,15 @@
+OpenROAD 26Q1-2927-gcef24f8894 
+Features included (+) or not (-): +GPU +GUI +Python
+This program is licensed under the BSD-3 license. See the LICENSE file for details.
+Components of this program may be licensed under more restrictive licenses which must be honored.
+[INFO ORD-0030] Using 20 thread(s).
+read_liberty /OpenROAD-flow-scripts/flow/platforms/sky130hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib
+read_db /workspace/results/sky130hd/ALU8/base/2_3_floorplan_tapcell.odb
+read_sdc /workspace/results/sky130hd/ALU8/base/2_1_floorplan.sdc
+source /OpenROAD-flow-scripts/flow/platforms/sky130hd/setRC.tcl
+[INFO PDN-0001] Inserting grid: grid
+Design area 1340 um^2 60% utilization.
+write_db /workspace/results/sky130hd/ALU8/base/2_4_floorplan_pdn.odb
+Elapsed time: 0:00.32[h:]min:sec. CPU time: user 0.29 sys 0.03 (100%). Peak memory: 117368KB.
+Log                        Elapsed/s Peak Memory/MB  sha1sum .odb [0:20)
+2_4_floorplan_pdn                  0            114 77de3954fcaffde8fb46

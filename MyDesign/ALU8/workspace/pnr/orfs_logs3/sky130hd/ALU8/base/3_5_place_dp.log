@@ -1,0 +1,102 @@
+OpenROAD 26Q1-2927-gcef24f8894 
+Features included (+) or not (-): +GPU +GUI +Python
+This program is licensed under the BSD-3 license. See the LICENSE file for details.
+Components of this program may be licensed under more restrictive licenses which must be honored.
+[INFO ORD-0030] Using 20 thread(s).
+read_liberty /OpenROAD-flow-scripts/flow/platforms/sky130hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib
+read_db /workspace/results/sky130hd/ALU8/base/3_4_place_resized.odb
+read_sdc /workspace/results/sky130hd/ALU8/base/2_floorplan.sdc
+source /OpenROAD-flow-scripts/flow/platforms/sky130hd/setRC.tcl
+[INFO DPL-0005] Max displacement: +/- 500 sites horizontally, +/- 100 rows vertically.
+Movements Summary
+---------------------------------------
+Total cells:                     202
+Diamond Move Success:            202 (100.00%)
+Diamond Move Failure:              0
+Rip-up and replace Success:        0 (  0.00% of diamond failures)
+Rip-up and replace Failure:        0
+Total Placement Failures:          0
+---------------------------------------
+Placement Analysis
+---------------------------------
+total displacement        491.5 u
+average displacement        2.0 u
+max displacement            6.8 u
+original HPWL            2768.4 u
+legalized HPWL           3231.6 u
+delta HPWL                   17 %
+
+Detailed placement improvement.
+[INFO DPL-0401] Setting random seed to 1.
+[INFO DPL-0402] Setting maximum displacement 5 1 to 13600 2720 units.
+[INFO DPL-0320] Collected 74 fixed cells.
+[INFO DPL-0318] Collected 202 single height cells.
+[INFO DPL-0321] Collected 0 wide cells.
+[INFO DPL-0322] Image (1380, 2720) - (57960, 57120)
+[INFO DPL-0310] Assigned 202 cells into segments.  Movement in X-direction is 0.000000, movement in Y-direction is 0.000000.
+[INFO DPL-0313] Found 0 cells in wrong regions.
+[INFO DPL-0315] Found 0 row alignment problems.
+[INFO DPL-0314] Found 0 site alignment problems.
+[INFO DPL-0311] Found 0 overlaps between adjacent cells.
+[INFO DPL-0312] Found 0 edge spacing violations and 0 padding violations.
+[INFO DPL-0303] Running algorithm for independent set matching.
+[INFO DPL-0300] Set matching objective is wirelength.
+[INFO DPL-0301] Pass   1 of matching; objective is 3.228871e+06.
+[INFO DPL-0302] End of matching; objective is 3.222749e+06, improvement is 0.19 percent.
+[INFO DPL-0303] Running algorithm for global swaps.
+[INFO DPL-0306] Pass   1 of global swaps; hpwl is 3.133612e+06.
+[INFO DPL-0306] Pass   2 of global swaps; hpwl is 3.125825e+06.
+[INFO DPL-0307] End of global swaps; objective is 3.125825e+06, improvement is 3.01 percent.
+[INFO DPL-0303] Running algorithm for vertical swaps.
+[INFO DPL-0308] Pass   1 of vertical swaps; hpwl is 3.094815e+06.
+[INFO DPL-0309] End of vertical swaps; objective is 3.094815e+06, improvement is 0.99 percent.
+[INFO DPL-0303] Running algorithm for reordering.
+[INFO DPL-0304] Pass   1 of reordering; objective is 3.090790e+06.
+[INFO DPL-0305] End of reordering; objective is 3.090790e+06, improvement is 0.13 percent.
+[INFO DPL-0303] Running algorithm for random improvement.
+[INFO DPL-0324] Random improver is using random generator.
+[INFO DPL-0325] Random improver is using hpwl objective.
+[INFO DPL-0326] Random improver cost string is (a).
+[INFO DPL-0332] End of pass, Generator random called 4040 times.
+[INFO DPL-0335] Generator random, Cumulative attempts 4040, swaps 730, moves  1305 since last reset.
+[INFO DPL-0333] End of pass, Objective hpwl, Initial cost 3.090790e+06, Scratch cost 3.001048e+06, Incremental cost 3.001048e+06, Mismatch? N
+[INFO DPL-0338] End of pass, Total cost is 3.001048e+06.
+[INFO DPL-0327] Pass   1 of random improver; improvement in cost is 2.90 percent.
+[INFO DPL-0332] End of pass, Generator random called 4040 times.
+[INFO DPL-0335] Generator random, Cumulative attempts 8080, swaps 1437, moves  2599 since last reset.
+[INFO DPL-0333] End of pass, Objective hpwl, Initial cost 3.001048e+06, Scratch cost 2.975756e+06, Incremental cost 2.975756e+06, Mismatch? N
+[INFO DPL-0338] End of pass, Total cost is 2.975756e+06.
+[INFO DPL-0327] Pass   2 of random improver; improvement in cost is 0.84 percent.
+[INFO DPL-0328] End of random improver; improvement is 3.721832 percent.
+[INFO DPL-0380] Cell flipping.
+[INFO DPL-0382] Changed 0 cell orientations for row compatibility.
+[INFO DPL-0383] Performed 67 cell flips.
+[INFO DPL-0384] End of flipping; objective is 2.858069e+06, improvement is 3.95 percent.
+[INFO DPL-0313] Found 0 cells in wrong regions.
+[INFO DPL-0315] Found 0 row alignment problems.
+[INFO DPL-0314] Found 0 site alignment problems.
+[INFO DPL-0311] Found 0 overlaps between adjacent cells.
+[INFO DPL-0312] Found 0 edge spacing violations and 0 padding violations.
+Detailed Improvement Results
+------------------------------------------
+Original HPWL             3231.6 u (    1715.9,     1515.7)
+Final HPWL                2855.1 u (    1443.9,     1411.2)
+Delta HPWL                 -11.7 % (     -15.9,       -6.9)
+
+[INFO DPL-0020] Mirrored 11 instances
+[INFO DPL-0021] HPWL before            2855.1 u
+[INFO DPL-0022] HPWL after             2854.3 u
+[INFO DPL-0023] HPWL delta               -0.0 %
+[INFO FLW-0012] Placement violations .
+estimate_parasitics -placement
+Report metrics stage 3, detailed place...
+No registers in design
+
+==========================================================================
+detailed place report_design_area
+--------------------------------------------------------------------------
+Design area 1578 um^2 51% utilization.
+write_db /workspace/results/sky130hd/ALU8/base/3_5_place_dp.odb
+Elapsed time: 0:00.37[h:]min:sec. CPU time: user 0.34 sys 0.03 (101%). Peak memory: 119608KB.
+Log                        Elapsed/s Peak Memory/MB  sha1sum .odb [0:20)
+3_5_place_dp                       0            116 52501aab904485d36c29

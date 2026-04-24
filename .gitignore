@@ -31,3 +31,5 @@ workspace/
 
 # Environment detection output (machine-specific, reproducible via /chip-agent:initialize)
 .chipagent/
+
+task2.md

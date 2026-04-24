@@ -133,6 +133,29 @@ describe("generateSdc", () => {
     });
     assert.ok(sdc.includes("[get_ports clk]"));
   });
+<<<<<<< HEAD
+=======
+
+  it("uses overrideModuleName in current_design", () => {
+    const sdc = generateSdc({
+      verilogContent: SEQUENTIAL_VERILOG,
+      clockPort: "clock",
+      clockPeriodNs: 10,
+      overrideModuleName: "ChipTop",
+    });
+    assert.ok(sdc.includes("current_design ChipTop"));
+  });
+
+  it("falls back to extracted name in current_design when no override", () => {
+    const sdc = generateSdc({
+      verilogContent: SEQUENTIAL_VERILOG,
+      clockPort: "clock",
+      clockPeriodNs: 10,
+      overrideModuleName: undefined,
+    });
+    assert.ok(sdc.includes("current_design Counter"));
+  });
+>>>>>>> main
 });
 
 const BASE_PARAMS = {
@@ -170,6 +193,25 @@ describe("generateConfigMk tuning parameters", () => {
     assert.ok(!config.includes("GPL_ROUTABILITY_DRIVEN"));
   });
 
+<<<<<<< HEAD
+=======
+  it("uses overrideModuleName when provided", () => {
+    const config = generateConfigMk({
+      ...BASE_PARAMS,
+      overrideModuleName: "ChipTop",
+    });
+    assert.ok(config.includes("DESIGN_NAME = ChipTop"));
+  });
+
+  it("falls back to extracted name when overrideModuleName is undefined", () => {
+    const config = generateConfigMk({
+      ...BASE_PARAMS,
+      overrideModuleName: undefined,
+    });
+    assert.ok(config.includes("DESIGN_NAME = Counter"));
+  });
+
+>>>>>>> main
   it("includes all three optional lines when all params provided", () => {
     const config = generateConfigMk({
       ...BASE_PARAMS,

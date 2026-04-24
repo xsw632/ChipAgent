@@ -1,77 +1,84 @@
-# Research Summary: ChipAgent v1.1 Modular Architecture
+# Research Summary: ChipAgent v1.2.0 Smart Retry & QoR Optimization
 
-**Domain:** Modular Slash Commands + Workspace Isolation for Hardware Generation Pipeline
-**Researched:** 2026-03-19
+**Domain:** EDA Backend Flow Automation -- error diagnosis, parameter retry, QoR optimization
+**Researched:** 2026-04-02
 **Overall confidence:** HIGH
 
 ## Executive Summary
 
-ChipAgent v1.0 ships a working end-to-end pipeline from natural language to simulation-verified Verilog, but the entire pipeline lives in a single monolithic skill file (generate.md, 170 lines) and all artifacts land in flat shared directories. This creates three concrete problems: (1) the full pipeline prompt consumes context window even when only one stage is executing, (2) per-module outputs collide (lint-warnings.log and sim_result.log are overwritten by each new module run), and (3) there is no way to run individual pipeline stages independently for debugging or iterative development.
+v1.2.0 adds intelligent failure diagnosis, error-type-based parameter retry, and multi-round QoR optimization to the existing v1.1.5 MCP-driven PnR pipeline. The core architectural decision is to add three new MCP tools (`diagnose_failure`, `clean_stage`, `qor_history`) and extend one existing tool (`generate_config`) while keeping all retry orchestration in the Skill layer. This preserves the existing separation of concerns: MCP tools are stateless data extractors/executors, the Skill (LLM) makes decisions.
 
-The v1.1 architecture decomposes generate.md into seven separate skills (generate, requirement-parser, chisel-generate, lint, testbench, simulate, initialize), introduces a `workspace/<Module>/` directory for per-module isolation of all pipeline artifacts, and updates all bash scripts to accept workspace paths while remaining backward-compatible with the original flat layout.
+The most important finding is that ORFS timing violations are NOT stage failures -- all 6 stages complete successfully even when WNS is negative. The Skill must perform a post-completion check on finish-stage WNS to detect timing violations. This is the most common "failure" mode for small Chisel modules on sky130hd and drives the retry loop design.
 
-The key architectural insight is that skills and agents serve different roles in Claude Code's plugin system. Agents are reusable capability definitions (system prompts + tool restrictions). Skills are user-invocable actions. The existing agents (requirement-parser, chisel-generator, testbench-generator) remain unchanged -- they are the "how." The new skills wrap these agents with workspace I/O conventions -- they are the "when" and "where." The spec.json file written to `workspace/<Module>/` is the inter-stage communication contract, replacing in-conversation JSON passing.
-
-The sbt constraint is the main architectural boundary: Chisel source files must remain in `chisel-project/src/main/scala/chipagent/` because sbt's source root is configured there. Only compilation outputs and simulation artifacts move into workspace/. Generate.scala already handles `--target-dir` and `--module` flags, so the Scala changes are minimal -- the real work is in script and skill modifications.
+Error-type-specific parameter adjustment follows a simple rule-based strategy: timing violations increase clock period by 50%, congestion decreases PLACE_DENSITY by 0.1, DRC decreases PLACE_DENSITY by 0.05, placement overflow decreases CORE_UTILIZATION by 10-15. These adjustments are computed deterministically by the `diagnose_failure` MCP tool and applied by the Skill via `generate_config` with override parameters. No ML, no AutoTuner, no additional dependencies needed.
 
 ## Key Findings
 
-**Stack:** No new dependencies. Same Chisel 3.6.1, sbt 1.10.7, Verilator 5.008+. Only structural changes to skills, scripts, and directory layout.
+**Stack:** No new dependencies. Extend existing MCP server with 3 new tools + modify 1 existing tool. All implemented in TypeScript with existing zod + MCP SDK.
 
-**Architecture:** Decompose into 7 skills with spec-file communication, workspace/ per-module isolation, backward-compatible scripts. See ARCHITECTURE.md for full details.
+**Architecture:** 3 new MCP tools (`diagnose_failure`, `clean_stage`, `qor_history`), 1 modified tool (`generate_config` with optional `place_density`, `gpl_timing_driven`, `gpl_routability_driven` params). Retry loop lives in Skill, not MCP server.
 
-**Critical pitfall:** The PostToolUse hook fires on ALL Write|Edit operations, including testbench .cpp files. This triggers unnecessary sbt compilation. Must be fixed with a wrapper script that checks file extension before invoking compile.sh.
+**Critical pitfall:** Timing violations are silent successes -- ORFS completes all stages, WNS < 0 only visible in finish report. Must check post-completion, not just on stage failure.
 
 ## Implications for Roadmap
 
 Based on research, suggested phase structure:
 
-1. **Workspace Foundation** - Modify scripts and Generate.scala to support workspace paths
-   - Addresses: Per-module isolation, script backward compatibility
-   - Avoids: Breaking existing manual script usage
-   - Dependencies: None (can start immediately)
+1. **Infrastructure tools (clean_stage + generate_config extension)** - Enables retry mechanics
+   - Addresses: Stage cleanup for re-runs, parameter override in config.mk
+   - Avoids: Full clean on every retry (saves 30-60s per round)
 
-2. **Skill Decomposition** - Create individual skill directories with SKILL.md files
-   - Addresses: Modular slash commands, independent stage execution
-   - Avoids: Monolithic context window waste
-   - Dependencies: Requires Phase 1 scripts to accept workspace paths
+2. **Diagnosis tool (diagnose_failure)** - Error classification engine
+   - Addresses: Automated error type detection from logs/reports/stderr
+   - Avoids: LLM parsing raw ORFS logs (token waste, inconsistent results)
 
-3. **Orchestrator + Hooks** - Rewrite generate as thin orchestrator, update hooks
-   - Addresses: End-to-end pipeline, hook efficiency
-   - Avoids: Hook triggering on non-Scala files
-   - Dependencies: Requires Phase 2 skills to exist for invocation
+3. **QoR persistence (qor_history)** - Run tracking
+   - Addresses: Cross-round comparison data storage
+   - Avoids: Loss of run data across sessions
 
-4. **Initialize Command + Cleanup** - Add environment detection, update docs
-   - Addresses: First-use experience, documentation accuracy
-   - Avoids: Users running pipeline without prerequisites
-   - Dependencies: Can run in parallel with Phase 3
+4. **Skill retry loop** - Wires everything together
+   - Addresses: Automated retry with diagnosis-driven parameter adjustment
+   - Avoids: Infinite loops (max 3 rounds), unnecessary re-runs (stage-aware restart)
+
+5. **QoR comparison + report update** - User-facing output
+   - Addresses: Multi-round comparison table, best-run recommendation
+   - Avoids: Raw data dump (formatted table with highlighted best metrics)
 
 **Phase ordering rationale:**
-- Scripts must accept workspace paths BEFORE skills can reference them
-- Individual skills must exist BEFORE the orchestrator can invoke them
-- Initialize is independent and can be built in parallel with later phases
-- Hook updates come last to avoid breaking the existing pipeline during development
+- Phases 1-3 are independent MCP tools (can be built in parallel)
+- Phase 4 depends on all three tool phases
+- Phase 5 depends on Phase 4 producing multiple rounds of data
 
 **Research flags for phases:**
-- Phase 1: Standard patterns, unlikely to need additional research
-- Phase 2: Verify CLAUDE_SKILL_DIR variable behavior in plugin skills (documented but should be tested)
-- Phase 3: The orchestrator skill invoking other skills requires careful testing -- Claude's skill invocation from within a skill needs validation
+- Phase 2 (diagnose_failure): Regex patterns for ORFS errors need validation against actual sky130hd log output. Flag for integration testing.
+- Phase 4 (Skill retry loop): Timing violation detection (WNS check after successful completion) is the trickiest part -- must handle both stage failures AND silent violations.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | No changes to underlying tech stack; proven in v1.0 |
-| Features | HIGH | Feature set is well-defined by PROJECT.md and milestone context |
-| Architecture | HIGH | Verified against official Claude Code docs (skills, plugins, subagents, hooks) |
-| Pitfalls | HIGH | Based on analysis of existing codebase + official hook documentation |
+| Stack | HIGH | No new dependencies, extending proven patterns |
+| Features | HIGH | task2 requirements explicit, ORFS parameters documented |
+| Architecture | HIGH | Clean separation: MCP tools = data, Skill = decisions. Verified against existing code patterns. |
+| Pitfalls | HIGH | ORFS error patterns documented in GitHub issues/discussions. Silent timing violation behavior verified from existing get_report code. |
 
 ## Gaps to Address
 
-- How exactly does Claude invoke one skill from within another skill? The official docs show skills as user-invocable or model-invocable, but the pattern of a skill programmatically invoking another skill (orchestrator pattern) needs phase-specific validation.
-- Whether `${CLAUDE_SKILL_DIR}` works correctly for plugin skills referencing scripts in sibling directories.
-- Testing the hook wrapper pattern (auto-compile.sh reading stdin JSON) in the actual Claude Code hook execution environment.
+- ORFS error regex patterns need validation against actual sky130hd ALU log output (Phase 2 integration test)
+- `GRT-0118` vs `GRT-0119` error codes for congestion -- need to check which code appears on current ORFS version
+- Hold violation detection: finish report parsing for hold slack not yet implemented in existing `get_report` -- may need extension
+- metadata.json: ORFS generates this at flow end with comprehensive metrics; could be an alternative data source for diagnosis but format needs verification
+
+## Sources
+
+- [ORFS Flow Variables](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/master/docs/user/FlowVariables.md)
+- [ORFS Tutorial](https://openroad-flow-scripts.readthedocs.io/en/latest/tutorials/FlowTutorial.html)
+- [OpenROAD Timing Discussions](https://github.com/The-OpenROAD-Project/OpenROAD/discussions/3608)
+- [OpenROAD DRC Discussions](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/discussions/745)
+- [ORFS Adding New Designs](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/master/docs/user/AddingNewDesign.md)
+- Existing codebase (verified 2026-04-02): mcp-server/tools/*.ts, skills/pnr/SKILL.md, agents/pnr-report-formatter.md
 
 ---
-*Research summary for: ChipAgent v1.1 -- Modular Slash Commands + Workspace Isolation*
-*Researched: 2026-03-19*
+
+*Research completed: 2026-04-02*
+*Ready for roadmap: yes*
