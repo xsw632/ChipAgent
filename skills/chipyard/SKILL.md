@@ -78,6 +78,8 @@ Config: $CONFIG
 Read `$PLUGIN_ROOT/.chipagent/env.json`. Extract:
 - `chipyard.path` -> `CHIPYARD_DIR`
 - `chipyard.riscv_path` -> `RISCV`
+- `chipyard.in_docker` -> `IN_DOCKER` (default `"false"` if absent)
+- `chipyard.docker_image` -> `CHIPYARD_IMAGE` (empty when `IN_DOCKER` is false)
 - `orfs.flow_path` -> `ORFS_FLOW_PATH`
 
 If `chipyard.installed` is not `true`, STOP with:
@@ -95,7 +97,13 @@ Call `mcp__chipagent-backend__check_environment` to verify ORFS/sky130hd readine
 
 Verify Chipyard directory:
 ```bash
-test -d "$CHIPYARD_DIR" && test -f "$CHIPYARD_DIR/build.sbt"
+if [ "$IN_DOCKER" = "true" ]; then
+  # CHIPYARD_DIR is a container path; verify by probing the image
+  docker run --rm --entrypoint=/bin/bash "$CHIPYARD_IMAGE" -c \
+    "test -d '$CHIPYARD_DIR' && test -f '$CHIPYARD_DIR/build.sbt'"
+else
+  test -d "$CHIPYARD_DIR" && test -f "$CHIPYARD_DIR/build.sbt"
+fi
 ```
 
 If invalid, STOP with clear error.
@@ -103,12 +111,22 @@ If invalid, STOP with clear error.
 ### Step 2 -- Validate Config Exists
 
 ```bash
-grep -r "class ${CONFIG}\b" "$CHIPYARD_DIR/generators/" --include="*.scala" -l
+if [ "$IN_DOCKER" = "true" ]; then
+  docker run --rm --entrypoint=/bin/bash "$CHIPYARD_IMAGE" -c \
+    "grep -r 'class ${CONFIG}\b' '$CHIPYARD_DIR/generators/' --include='*.scala' -l"
+else
+  grep -r "class ${CONFIG}\b" "$CHIPYARD_DIR/generators/" --include="*.scala" -l
+fi
 ```
 
 If not found, list available configs:
 ```bash
-grep -r "class \w\+Config extends Config" "$CHIPYARD_DIR/generators/chipyard/src/main/scala/config/" --include="*.scala" -h | sed 's/class /  - /;s/ extends.*//'
+if [ "$IN_DOCKER" = "true" ]; then
+  docker run --rm --entrypoint=/bin/bash "$CHIPYARD_IMAGE" -c \
+    "grep -r 'class \\w\\+Config extends Config' '$CHIPYARD_DIR/generators/chipyard/src/main/scala/config/' --include='*.scala' -h | sed 's/class /  - /;s/ extends.*//'"
+else
+  grep -r "class \w\+Config extends Config" "$CHIPYARD_DIR/generators/chipyard/src/main/scala/config/" --include="*.scala" -h | sed 's/class /  - /;s/ extends.*//'
+fi
 ```
 
 STOP with: `Config '<ConfigName>' not found. Available configs listed above.`
@@ -118,11 +136,28 @@ STOP with: `Config '<ConfigName>' not found. Available configs listed above.`
 Run Chipyard Verilog generation:
 
 ```bash
-cd "$CHIPYARD_DIR/sims/verilator" && \
-export RISCV="$CHIPYARD_DIR/.conda-env/riscv-tools" && \
-export JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8" && \
-export PATH="$CHIPYARD_DIR/.conda-env/bin:$PATH" && \
-make verilog CONFIG="$CONFIG" ENABLE_YOSYS_FLOW=1 2>&1 | tail -80
+if [ "$IN_DOCKER" = "true" ]; then
+  # Bind-mount a host scratch directory onto the container's generated-src dir
+  # so make verilog's outputs land on the host. After the run, Step 4-6 read
+  # these files using the same logic as the host-mode path.
+  HOST_GEN_ROOT="$PLUGIN_ROOT/.chipagent/chipyard-scratch/$CONFIG"
+  mkdir -p "$HOST_GEN_ROOT"
+  docker run --rm \
+    -v "$HOST_GEN_ROOT:$CHIPYARD_DIR/sims/verilator/generated-src" \
+    -w "$CHIPYARD_DIR/sims/verilator" \
+    --entrypoint=/bin/bash \
+    "$CHIPYARD_IMAGE" \
+    -c "export RISCV='$RISCV' && \
+        export JAVA_TOOL_OPTIONS='-Dfile.encoding=UTF-8' && \
+        export PATH='$CHIPYARD_DIR/.conda-env/bin:\$PATH' && \
+        make verilog CONFIG='$CONFIG' ENABLE_YOSYS_FLOW=1" 2>&1 | tail -80
+else
+  cd "$CHIPYARD_DIR/sims/verilator" && \
+  export RISCV="$CHIPYARD_DIR/.conda-env/riscv-tools" && \
+  export JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8" && \
+  export PATH="$CHIPYARD_DIR/.conda-env/bin:$PATH" && \
+  make verilog CONFIG="$CONFIG" ENABLE_YOSYS_FLOW=1 2>&1 | tail -80
+fi
 ```
 
 **Timeout:** 600000ms (10 minutes). Chipyard elaboration is slow.
@@ -132,12 +167,18 @@ make verilog CONFIG="$CONFIG" ENABLE_YOSYS_FLOW=1 2>&1 | tail -80
 **Error handling:**
 - `firtool: command not found` -> ensure `$CHIPYARD_DIR/.conda-env/bin` is in PATH
 - `RISCV is unset` -> export `RISCV=$CHIPYARD_DIR/.conda-env/riscv-tools`
-- sbt failure -> show error, suggest `cd $CHIPYARD_DIR && sbt --batch "compile"`
+- sbt failure -> show error, suggest `cd $CHIPYARD_DIR && sbt --batch "compile"` (or in docker mode, run `docker run --rm $CHIPYARD_IMAGE bash -c "cd $CHIPYARD_DIR && sbt --batch compile"`)
+- Docker mode `make verilog` exits non-zero -> print full docker output and hint `docker pull $CHIPYARD_IMAGE && docker system df` for diagnostics
+- Docker mode first run downloads sbt dependencies (~500MB) inside the container; this state is lost when the container exits since we use `--rm`. Subsequent runs repeat the cost. (Optional optimization, not implemented here: bind-mount `$HOME/.sbt` / `$HOME/.ivy2` / `$HOME/.cache/coursier` into the container.)
 
 ### Step 4 -- Locate Output Artifacts
 
 ```bash
-GEN_BASE="$CHIPYARD_DIR/sims/verilator/generated-src/chipyard.harness.TestHarness.$CONFIG"
+if [ "$IN_DOCKER" = "true" ]; then
+  GEN_BASE="$HOST_GEN_ROOT/chipyard.harness.TestHarness.$CONFIG"
+else
+  GEN_BASE="$CHIPYARD_DIR/sims/verilator/generated-src/chipyard.harness.TestHarness.$CONFIG"
+fi
 GEN_DIR="$GEN_BASE/gen-collateral"
 MEMS_CONF="$GEN_BASE/chipyard.harness.TestHarness.$CONFIG.mems.conf"
 ```

@@ -83,9 +83,14 @@ Write `~/.chipagent/workspace.json` with these fields:
   "docker_volumes": ["<PLUGIN_ROOT>:/workspace"],
   "docker_workdir": "/OpenROAD-flow-scripts/flow",
   "orfs_flow_path": "/OpenROAD-flow-scripts/flow",
-  "docker_results_dir": "<PLUGIN_ROOT>"
+  "docker_results_dir": "<PLUGIN_ROOT>",
+  "chipyard_docker_image": "ucbbar/chipyard-image:latest",
+  "chipyard_docker_workdir": "/chipyard",
+  "chipyard_riscv_path": "/chipyard/.conda-env/riscv-tools"
 }
 ```
+
+The `chipyard_docker_*` fields are read by `scripts/detect-env.sh` only when the host-side Chipyard probe fails AND `backend_mode=docker`. If the user sets `CHIPAGENT_CHIPYARD_IMAGE` / `CHIPAGENT_CHIPYARD_WORKDIR` / `CHIPAGENT_CHIPYARD_RISCV_PATH` env vars, those override these fields.
 
 **For `backend_mode = local`:**
 Write `~/.chipagent/workspace.json` with:

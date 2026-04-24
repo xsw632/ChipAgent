@@ -189,6 +189,46 @@ for candidate in "${RISCV_CANDIDATES[@]}"; do
   fi
 done
 
+# Docker fallback for Chipyard/RISCV: only runs when host probe missed AND
+# backend_mode=docker AND docker is available. Host-mode users are unaffected.
+CHIPYARD_IN_DOCKER="false"
+CHIPYARD_DOCKER_IMAGE_OUT=""
+if [ "$CHIPYARD_INSTALLED" != "true" ] && [ "$BACKEND_MODE" = "docker" ] && [ "$DOCKER_INSTALLED" = "true" ]; then
+  CHIPYARD_DOCKER_IMAGE="${CHIPAGENT_CHIPYARD_IMAGE:-}"
+  CHIPYARD_DOCKER_WORKDIR="${CHIPAGENT_CHIPYARD_WORKDIR:-}"
+  CHIPYARD_DOCKER_RISCV="${CHIPAGENT_CHIPYARD_RISCV_PATH:-}"
+
+  WORKSPACE_JSON="$HOME/.chipagent/workspace.json"
+  if command -v jq >/dev/null 2>&1 && [ -f "$WORKSPACE_JSON" ]; then
+    [ -z "$CHIPYARD_DOCKER_IMAGE"   ] && CHIPYARD_DOCKER_IMAGE=$(jq -r '.chipyard_docker_image // empty'   "$WORKSPACE_JSON" 2>/dev/null || true)
+    [ -z "$CHIPYARD_DOCKER_WORKDIR" ] && CHIPYARD_DOCKER_WORKDIR=$(jq -r '.chipyard_docker_workdir // empty' "$WORKSPACE_JSON" 2>/dev/null || true)
+    [ -z "$CHIPYARD_DOCKER_RISCV"   ] && CHIPYARD_DOCKER_RISCV=$(jq -r '.chipyard_riscv_path // empty'      "$WORKSPACE_JSON" 2>/dev/null || true)
+  fi
+  CHIPYARD_DOCKER_IMAGE="${CHIPYARD_DOCKER_IMAGE:-ucbbar/chipyard-image:latest}"
+  CHIPYARD_DOCKER_WORKDIR="${CHIPYARD_DOCKER_WORKDIR:-/chipyard}"
+  CHIPYARD_DOCKER_RISCV="${CHIPYARD_DOCKER_RISCV:-${CHIPYARD_DOCKER_WORKDIR}/.conda-env/riscv-tools}"
+
+  if docker image inspect "$CHIPYARD_DOCKER_IMAGE" >/dev/null 2>&1; then
+    PROBE_OUT=$(docker run --rm --entrypoint=/bin/bash "$CHIPYARD_DOCKER_IMAGE" -c "
+      [ -f '$CHIPYARD_DOCKER_WORKDIR/build.sbt' ] && \
+      [ -d '$CHIPYARD_DOCKER_WORKDIR/generators/chipyard/src/main/scala' ] && echo 'CHIPYARD_OK'
+      [ -f '$CHIPYARD_DOCKER_RISCV/bin/riscv64-unknown-elf-gcc' ] && echo 'RISCV_OK'
+    " 2>/dev/null || true)
+    if echo "$PROBE_OUT" | grep -q '^CHIPYARD_OK$'; then
+      CHIPYARD_INSTALLED="true"
+      CHIPYARD_DIR_DETECTED="$CHIPYARD_DOCKER_WORKDIR"
+      CHIPYARD_IN_DOCKER="true"
+      CHIPYARD_DOCKER_IMAGE_OUT="$CHIPYARD_DOCKER_IMAGE"
+    fi
+    if [ "$RISCV_INSTALLED" != "true" ] && echo "$PROBE_OUT" | grep -q '^RISCV_OK$'; then
+      RISCV_INSTALLED="true"
+      RISCV_PATH="$CHIPYARD_DOCKER_RISCV"
+    fi
+  else
+    echo "Chipyard docker image '$CHIPYARD_DOCKER_IMAGE' not found locally. Hint: docker pull $CHIPYARD_DOCKER_IMAGE" >&2
+  fi
+fi
+
 # Compute capability flags
 CAN_COMPILE="false"
 CAN_LINT="false"
@@ -285,6 +325,8 @@ if command -v jq >/dev/null 2>&1; then
     --argjson riscv_installed "$RISCV_INSTALLED" \
     --arg riscv_path "$RISCV_PATH" \
     --argjson can_chipyard "$CAN_CHIPYARD" \
+    --argjson chipyard_in_docker "$CHIPYARD_IN_DOCKER" \
+    --arg chipyard_docker_image "$CHIPYARD_DOCKER_IMAGE_OUT" \
     '{
       detected_at: $detected_at,
       tools: {
@@ -321,7 +363,9 @@ if command -v jq >/dev/null 2>&1; then
         installed: $chipyard_installed,
         path: $chipyard_path,
         riscv_installed: $riscv_installed,
-        riscv_path: $riscv_path
+        riscv_path: $riscv_path,
+        in_docker: $chipyard_in_docker,
+        docker_image: $chipyard_docker_image
       },
       backend_mode: $backend_mode,
       capabilities: {
@@ -372,7 +416,9 @@ else
     "installed": $CHIPYARD_INSTALLED,
     "path": "$(json_escape "$CHIPYARD_DIR_DETECTED")",
     "riscv_installed": $RISCV_INSTALLED,
-    "riscv_path": "$(json_escape "$RISCV_PATH")"
+    "riscv_path": "$(json_escape "$RISCV_PATH")",
+    "in_docker": $CHIPYARD_IN_DOCKER,
+    "docker_image": "$(json_escape "$CHIPYARD_DOCKER_IMAGE_OUT")"
   },
   "backend_mode": "$(json_escape "$BACKEND_MODE")",
   "capabilities": {
@@ -465,7 +511,11 @@ else
 fi
 
 if [ "$CHIPYARD_INSTALLED" = "true" ]; then
-  echo "Chipyard:   [OK] $CHIPYARD_DIR_DETECTED"
+  if [ "$CHIPYARD_IN_DOCKER" = "true" ]; then
+    echo "Chipyard:   [OK] $CHIPYARD_DOCKER_IMAGE_OUT (docker)"
+  else
+    echo "Chipyard:   [OK] $CHIPYARD_DIR_DETECTED"
+  fi
 else
   echo "Chipyard:   [MISSING]"
 fi

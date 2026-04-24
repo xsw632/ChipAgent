@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp e:/chipagent/ChipAgent/.chipagent/env.json /tmp/env.before.json)",
+      "Bash(bash --version)"
+    ]
+  }
+}
