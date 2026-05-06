@@ -24,17 +24,23 @@ if (!HOME) {
 }
 
 const args = process.argv.slice(2);
-const isLocal = args.includes("--local");
+const localIndex = args.indexOf("--local");
+const isLocal = localIndex !== -1;
 const showHelp = args.includes("--help") || args.includes("-h");
 
 if (showHelp) {
-  console.log("Usage: chip-agent [--local | --global]");
-  console.log("  --local   Install to project-level .claude/ (current directory)");
-  console.log("  --global  Install to user-level ~/.claude/ (default)");
+  console.log("Usage: chip-agent [OPTIONS]");
+  console.log("  --global          Install to user-level ~/.claude/ (default)");
+  console.log("  --local [DIR]     Install to project-level .claude/");
+  console.log("                    DIR defaults to current directory");
+  console.log("  -h, --help        Show this help message");
   process.exit(0);
 }
 
-const PROJECT_ROOT = process.cwd();
+const localTarget = isLocal ? args[localIndex + 1] : null;
+const PROJECT_ROOT = (localTarget && !localTarget.startsWith("-"))
+  ? resolve(localTarget)
+  : process.cwd();
 const CLAUDE_DIR = isLocal ? join(PROJECT_ROOT, ".claude") : join(HOME, ".claude");
 const COMMANDS_DEST = join(CLAUDE_DIR, "commands", "chip-agent");
 const SUPPORT_DEST = join(CLAUDE_DIR, "plugins", "chip-agent");
@@ -208,6 +214,9 @@ if (skillCount === 0) {
 }
 
 console.log(`\nchip-agent installed (${isLocal ? "local" : "global"}) successfully!`);
+if (isLocal) {
+  console.log(`  Project root -> ${PROJECT_ROOT}`);
+}
 console.log(`  ${skillCount} command(s) -> ${COMMANDS_DEST}`);
 console.log(`  Support files -> ${SUPPORT_DEST}`);
 console.log(`  MCP backend -> ${MCP_ENTRYPOINT}`);
