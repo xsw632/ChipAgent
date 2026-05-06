@@ -97,4 +97,5 @@ else
   echo "SIM FAILED"
 fi
 
+"$(dirname "$0")/report.sh" "simulate" "$MODULE" "$SIM_EXIT" "$LOG_DIR/sim_result.log"
 exit "$SIM_EXIT"

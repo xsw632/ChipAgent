@@ -46,6 +46,57 @@ else
   exit 1
 fi
 
+# --- Ensure chisel-project is available ---
+# Handles: broken symlinks (Windows ln -s), missing directories, first-time setup
+# Strategy: Always ensure a valid copy exists at MyDesign/<Module>/chisel-project/
+# This is more reliable than symlinks across different OS/filesystem configurations
+
+_is_valid_project() {
+  [ -f "$1/build.sbt" ] && [ -d "$1/src" ]
+}
+
+_copy_chisel_project() {
+  local src="$PLUGIN_ROOT/chisel-project"
+  local dest="$PLUGIN_ROOT/MyDesign/$MODULE/chisel-project"
+
+  # Remove whatever exists (symlink, text file, or invalid dir)
+  rm -rf "$dest"
+
+  # Copy fresh
+  cp -r "$src" "$dest"
+  echo "Initialized chisel-project: $dest"
+}
+
+# The expected path for chisel-project in the module directory
+MODULE_CHIPYARD_DIR="$PLUGIN_ROOT/MyDesign/$MODULE/chisel-project"
+
+if [ -d "$PROJECT_DIR" ]; then
+  # chisel-project directory exists at PROJECT_DIR (the resolved path)
+  if ! _is_valid_project "$PROJECT_DIR"; then
+    echo "Warning: chisel-project exists but invalid, reinitializing..."
+    rm -rf "$PROJECT_DIR"
+    cp -r "$PLUGIN_ROOT/chisel-project" "$PROJECT_DIR"
+  fi
+elif [ -L "$PROJECT_DIR" ]; then
+  # It's a symlink - resolve and verify
+  RESOLVED=$(readlink "$PROJECT_DIR" 2>/dev/null || echo "")
+  if [ -z "$RESOLVED" ] || ! _is_valid_project "$PROJECT_DIR"; then
+    echo "Warning: broken symlink detected, reinitializing..."
+    rm -f "$PROJECT_DIR"
+    cp -r "$PLUGIN_ROOT/chisel-project" "$PROJECT_DIR"
+  fi
+elif [ -f "$PROJECT_DIR" ]; then
+  # It's a text file (Windows ln -s fallback creates text files)
+  echo "Warning: text file found where chisel-project expected, reinitializing..."
+  rm -f "$PROJECT_DIR"
+  cp -r "$PLUGIN_ROOT/chisel-project" "$PROJECT_DIR"
+else
+  # Doesn't exist at all
+  echo "Initializing chisel-project from template..."
+  mkdir -p "$(dirname "$PROJECT_DIR")"
+  cp -r "$PLUGIN_ROOT/chisel-project" "$PROJECT_DIR"
+fi
+
 export SBT_OPTS="-Dsbt.supershell=false"
 
 mkdir -p "$OUTPUT_DIR"
@@ -73,9 +124,12 @@ if [ "$EXIT_CODE" -eq 0 ]; then
   if [ "$SV_COUNT" -gt 0 ]; then
     echo "Compilation successful:"
     find "$OUTPUT_DIR" -maxdepth 1 \( -name "*.sv" -o -name "*.v" \) -print
+    "$(dirname "$0")/report.sh" "compile" "$MODULE" "$EXIT_CODE" "$LOG"
+    exit 0
   else
     echo "WARNING: sbt exited 0 but no .sv files found in $OUTPUT_DIR"
     cat "$LOG"
+    "$(dirname "$0")/report.sh" "compile" "$MODULE" 1 "$LOG"
     exit 1
   fi
 else
@@ -84,5 +138,6 @@ else
   cat "$LOG"
   echo "---"
   echo "Check $PROJECT_DIR/build.sbt and source files in $PROJECT_DIR/src/main/scala/chipagent/"
+  "$(dirname "$0")/report.sh" "compile" "$MODULE" "$EXIT_CODE" "$LOG"
   exit 1
 fi

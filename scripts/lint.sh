@@ -89,11 +89,13 @@ if [ -s "$WARNINGS_LOG" ]; then
   cat "$WARNINGS_LOG"
 fi
 
-# Final result
+# Report result
 if [ "$LINT_PASS" = true ]; then
   echo "LINT PASSED: All files clean"
+  "$(dirname "$0")/report.sh" "lint" "$ARG" 0 "$WARNINGS_LOG"
   exit 0
 else
   echo "LINT FAILED: Fix errors above and retry"
+  "$(dirname "$0")/report.sh" "lint" "$ARG" 1 "$WARNINGS_LOG"
   exit 1
 fi

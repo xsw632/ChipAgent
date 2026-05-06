@@ -37,7 +37,7 @@ Given a plain-English description of a digital hardware module, this command orc
 
 ### Step 0 -- Initialize Project Folder
 
-After the module name is determined from the spec (Step 1), run the project-init subagent to set up the per-module project structure inside the `MyDesign/` container.
+Create the per-module project structure inside the `MyDesign/` container.
 
 **Bash commands to execute:**
 
@@ -45,42 +45,33 @@ After the module name is determined from the spec (Step 1), run the project-init
 PLUGIN_ROOT="<plugin-root>"   # e.g. /home/aa/snap/ChipAgent-main
 CONTAINER="MyDesign"          # all projects live inside this folder
 MODULE="<ModuleName>"         # e.g. ALU8
-PROJECT_DIR="$PLUGIN_ROOT/$CONTAINER/$MODULE"
-WORKSPACE_DIR="$PROJECT_DIR/workspace"
+WORKSPACE_DIR="$PLUGIN_ROOT/$CONTAINER/$MODULE/workspace"
 
-# Create MyDesign container if it doesn't exist
-mkdir -p "$PLUGIN_ROOT/$CONTAINER"
-# Create project folder and workspace
+# Create MyDesign container and project workspace
 mkdir -p "$WORKSPACE_DIR/generated" "$WORKSPACE_DIR/sim/logs"
-# Symlink chisel-project (two levels up from MyDesign/<Module>/)
-rm -f "$PROJECT_DIR/chisel-project"
-ln -s "../../chisel-project" "$PROJECT_DIR/chisel-project"
 
-echo "Project initialized: $PROJECT_DIR"
+echo "Project initialized: $WORKSPACE_DIR"
 ```
+
+**Note:** The `chisel-project/` directory is auto-initialized by `compile.sh` on first run. No manual symlink creation needed.
 
 **Project folder structure:**
 ```
 <plugin-root>/
-├── chisel-project/              ← shared, all module source lives here
+├── chisel-project/              ← shared, all module source (auto-copied on compile)
 ├── MyDesign/                   ← project container
 │   ├── ALU8/
-│   │   ├── chisel-project/   ← symlink → ../../chisel-project
+│   │   ├── chisel-project/   ← auto-initialized by compile.sh
 │   │   └── workspace/
 │   │       ├── generated/
 │   │       ├── sim/
 │   │       └── spec.json
-│   ├── ALU4/
-│   │   ├── chisel-project/   ← symlink → ../../chisel-project
-│   │   └── workspace/
-│   └── PriorityEncoder4/
+│   └── ALU4/
 │       ├── chisel-project/
 │       └── workspace/
 ```
 
 If the project folder already exists inside `MyDesign/`, skip creation and continue.
-
-If the project folder already exists, skip creation and continue.
 
 ### Step 1 -- Parse Requirements
 
@@ -145,6 +136,8 @@ Run the compilation script EXPLICITLY with the module name:
 The compile script resolves paths as:
 - `PROJECT_DIR = <plugin-root>/MyDesign/<ModuleName>/chisel-project`
 - `OUTPUT_DIR  = <plugin-root>/MyDesign/<ModuleName>/workspace/generated`
+
+**Note:** `compile.sh` auto-initializes the `chisel-project/` directory on first run. No manual symlink creation needed.
 
 Do NOT rely on the PostToolUse hook for compilation. The orchestrator calls compile.sh directly.
 
@@ -251,7 +244,7 @@ Format the simulation results into a verification report:
 
 | # | Stage               | Description                                      |
 |---|---------------------|--------------------------------------------------|
-| 0  | Initialize Project  | Create per-module folder with symlink + workspace |
+| 0  | Initialize Project  | Create per-module folder with workspace           |
 | 1  | Parse Requirements  | Extract module name, ports, operations from NL    |
 | 1.5| Confirm Spec        | Present parsed spec for user approval             |
 | 2  | Generate Chisel     | Produce Chisel source from structured spec        |

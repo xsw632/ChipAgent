@@ -5,11 +5,7 @@
       "command": "node",
       "args": [
         "--experimental-strip-types",
-<<<<<<< HEAD
-        "/home/mingzhenjia/.claude/plugins/chip-agent/mcp-server/index.ts"
-=======
-        "/home/aa/snap/chipagent/chip/ChipAgent/mcp-server/index.ts"
->>>>>>> main
+        "E:\\chipagent\\ChipAgent\\mcp-server\\index.ts"
       ]
     }
   }

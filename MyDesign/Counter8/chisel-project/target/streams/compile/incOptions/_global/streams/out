@@ -1,0 +1,15 @@
+[debug] Created transactional ClassFileManager with tempDir = /home/aa/snap/chipagent/ChipAgent/chisel-project/target/scala-2.13/classes.bak
+[debug] About to delete class files:
+[debug] We backup class files:
+[debug] Created transactional ClassFileManager with tempDir = /home/aa/snap/chipagent/ChipAgent/chisel-project/target/scala-2.13/classes.bak
+[debug] About to delete class files:
+[debug] We backup class files:
+[debug] Registering generated classes:
+[debug] 	TrivialModule$$anon$1.class
+[debug] 	Generate.class
+[debug] 	TrivialModule.class
+[debug] 	ALU8$$anon$1.class
+[debug] 	Generate$delayedInit$body.class
+[debug] 	Generate$.class
+[debug] 	ALU8.class
+[debug] Removing the temporary directory used for backing up class files: /home/aa/snap/chipagent/ChipAgent/chisel-project/target/scala-2.13/classes.bak
