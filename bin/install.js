@@ -23,12 +23,23 @@ if (!HOME) {
   process.exit(1);
 }
 
-const CLAUDE_DIR = join(HOME, ".claude");
+const args = process.argv.slice(2);
+const isLocal = args.includes("--local");
+const showHelp = args.includes("--help") || args.includes("-h");
+
+if (showHelp) {
+  console.log("Usage: chip-agent [--local | --global]");
+  console.log("  --local   Install to project-level .claude/ (current directory)");
+  console.log("  --global  Install to user-level ~/.claude/ (default)");
+  process.exit(0);
+}
+
+const PROJECT_ROOT = process.cwd();
+const CLAUDE_DIR = isLocal ? join(PROJECT_ROOT, ".claude") : join(HOME, ".claude");
 const COMMANDS_DEST = join(CLAUDE_DIR, "commands", "chip-agent");
 const SUPPORT_DEST = join(CLAUDE_DIR, "plugins", "chip-agent");
 const MCP_SERVER_DEST = join(SUPPORT_DEST, "mcp-server");
 const MCP_ENTRYPOINT = join(MCP_SERVER_DEST, "index.ts");
-const USER_CONFIG_PATHS = [join(HOME, ".claude.json"), join(CLAUDE_DIR, "settings.json")];
 
 function runCommand(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -75,6 +86,9 @@ function installMcpDependencies() {
 }
 
 function readJsonFile(filePath) {
+  if (!existsSync(filePath)) {
+    return {};
+  }
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
 
@@ -83,13 +97,32 @@ function writeJsonFile(filePath, data) {
 }
 
 function upsertMcpConfig() {
+  if (isLocal) {
+    const localConfigPath = join(PROJECT_ROOT, ".mcp.json");
+    const config = readJsonFile(localConfigPath);
+
+    writeJsonFile(localConfigPath, {
+      ...config,
+      mcpServers: {
+        ...(config.mcpServers || {}),
+        "chipagent-backend": {
+          type: "stdio",
+          command: "node",
+          args: ["--experimental-strip-types", MCP_ENTRYPOINT],
+        },
+      },
+    });
+    return localConfigPath;
+  }
+
+  const globalConfigPaths = [join(HOME, ".claude.json"), join(CLAUDE_DIR, "settings.json")];
   const entry = {
     type: "stdio",
     command: "node",
     args: ["--experimental-strip-types", MCP_ENTRYPOINT],
   };
 
-  for (const configPath of USER_CONFIG_PATHS) {
+  for (const configPath of globalConfigPaths) {
     if (!existsSync(configPath)) continue;
 
     let config;
@@ -111,7 +144,7 @@ function upsertMcpConfig() {
     return configPath;
   }
 
-  const configPath = USER_CONFIG_PATHS[0];
+  const configPath = globalConfigPaths[0];
   writeJsonFile(configPath, {
     mcpServers: {
       "chipagent-backend": entry,
@@ -174,7 +207,7 @@ if (skillCount === 0) {
   process.exit(1);
 }
 
-console.log("\nchip-agent installed successfully!");
+console.log(`\nchip-agent installed (${isLocal ? "local" : "global"}) successfully!`);
 console.log(`  ${skillCount} command(s) -> ${COMMANDS_DEST}`);
 console.log(`  Support files -> ${SUPPORT_DEST}`);
 console.log(`  MCP backend -> ${MCP_ENTRYPOINT}`);
