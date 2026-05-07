@@ -15,7 +15,20 @@ allowed-tools:
 
 Full auto-toolchain pipeline: turn a natural language hardware description into simulation-verified Verilog.
 
-Given a plain-English description of a digital hardware module, this command orchestrates a multi-stage pipeline that produces lint-clean, simulation-verified SystemVerilog output.
+Given a plain-English description of a digital hardware module, this command orchestrates a multi-stage pipeline that produces lint-clean, simulation-verified Verilog output.
+
+Create the checklist and go on.
+```
+□ Initialize Project structure
+□ Parse Requirements
+□ Confirm Spec
+□ Generate Chisel code
+□ Compile to Verilog
+□ Lint verification
+□ Generate testbench
+□ Run simulation
+□ Generate verification report
+```
 
 ## Usage
 
@@ -31,7 +44,7 @@ Given a plain-English description of a digital hardware module, this command orc
 
 ## Instructions
 
-**Determine the plugin root directory** by finding the nearest ancestor directory of this skill file that contains `.claude-plugin/plugin.json`. Use that directory as the base for all relative paths below.
+**Determine the project root directory** by finding the nearest ancestor directory '.claude'. Use that directory as the base for all relative paths below.
 
 ## Pipeline
 
@@ -42,14 +55,14 @@ After the module name is determined from the spec (Step 1), run the project-init
 **Bash commands to execute:**
 
 ```bash
-PLUGIN_ROOT="<plugin-root>"   # e.g. /home/aa/snap/ChipAgent-main
+PROJECT_ROOT="<project-root>"   # e.g. /home/aa/snap/ChipAgent-main
 CONTAINER="MyDesign"          # all projects live inside this folder
 MODULE="<ModuleName>"         # e.g. ALU8
-PROJECT_DIR="$PLUGIN_ROOT/$CONTAINER/$MODULE"
+PROJECT_DIR="$PROJECT_ROOT/$CONTAINER/$MODULE"
 WORKSPACE_DIR="$PROJECT_DIR/workspace"
 
 # Create MyDesign container if it doesn't exist
-mkdir -p "$PLUGIN_ROOT/$CONTAINER"
+mkdir -p "$PROJECT_ROOT/$CONTAINER"
 # Create project folder and workspace
 mkdir -p "$WORKSPACE_DIR/generated" "$WORKSPACE_DIR/sim/logs"
 # Symlink chisel-project (two levels up from MyDesign/<Module>/)
@@ -61,7 +74,7 @@ echo "Project initialized: $PROJECT_DIR"
 
 **Project folder structure:**
 ```
-<plugin-root>/
+<project-root>/
 ├── chisel-project/              ← shared, all module source lives here
 ├── MyDesign/                   ← project container
 │   ├── ALU8/
@@ -84,7 +97,7 @@ If the project folder already exists, skip creation and continue.
 
 ### Step 1 -- Parse Requirements
 
-Read the requirement-parser agent definition at `agents/requirement-parser.md` (relative to plugin root) and follow its rules to extract a structured JSON spec from the user's hardware description (`$ARGUMENTS`).
+Read the requirement-parser agent definition at `agents/requirement-parser.md` (relative to project root) and follow its rules to extract a structured JSON spec from the user's hardware description (`$ARGUMENTS`).Run the agentto return the json spec.
 
 The agent returns a JSON object. For simple designs: `moduleName`, `type: "simple"`, `ports`, `operations`, `flags`, and `constraints`. For complex designs: `moduleName`, `type: "complex"`, `modules[]`, and `topModule`.
 
@@ -119,7 +132,7 @@ Only proceed to Step 2 after the user selects "Approve and generate".
 
 ### Step 2 -- Generate Chisel
 
-Read the chisel-generator agent definition at `agents/chisel-generator.md` (relative to plugin root) and follow its rules with the JSON spec to produce Chisel source files. This step calls the agent directly (inline) -- it does NOT invoke `/chip-agent:generate` as a sub-skill.
+Read the chisel-generator agent definition at `agents/chisel-generator.md` (relative to project root) and follow its rules with the JSON spec to produce Chisel source files. Run the agent to generate the Chisel source code.
 
 **For simple specs (type: "simple"):**
 
@@ -136,15 +149,15 @@ The agent writes N+1 files:
 
 ### Step 3 -- Compile
 
-Run the compilation script EXPLICITLY with the module name:
+Read and correct the Generate.scala in chisel-project first to generate your own module,then run the compilation script EXPLICITLY with the module name:
 
 ```
-<plugin-root>/scripts/compile.sh <ModuleName>
+<project-root>/scripts/compile.sh <ModuleName>
 ```
 
 The compile script resolves paths as:
-- `PROJECT_DIR = <plugin-root>/MyDesign/<ModuleName>/chisel-project`
-- `OUTPUT_DIR  = <plugin-root>/MyDesign/<ModuleName>/workspace/generated`
+- `PROJECT_DIR = <project-root>/MyDesign/<ModuleName>/chisel-project`
+- `OUTPUT_DIR  = <project-root>/MyDesign/<ModuleName>/workspace/generated`
 
 Do NOT rely on the PostToolUse hook for compilation. The orchestrator calls compile.sh directly.
 
@@ -164,7 +177,7 @@ If compilation fails:
 Run Verilator lint on the generated Verilog with the module name:
 
 ```
-<plugin-root>/scripts/lint.sh <ModuleName>
+<project-root>/scripts/lint.sh <ModuleName>
 ```
 
 If lint passes (exit 0), continue to Step 5.
@@ -173,8 +186,8 @@ If lint fails (non-zero exit):
 1. Read the error output carefully -- these are Verilog-level errors caused by Chisel source issues
 2. Identify the Chisel source issue that caused the Verilog lint error
 3. Follow the chisel-generator agent rules (`agents/chisel-generator.md`) to fix the Chisel source (NOT the generated Verilog -- never edit generated files)
-4. Re-run `<plugin-root>/scripts/compile.sh <ModuleName>` after fixing
-5. Re-run `<plugin-root>/scripts/lint.sh <ModuleName>` after compile succeeds
+3. Re-run `<project-root>/scripts/compile.sh <ModuleName>` after fixing
+5. Re-run `<project-root>/scripts/lint.sh <ModuleName>` after compile succeeds
 6. Repeat up to 3 total lint attempts
 
 If lint still fails after 3 attempts, STOP the pipeline and report:
@@ -192,32 +205,20 @@ Lint passed with N warnings (suppressed/non-blocking):
 
 ### Step 5 -- Generate Testbench
 
-After lint passes (Step 4), generate a C++ testbench for the module.
-
-1. Determine the testbench path: `MyDesign/<ModuleName>/workspace/sim/tb_<ModuleName>.cpp`
-2. If the testbench already exists at that path, skip generation and proceed to Step 6
-3. If the testbench does not exist, read the testbench-generator agent definition at `agents/testbench-generator.md` (relative to plugin root) and follow its rules with the spec from `MyDesign/<ModuleName>/workspace/spec.json`
-4. Write the testbench to `MyDesign/<ModuleName>/workspace/sim/tb_<ModuleName>.cpp`
-
-Ensure the directory exists first:
-```
-mkdir -p MyDesign/<ModuleName>/workspace/sim
-```
-
-The agent produces a C++ testbench following UVM-inspired architecture with standardized PASS/FAIL output format. For simple/combinational modules, it generates a `TestCase` struct with test vectors and a single `eval()` loop. For CPU modules with `spec.verification.tier == "reference-model"`, it generates a reference-model testbench using `cpu_test_template.h` with instruction encoding helpers and per-instruction comparison.
+Read the testbench-generator agent definition at `agents/testbench-generator.md` (relative to project root). Run the agent to generate the testbench.
 
 ### Step 6 -- Simulate
 
 Run the simulation script with the module name:
 
 ```
-<plugin-root>/scripts/simulate.sh <ModuleName>
+<project-root>/scripts/simulate.sh <ModuleName>
 ```
 
 If simulation fails (non-zero exit):
 1. Read `MyDesign/<ModuleName>/workspace/sim/logs/sim_result.log` for failure details
 2. Attempt to fix the testbench (NOT the Verilog -- never edit generated files) by regenerating `MyDesign/<ModuleName>/workspace/sim/tb_<ModuleName>.cpp` with corrected test vectors
-3. Re-run `<plugin-root>/scripts/simulate.sh <ModuleName>` after fixing
+2. Re-run `<project-root>/scripts/simulate.sh <ModuleName>` after fixing
 4. Maximum 3 simulation fix attempts. After 3 failures, STOP the pipeline and report:
    ```
    SIM AUTO-FIX FAILED after 3 attempts.

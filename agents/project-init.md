@@ -14,16 +14,16 @@ Create an isolated project folder for a new hardware module. All modules live in
 ## Directory Structure
 
 ```
-<plugin-root>/
-├── chisel-project/          ← shared, all modules' Scala source live here
-├── MyDesign/               ← project container
+<project-root>/                          ← user's working directory
+├── chisel-project/                      ← shared, all modules' Scala source live here
+├── MyDesign/                            ← project container
 │   ├── ALU8/
-│   │   ├── chisel-project/ ← symlink → ../../chisel-project
+│   │   ├── chisel-project/              ← symlink → ../../chisel-project
 │   │   └── workspace/
 │   │       ├── generated/
 │   │       └── sim/
 │   └── ALU4/
-│       ├── chisel-project/ ← symlink → ../../chisel-project
+│       ├── chisel-project/              ← symlink → ../../chisel-project
 │       └── workspace/
 ```
 
@@ -32,35 +32,35 @@ Create an isolated project folder for a new hardware module. All modules live in
 Given a module name `<ModuleName>` (PascalCase):
 
 1. Create `MyDesign/` container if it doesn't exist
-2. Compute `PROJECT_DIR = <plugin-root>/MyDesign/<ModuleName>`
+2. Compute `PROJECT_DIR = <project-root>/MyDesign/<ModuleName>` (use the user's current working directory, NOT the plugin installation directory)
 3. Create directory tree:
    ```
-   <plugin-root>/MyDesign/<ModuleName>/
-   <plugin-root>/MyDesign/<ModuleName>/workspace/
-   <plugin-root>/MyDesign/<ModuleName>/workspace/generated/
-   <plugin-root>/MyDesign/<ModuleName>/workspace/sim/
-   <plugin-root>/MyDesign/<ModuleName>/workspace/sim/logs/
+   <project-root>/MyDesign/<ModuleName>/
+   <project-root>/MyDesign/<ModuleName>/workspace/
+   <project-root>/MyDesign/<ModuleName>/workspace/generated/
+   <project-root>/MyDesign/<ModuleName>/workspace/sim/
+   <project-root>/MyDesign/<ModuleName>/workspace/sim/logs/
    ```
-4. Create symlink `<plugin-root>/MyDesign/<ModuleName>/chisel-project` → `../../chisel-project`
-5. Write `spec.json` to `<plugin-root>/MyDesign/<ModuleName>/workspace/spec.json`
+4. Create symlink `<project-root>/MyDesign/<ModuleName>/chisel-project` -> `../../chisel-project`
+5. Write `spec.json` to `<project-root>/MyDesign/<ModuleName>/workspace/spec.json`
 6. Print a summary of what was created
 
 ## Bash Commands to Run
 
 ```bash
-# Determine plugin root
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+# Determine project root (user's working directory, NOT plugin root)
+PROJECT_ROOT="$(pwd)"
 
 CONTAINER="MyDesign"
 MODULE="$1"          # e.g. ALU8
-PROJECT_DIR="$PLUGIN_ROOT/$CONTAINER/$MODULE"
+PROJECT_DIR="$PROJECT_ROOT/$CONTAINER/$MODULE"
 WORKSPACE_DIR="$PROJECT_DIR/workspace"
 
 # Create MyDesign container
-mkdir -p "$PLUGIN_ROOT/$CONTAINER"
+mkdir -p "$PROJECT_ROOT/$CONTAINER"
 # Create project folder and workspace
 mkdir -p "$WORKSPACE_DIR/generated" "$WORKSPACE_DIR/sim/logs"
-# Create symlink (three levels up: MyDesign/<Module>/chisel-project -> ../../chisel-project)
+# Create symlink (two levels up: MyDesign/<Module>/chisel-project -> ../../chisel-project)
 rm -f "$PROJECT_DIR/chisel-project"
 ln -s "../../chisel-project" "$PROJECT_DIR/chisel-project"
 
