@@ -43,7 +43,8 @@ const PROJECT_ROOT = (localTarget && !localTarget.startsWith("-"))
   : process.cwd();
 const CLAUDE_DIR = isLocal ? join(PROJECT_ROOT, ".claude") : join(HOME, ".claude");
 const COMMANDS_DEST = join(CLAUDE_DIR, "commands", "chip-agent");
-const SUPPORT_DEST = join(CLAUDE_DIR, "plugins", "chip-agent");
+const AGENTS_DEST = join(CLAUDE_DIR, "agents");
+const SUPPORT_DEST = CLAUDE_DIR;
 const MCP_SERVER_DEST = join(SUPPORT_DEST, "mcp-server");
 const MCP_ENTRYPOINT = join(MCP_SERVER_DEST, "index.ts");
 
@@ -182,13 +183,52 @@ for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
   }
 }
 
-const SUPPORT_ITEMS = ["scripts", "hooks", "agents", ".claude-plugin", "CLAUDE.md", "mcp-server"];
+const SUPPORT_ITEMS = ["mcp-server"];
 mkdirSync(SUPPORT_DEST, { recursive: true });
 
 for (const item of SUPPORT_ITEMS) {
   const src = join(SOURCE, item);
   if (!existsSync(src)) continue;
   cpSync(src, join(SUPPORT_DEST, item), { recursive: true });
+}
+
+// scripts go to project root (local) or global .claude/ 
+const scriptsSrc = join(SOURCE, "scripts");
+if (existsSync(scriptsSrc)) {
+  const scriptsDest = join(PROJECT_ROOT, "scripts");
+  cpSync(scriptsSrc, scriptsDest, { recursive: true });
+}
+
+// chisel-project goes to project root (local) or .claude/ (global)
+const chiselSrc = join(SOURCE, "chisel-project");
+if (existsSync(chiselSrc)) {
+  const chiselDest = isLocal ? join(PROJECT_ROOT, "chisel-project") : join(SUPPORT_DEST, "chisel-project");
+  cpSync(chiselSrc, chiselDest, { recursive: true });
+}
+
+// Merge hooks.json instead of overwriting (may coexist with trellis hooks)
+const hooksSrc = join(SOURCE, "hooks");
+const hooksDest = join(SUPPORT_DEST, "hooks");
+if (existsSync(hooksSrc)) {
+  mkdirSync(hooksDest, { recursive: true });
+  for (const f of readdirSync(hooksSrc, { withFileTypes: true })) {
+    if (f.name === "hooks.json") {
+      const existing = readJsonFile(join(hooksDest, "hooks.json"));
+      const incoming = readJsonFile(join(hooksSrc, "hooks.json"));
+      writeJsonFile(join(hooksDest, "hooks.json"), {
+        hooks: { ...(existing.hooks || {}), ...(incoming.hooks || {}) },
+      });
+    } else {
+      cpSync(join(hooksSrc, f.name), join(hooksDest, f.name), { recursive: f.isDirectory() });
+    }
+  }
+}
+
+// Agents go to .claude/agents/chip-agent/ for Claude Code auto-discovery
+const agentsSrc = join(SOURCE, "agents");
+if (existsSync(agentsSrc)) {
+  mkdirSync(AGENTS_DEST, { recursive: true });
+  cpSync(agentsSrc, AGENTS_DEST, { recursive: true });
 }
 
 if (!existsSync(MCP_ENTRYPOINT)) {
@@ -199,7 +239,7 @@ if (!existsSync(MCP_ENTRYPOINT)) {
 installMcpDependencies();
 const mcpConfigPath = upsertMcpConfig();
 
-const scriptsDir = join(SUPPORT_DEST, "scripts");
+const scriptsDir = join(PROJECT_ROOT, "scripts");
 if (existsSync(scriptsDir)) {
   for (const f of readdirSync(scriptsDir)) {
     if (f.endsWith(".sh")) {
@@ -218,6 +258,8 @@ if (isLocal) {
   console.log(`  Project root -> ${PROJECT_ROOT}`);
 }
 console.log(`  ${skillCount} command(s) -> ${COMMANDS_DEST}`);
+console.log(`  Agents -> ${AGENTS_DEST}`);
+console.log(`  Scripts -> ${join(PROJECT_ROOT, "scripts")}`);
 console.log(`  Support files -> ${SUPPORT_DEST}`);
 console.log(`  MCP backend -> ${MCP_ENTRYPOINT}`);
 console.log(`  MCP config -> ${mcpConfigPath}`);
