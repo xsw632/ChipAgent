@@ -234,7 +234,7 @@ if (existsSync(agentsSrc)) {
 // Install CLAUDE-Fot-Test.md as CLAUDE.md to target .claude/
 const claudeTestSrc = join(SOURCE, "CLAUDE-Fot-Test.md");
 if (existsSync(claudeTestSrc)) {
-  cpSync(claudeTestSrc, join(CLAUDE_DIR, "CLAUDE.md"));
+  cpSync(claudeTestSrc, join(HOME, "CLAUDE.md"));
 }
 
 if (!existsSync(MCP_ENTRYPOINT)) {
