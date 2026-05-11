@@ -231,6 +231,12 @@ if (existsSync(agentsSrc)) {
   cpSync(agentsSrc, AGENTS_DEST, { recursive: true });
 }
 
+// Install CLAUDE-Fot-Test.md as CLAUDE.md to target .claude/
+const claudeTestSrc = join(SOURCE, "CLAUDE-Fot-Test.md");
+if (existsSync(claudeTestSrc)) {
+  cpSync(claudeTestSrc, join(CLAUDE_DIR, "CLAUDE.md"));
+}
+
 if (!existsSync(MCP_ENTRYPOINT)) {
   console.error(`ERROR: MCP server entrypoint not found at ${MCP_ENTRYPOINT}`);
   process.exit(1);
