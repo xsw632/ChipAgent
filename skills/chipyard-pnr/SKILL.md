@@ -35,7 +35,7 @@ Physical implementation pipeline for Chipyard-generated SoC designs with SRAM ma
 
 ## Instructions
 
-**Determine the plugin root directory** by finding the nearest ancestor directory of this skill file that contains `.claude-plugin/plugin.json`. Use that directory as the base for all relative paths below.
+**Determine the project root directory** by finding the nearest ancestor directory of `.claude`. Use that directory as the base for all relative paths below.
 
 ## Critical Pitfalls Reference
 
@@ -59,7 +59,7 @@ These issues were discovered through multiple PnR iterations on TinyRocketConfig
 Set up variables:
 
 ```bash
-PLUGIN_ROOT="<plugin-root>"
+PROJECT_ROOT="<project-root>"
 CONFIG="$ARGUMENTS"   # e.g. TinyRocketConfig
 ```
 
@@ -71,7 +71,7 @@ CONFIG="$ARGUMENTS"   # e.g. TinyRocketConfig
 Check that staged Chipyard Verilog exists:
 
 ```bash
-test -f "$PLUGIN_ROOT/MyDesign/$CONFIG/workspace/generated/$CONFIG.v"
+test -f "$PROJECT_ROOT/MyDesign/$CONFIG/workspace/generated/$CONFIG.v"
 ```
 
 - If **missing**: STOP with:
@@ -84,7 +84,7 @@ test -f "$PLUGIN_ROOT/MyDesign/$CONFIG/workspace/generated/$CONFIG.v"
 Check for SRAM mapping file:
 
 ```bash
-test -f "$PLUGIN_ROOT/MyDesign/$CONFIG/workspace/generated/sram_mapping.json"
+test -f "$PROJECT_ROOT/MyDesign/$CONFIG/workspace/generated/sram_mapping.json"
 ```
 
 - If **missing**: warn the user but continue (SRAM steps will be skipped).
@@ -147,7 +147,7 @@ grep -q 'pin_pattern {^vdd$}' "$ORFS_FLOW_PATH/platforms/sky130hd/pdn.tcl" && \
 **2a. Identify memory modules to strip:**
 
 ```bash
-SRC_V="$PLUGIN_ROOT/MyDesign/$CONFIG/workspace/generated/$CONFIG.v"
+SRC_V="$PROJECT_ROOT/MyDesign/$CONFIG/workspace/generated/$CONFIG.v"
 # Find all _ext memory module definitions
 grep -n '^module.*_ext\b' "$SRC_V"
 ```
@@ -163,7 +163,7 @@ grep -n '^module split_.*_ext\b' "$SRC_V"
 Strip all `_ext` and `split_*_ext` module definitions from the base Verilog. Use a Python one-liner:
 
 ```bash
-NOSRAM_V="$PLUGIN_ROOT/MyDesign/$CONFIG/workspace/generated/${CONFIG}_nosram.v"
+NOSRAM_V="$PROJECT_ROOT/MyDesign/$CONFIG/workspace/generated/${CONFIG}_nosram.v"
 
 python3 -c "
 import re, sys
@@ -201,7 +201,7 @@ If non-zero, the regex did not catch all modules. Inspect and fix manually.
 **3a. Read sram_mapping.json:**
 
 ```bash
-cat "$PLUGIN_ROOT/MyDesign/$CONFIG/workspace/generated/sram_mapping.json"
+cat "$PROJECT_ROOT/MyDesign/$CONFIG/workspace/generated/sram_mapping.json"
 ```
 
 Extract the mapping list. For each memory with `strategy: "sram_macro"` or `strategy: "multi_macro_tiling"`:
@@ -337,7 +337,7 @@ endgenerate
 **3c. Write the override file:**
 
 ```bash
-OVERRIDE_V="$PLUGIN_ROOT/MyDesign/$CONFIG/workspace/generated/${CONFIG}_sram_override.v"
+OVERRIDE_V="$PROJECT_ROOT/MyDesign/$CONFIG/workspace/generated/${CONFIG}_sram_override.v"
 # Write the generated override Verilog to this path
 ```
 
@@ -374,7 +374,7 @@ cp "$OVERRIDE_V" "$DESIGN_DIR/$(basename "$OVERRIDE_V")"
 **5a. Read spec.json for clock parameters:**
 
 ```bash
-cat "$PLUGIN_ROOT/MyDesign/$CONFIG/workspace/spec.json"
+cat "$PROJECT_ROOT/MyDesign/$CONFIG/workspace/spec.json"
 ```
 
 Extract:
@@ -386,7 +386,7 @@ Extract:
 For Chipyard designs, the actual synthesis top module is typically NOT `ChipTop`. Instead it's the core tile module. First check spec.json for `pnr_top_module`:
 
 ```bash
-PNR_TOP=$(python3 -c "import json; d=json.load(open('$PLUGIN_ROOT/MyDesign/$CONFIG/workspace/spec.json')); print(d.get('pnr_top_module',''))" 2>/dev/null)
+PNR_TOP=$(python3 -c "import json; d=json.load(open('$PROJECT_ROOT/MyDesign/$CONFIG/workspace/spec.json')); print(d.get('pnr_top_module',''))" 2>/dev/null)
 ```
 
 If `pnr_top_module` is set and non-empty, use it. Otherwise, auto-detect:
@@ -511,7 +511,7 @@ set_dont_use sky130_fd_sc_hd__probe_p_8
 set_dont_use sky130_fd_sc_hd__probec_p_8
 ```
 
-Write this to `$PLUGIN_ROOT/MyDesign/$CONFIG/workspace/pnr/constraint.sdc` and also copy to `$DESIGN_DIR/constraint.sdc`.
+Write this to `$PROJECT_ROOT/MyDesign/$CONFIG/workspace/pnr/constraint.sdc` and also copy to `$DESIGN_DIR/constraint.sdc`.
 
 **5f. Save variables:**
 

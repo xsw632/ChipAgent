@@ -31,7 +31,7 @@ Given a plain-English description of a digital hardware module, this command par
 
 ## Instructions
 
-**Determine the plugin root directory** by finding the nearest ancestor directory of this skill file that contains `.claude-plugin/plugin.json`. Use that directory as the base for all relative paths below.
+**Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Use that directory as the base for all relative paths below.
 
 ## Pipeline
 
@@ -42,14 +42,14 @@ After the module name is determined from the spec (Step 1), run the project-init
 **Bash commands to execute:**
 
 ```bash
-PLUGIN_ROOT="<plugin-root>"   # e.g. /home/aa/snap/ChipAgent-main
+PROJECT_ROOT="<project-root>"   # e.g. /home/aa/snap/ChipAgent-main
 CONTAINER="MyDesign"          # all projects live inside this folder
 MODULE="<ModuleName>"         # e.g. ALU8
-PROJECT_DIR="$PLUGIN_ROOT/$CONTAINER/$MODULE"
+PROJECT_DIR="$PROJECT_ROOT/$CONTAINER/$MODULE"
 WORKSPACE_DIR="$PROJECT_DIR/workspace"
 
 # Create MyDesign container if it doesn't exist
-mkdir -p "$PLUGIN_ROOT/$CONTAINER"
+mkdir -p "$PROJECT_ROOT/$CONTAINER"
 # Create project folder and workspace
 mkdir -p "$WORKSPACE_DIR/generated" "$WORKSPACE_DIR/sim/logs"
 # Symlink chisel-project (three levels up from MyDesign/<Module>/)
@@ -61,7 +61,7 @@ echo "Project initialized: $PROJECT_DIR"
 
 **Project folder structure:**
 ```
-<plugin-root>/
+<project-root>/
 ├── chisel-project/              ← shared, all module source lives here
 ├── MyDesign/                   ← project container
 │   ├── ALU8/
@@ -82,7 +82,7 @@ If the project folder already exists inside `MyDesign/`, skip creation and conti
 
 ### Step 1 -- Parse Requirements
 
-Read the requirement-parser agent definition at `agents/requirement-parser.md` (relative to plugin root) and follow its rules to extract a structured JSON spec from the user's hardware description (`$ARGUMENTS`).
+Read the requirement-parser agent definition at `agents/requirement-parser.md` (relative to project root) and follow its rules to extract a structured JSON spec from the user's hardware description (`$ARGUMENTS`).
 
 The agent returns a JSON object. For simple designs: `moduleName`, `type: "simple"`, `ports`, `operations`, `flags`, and `constraints`. For complex designs: `moduleName`, `type: "complex"`, `modules[]`, and `topModule`.
 
@@ -117,7 +117,7 @@ Only proceed to Step 2 after the user selects "Approve and generate".
 
 ### Step 2 -- Generate Chisel
 
-Read the chisel-generator agent definition at `agents/chisel-generator.md` (relative to plugin root) and follow its rules with the JSON spec to produce Chisel source files. There is no `/chip-agent:chisel-generate` sub-skill -- this step calls the agent directly (inline).
+Read the chisel-generator agent definition at `agents/chisel-generator.md` (relative to project root) and follow its rules with the JSON spec to produce Chisel source files. There is no `/chip-agent:chisel-generate` sub-skill -- this step calls the agent directly (inline).
 
 **For simple specs (type: "simple"):**
 

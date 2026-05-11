@@ -23,11 +23,11 @@ Run Verilator lint-only checks on the generated Verilog for a named module.
 
 2. **Check prerequisites.** Verify that `workspace/<ModuleName>/generated/` exists and contains at least one `.v` file. If not, tell the user: "No generated Verilog found. Please run `/chip-agent:compile <ModuleName>` first."
 
-3. **Determine the plugin root directory** by finding the nearest ancestor directory of this skill file that contains `.claude-plugin/plugin.json`. Use that directory as the base for all paths below.
+3. **Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Use that directory as the base for all paths below.
 
 4. **Run lint.** Execute the lint script with the workspace path:
    ```
-   <plugin-root>/scripts/lint.sh workspace/<ModuleName>
+   <project-root>/scripts/lint.sh workspace/<ModuleName>
    ```
 
 5. **On success (exit 0):** Report that lint passed. Check if `workspace/<ModuleName>/generated/lint-warnings.log` exists and is non-empty. If so, list the suppressed warnings. Mention that the user can now run `/chip-agent:simulate <ModuleName>`.

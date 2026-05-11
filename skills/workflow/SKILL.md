@@ -164,7 +164,7 @@ Do NOT rely on the PostToolUse hook for compilation. The orchestrator calls comp
 If compilation fails:
 1. Read the error output from the build log
 2. Follow the chisel-generator agent rules (`agents/chisel-generator.md`) to fix the issues in the generated Scala files
-3. Re-run `<plugin-root>/scripts/compile.sh <ModuleName>` after fixing
+3. Re-run `<project-root>/scripts/compile.sh <ModuleName>` after fixing
 4. Maximum 3 fix attempts. After 3 failures, stop and report the errors to the user:
    ```
    COMPILE AUTO-FIX FAILED after 3 attempts.

@@ -37,7 +37,7 @@ Generate Verilog RTL from a local Chipyard installation by elaborating a Rocket 
 
 ## Instructions
 
-**Determine the plugin root directory** by finding the nearest ancestor directory of this skill file that contains `.claude-plugin/plugin.json`. Use that directory as the base for all relative paths below.
+**Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Use that directory as the base for all relative paths below.
 
 ## Pipeline
 
@@ -186,8 +186,8 @@ cat "$CHIPYARD_DIR/sims/verilator/generated-src/chipyard.harness.TestHarness.$CO
 This helper skill may be used by `/chip-agent:chipyard` to stage generated RTL into ChipAgent's canonical workspace for downstream PnR:
 
 ```bash
-PLUGIN_ROOT="<plugin-root>"
-DEST="$PLUGIN_ROOT/MyDesign/$CONFIG/workspace/generated"
+PROJECT_ROOT="<project-root>"
+DEST="$PROJECT_ROOT/MyDesign/$CONFIG/workspace/generated"
 mkdir -p "$DEST"
 
 # Concatenate all SV files into a single Verilog file (ORFS-friendly)

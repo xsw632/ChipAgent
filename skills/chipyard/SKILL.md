@@ -32,14 +32,14 @@ Unified Chipyard frontend flow: generate RTL from a local Chipyard installation,
 
 ## Instructions
 
-**Determine the plugin root directory** by finding the nearest ancestor directory of this skill file that contains `.claude-plugin/plugin.json`. Use that directory as the base for all relative paths below.
+**Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Use that directory as the base for all relative paths below.
 
 ## Pipeline
 
 ### Step 0 -- Parse Arguments and Normalize
 
 ```bash
-PLUGIN_ROOT="<plugin-root>"
+PROJECT_ROOT="<project-root>"
 RAW_CONFIG="$ARGUMENTS"
 ```
 
@@ -75,7 +75,7 @@ Config: $CONFIG
 
 ### Step 1 -- Verify Environment
 
-Read `$PLUGIN_ROOT/.chipagent/env.json`. Extract:
+Read `$PROJECT_ROOT/.chipagent/env.json`. Extract:
 - `chipyard.path` -> `CHIPYARD_DIR`
 - `chipyard.riscv_path` -> `RISCV`
 - `orfs.flow_path` -> `ORFS_FLOW_PATH`
@@ -311,7 +311,7 @@ JSONEOF
 Create the ChipAgent workspace structure for downstream PnR:
 
 ```bash
-DEST="$PLUGIN_ROOT/MyDesign/$CONFIG/workspace/generated"
+DEST="$PROJECT_ROOT/MyDesign/$CONFIG/workspace/generated"
 mkdir -p "$DEST"
 
 # Concatenate SV files with ChipTop.sv FIRST so the top module appears first
@@ -358,7 +358,7 @@ if [ -n "$TILE_MODULE" ]; then
     echo "Auto-detected PnR top module: $PNR_TOP_MODULE"
 fi
 
-cat > "$PLUGIN_ROOT/MyDesign/$CONFIG/workspace/spec.json" << SPECEOF
+cat > "$PROJECT_ROOT/MyDesign/$CONFIG/workspace/spec.json" << SPECEOF
 {
   "module_name": "$CONFIG",
   "source": "chipyard",
@@ -380,7 +380,7 @@ SPECEOF
 Verify the staged artifacts:
 ```bash
 test -f "$DEST/${CONFIG}.v" && echo "OK: Verilog staged"
-test -f "$PLUGIN_ROOT/MyDesign/$CONFIG/workspace/spec.json" && echo "OK: spec.json created"
+test -f "$PROJECT_ROOT/MyDesign/$CONFIG/workspace/spec.json" && echo "OK: spec.json created"
 wc -l "$DEST/${CONFIG}.v"
 ```
 

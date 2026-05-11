@@ -24,9 +24,9 @@ Parse a natural language hardware description into a structured JSON specificati
 
 1. **Extract the hardware description** from `$ARGUMENTS`. If `$ARGUMENTS` is empty or blank, ask the user: "Please describe the hardware module you want to create. For example: 'A 32-bit ALU supporting ADD, SUB, AND, OR, XOR, and SLT operations with a zero flag output.'"
 
-2. **Determine the plugin root directory** by finding the nearest ancestor directory of this skill file that contains `.claude-plugin/plugin.json`. Use that directory as the base for all relative paths below.
+2. **Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Use that directory as the base for all relative paths below.
 
-3. **Read the requirement-parser agent definition** at `agents/requirement-parser.md` (relative to the plugin root). This agent contains the full parsing rules, schema definitions, and examples for both simple and complex hardware designs.
+3. **Read the requirement-parser agent definition** at `agents/requirement-parser.md` (relative to the project root). This agent contains the full parsing rules, schema definitions, and examples for both simple and complex hardware designs.
 
 4. **Follow the agent's instructions** to parse `$ARGUMENTS` into a structured JSON specification. The agent returns ONLY the raw JSON -- no markdown fences, no explanation. Apply all parsing rules from the agent definition including:
    - Design complexity detection (simple vs complex)

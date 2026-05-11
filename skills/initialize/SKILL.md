@@ -21,17 +21,17 @@ Detect the local toolchain environment and report which ChipAgent capabilities a
 
 ## Instructions
 
-1. **Determine the plugin root directory** by finding the nearest ancestor directory of this skill file that contains `.claude-plugin/plugin.json`. Use that directory as the base for all paths below.
+1. **Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Use that directory as the base for all paths below.
 
 2. **Run the environment detection script** via Bash:
    ```
-   <plugin-root>/scripts/detect-env.sh
+   <project-root>/scripts/detect-env.sh
    ```
    This script detects installed versions of Java, sbt, Scala, Verilator, Make, g++, Yosys, OpenROAD, and KLayout, detects the sky130hd PDK, ORFS installation, Docker availability, Chipyard installation, and RISCV toolchain, computes capability flags, and writes the results to `.chipagent/env.json`. The script output includes a human-readable summary.
 
 3. **Read the detection results** using the Read tool:
    ```
-   <plugin-root>/.chipagent/env.json
+   <project-root>/.chipagent/env.json
    ```
    Parse the JSON to extract tool versions and capability flags.
 

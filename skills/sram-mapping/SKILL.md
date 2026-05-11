@@ -31,7 +31,7 @@ Analyze Verilog RTL to identify all SRAM/memory macro instances and determine th
 
 ## Instructions
 
-**Determine the plugin root directory** by finding the nearest ancestor directory of this skill file that contains `.claude-plugin/plugin.json`. Use that directory as the base for all relative paths below.
+**Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Use that directory as the base for all relative paths below.
 
 ## Pipeline
 
@@ -39,7 +39,7 @@ Analyze Verilog RTL to identify all SRAM/memory macro instances and determine th
 
 ```bash
 INPUT="$ARGUMENTS"  # file or directory
-ORFS_PLATFORMS="<plugin-root>/OpenROAD-flow-scripts/flow/platforms"
+ORFS_PLATFORMS="<project-root>/OpenROAD-flow-scripts/flow/platforms"
 ```
 
 Validate:

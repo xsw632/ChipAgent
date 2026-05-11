@@ -36,7 +36,7 @@ Physical implementation pipeline: synthesize compiled Verilog through ORFS make 
 
 ## Instructions
 
-**Determine the plugin root directory** by finding the nearest ancestor directory of `.claude`. Use that directory as the base for all relative paths below.
+**Determine the project root directory** by finding the nearest ancestor directory of `.claude`. Use that directory as the base for all relative paths below.
 
 ## Pipeline
 
@@ -45,7 +45,7 @@ Physical implementation pipeline: synthesize compiled Verilog through ORFS make 
 Set up variables:
 
 ```bash
-PROJECT_ROOT="<plugin-root>"
+PROJECT_ROOT="<project-root>"
 RAW_MODULE="$ARGUMENTS"   # first argument: module name (any case)
 ```
 
@@ -316,7 +316,7 @@ Call `mcp__chipagent-backend__compare_runs` with:
 
 Use the best run's metrics for the report.
 
-Run the agent `pnr-report-formatter.md` (relative to plugin root) and follow the agent's rules to format a PPA summary report.
+Run the agent `pnr-report-formatter.md` (relative to project root) and follow the agent's rules to format a PPA summary report.
 
 Pass the agent these data accumulated from the best run's get_report responses:
 - From **synth** get_report: `cell_count`, `synth_area`
