@@ -7,14 +7,19 @@
   },
   "files": [
     "bin/",
-    ".claude-plugin/",
     "skills/",
     "agents/",
-    "hooks/",
     "scripts/",
     "mcp-server/",
-    "CLAUDE.md"
+    "chisel-project/",
+    "CLAUDE-For-Test.md"
   ],
-  "keywords": ["claude-code", "plugin", "chisel", "verilog", "hardware"],
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "chisel",
+    "verilog",
+    "hardware"
+  ],
   "license": "MIT"
 }
