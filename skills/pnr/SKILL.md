@@ -36,7 +36,7 @@ Physical implementation pipeline: synthesize compiled Verilog through ORFS make 
 
 ## Instructions
 
-**Determine the plugin root directory** by finding the nearest ancestor directory of this skill file that contains `.claude-plugin/plugin.json`. Use that directory as the base for all relative paths below.
+**Determine the plugin root directory** by finding the nearest ancestor directory of `.claude`. Use that directory as the base for all relative paths below.
 
 ## Pipeline
 
@@ -45,7 +45,7 @@ Physical implementation pipeline: synthesize compiled Verilog through ORFS make 
 Set up variables:
 
 ```bash
-PLUGIN_ROOT="<plugin-root>"
+PROJECT_ROOT="<plugin-root>"
 RAW_MODULE="$ARGUMENTS"   # first argument: module name (any case)
 ```
 
@@ -62,12 +62,12 @@ else
     MODULE="${FIRST}${RAW_MODULE:1}Config"
 fi
 # Fallback: if normalized dir missing but bare-PascalCase Config variant exists, use it
-if [ ! -d "$PLUGIN_ROOT/MyDesign/$MODULE" ] && [ -d "$PLUGIN_ROOT/MyDesign/${MODULE}Config" ]; then
+if [ ! -d "$PROJECT_ROOT/MyDesign/$MODULE" ] && [ -d "$PROJECT_ROOT/MyDesign/${MODULE}Config" ]; then
     MODULE="${MODULE}Config"
 fi
 # Final fallback: case-insensitive directory match in MyDesign/ (handles e.g. tinyrocket -> TinyRocketConfig)
-if [ ! -d "$PLUGIN_ROOT/MyDesign/$MODULE" ]; then
-    MATCH=$(ls "$PLUGIN_ROOT/MyDesign" 2>/dev/null | grep -i "^${RAW_MODULE}\(Config\)\?$" | head -1)
+if [ ! -d "$PROJECT_ROOT/MyDesign/$MODULE" ]; then
+    MATCH=$(ls "$PROJECT_ROOT/MyDesign" 2>/dev/null | grep -i "^${RAW_MODULE}\(Config\)\?$" | head -1)
     if [ -n "$MATCH" ]; then MODULE="$MATCH"; fi
 fi
 echo "Resolved module: $MODULE"
@@ -76,7 +76,7 @@ echo "Resolved module: $MODULE"
 Check that compiled Verilog exists:
 
 ```bash
-test -f "$PLUGIN_ROOT/MyDesign/$MODULE/workspace/generated/$MODULE.v"
+test -f "$PROJECT_ROOT/MyDesign/$MODULE/workspace/generated/$MODULE.v"
 ```
 
 - If **missing**: STOP with clear message:
@@ -89,13 +89,13 @@ test -f "$PLUGIN_ROOT/MyDesign/$MODULE/workspace/generated/$MODULE.v"
 **Chipyard detection:** Check if this is a Chipyard-generated design:
 
 ```bash
-test -f "$PLUGIN_ROOT/MyDesign/$MODULE/workspace/generated/sram_mapping.json"
+test -f "$PROJECT_ROOT/MyDesign/$MODULE/workspace/generated/sram_mapping.json"
 ```
 
 Also check spec.json:
 
 ```bash
-grep -q '"source".*"chipyard"' "$PLUGIN_ROOT/MyDesign/$MODULE/workspace/spec.json" 2>/dev/null
+grep -q '"source".*"chipyard"' "$PROJECT_ROOT/MyDesign/$MODULE/workspace/spec.json" 2>/dev/null
 ```
 
 If either condition is true, this is a Chipyard+SRAM design. **STOP and redirect:**
@@ -165,24 +165,20 @@ This resets the QoR history for a fresh run. Each `/chip-agent:pnr` invocation s
 
 **MANDATORY: All rounds must run to completion.** Do NOT skip remaining rounds even if an earlier round passes. Every round's result is needed for QoR comparison.
 
-Stage ordering: `STAGE_ORDER = ["synth", "floorplan", "place", "cts", "route", "finish"]`
-
-For each `round_plan` in `round_plans`:
+Set `round_index = 0`. While `round_index < length of round_plans`:
 
 1. Set:
-   - `round` = current 1-based round number
-   - `current_params` = snapshot of the round plan
+   - `round` = `round_index + 1`
+   - `current_params` = snapshot of `round_plans[round_index]`
    - `restart_from` = `"synth"`
    - `retry_attempt` = `1`
    - `round_complete` = `false`
 
-2. Display a clear separator: `=== PnR Round {round}/{comparison_round_count} (restart from {restart_from}) ===`
-
-3. Before the first attempt in the round, call `mcp__chipagent-backend__clean_design` with:
+2. Before the first attempt in the round, call `mcp__chipagent-backend__clean_design` with:
    - `config_mk_path`: latest `CONFIG_MK`
    - `orfs_flow_path`: `ORFS_FLOW_PATH`
 
-4. Generate config for the round by calling `mcp__chipagent-backend__generate_config` with:
+3. Generate config for the round by calling `mcp__chipagent-backend__generate_config` with:
    - `module_name`: `$MODULE`
    - `verilog_path`: absolute path to `MyDesign/$MODULE/workspace/generated/$MODULE.v`
    - `workspace_dir`: absolute path to `MyDesign/$MODULE/workspace`
@@ -193,62 +189,36 @@ For each `round_plan` in `round_plans`:
    - `gpl_timing_driven`: `current_params.gpl_timing_driven` (only if defined)
    - `gpl_routability_driven`: `current_params.gpl_routability_driven` (only if defined)
 
-5. Update `CONFIG_MK` from the response.
+4. Update `CONFIG_MK` from the response.
 
-6. While `retry_attempt <= max_retries_per_round` and `round_complete == false`:
+5. While `retry_attempt <= max_retries_per_round` and `round_complete == false`:
 
-   **6a. Run stages from `restart_from` through `finish`:**
+   **5a. Execute round via pnr-round-executor agent:**
 
-   Determine the stages to run by slicing `STAGE_ORDER` from the index of `restart_from` to the end. For each stage in the slice:
+   Spawn the `pnr-round-executor` agent (at `agents/pnr-round-executor.md`) with this input contract:
 
-   1. Call `mcp__chipagent-backend__run_stage` with:
-      - `stage`: the current stage name
-      - `config_mk_path`: `CONFIG_MK`
-      - `orfs_flow_path`: `ORFS_FLOW_PATH`
+   ```
+   module: $MODULE
+   project_root: $PROJECT_ROOT
+   round_number: round
+   total_rounds: comparison_round_count
+   restart_from: restart_from
+   current_params: current_params
+   config_mk: CONFIG_MK
+   design_name: DESIGN_NAME
+   orfs_flow_path: ORFS_FLOW_PATH
+   clock_port: <from spec.json or "clock">
+   ```
 
-   2. Call `mcp__chipagent-backend__get_report` with:
-      - `design_name`: `DESIGN_NAME`
-      - `stage`: the current stage name
-      - `orfs_flow_path`: `ORFS_FLOW_PATH`
+   The agent runs all stages, displays per-stage metrics, diagnoses failures, and returns a structured JSON result.
 
-   3. Present per-stage metrics to the user immediately after each stage:
+   **5b. Parse the executor's JSON result:**
 
-      | Stage | Metric Display |
-      |-------|---------------|
-      | synth | `Synthesis: <cell_count> cells, <synth_area> um^2` |
-      | floorplan | `Floorplan: WNS=<wns>ns, TNS=<tns>ns` |
-      | place | `Placement: WNS=<wns>ns, TNS=<tns>ns` |
-      | cts | `CTS: WNS=<wns>ns, TNS=<tns>ns` |
-      | route | `Routing: <violations> DRC violations` |
-      | finish | `Finish: WNS=<wns>ns, TNS=<tns>ns, Power=<total_w * 1e6>uW, Area=<area>um^2` |
+   Extract `status`, `metrics`, `failed_stage`, and `diagnosis` from the returned JSON block.
 
-      **After synth get_report:** Capture `synth_cell_count` from the synth report's `cell_count` field. This is used for dynamic round expansion after Round 1.
+   **5c. Save run to QoR history:**
 
-   4. If `run_stage` returns `success === false`:
-      - Record `failed_stage` = current stage name and `stderr` from response
-      - Set `status` = `"fail"`
-      - Stop running further stages for this attempt
-
-   **6b. Determine pass/fail:**
-
-   - If any `run_stage` returned `success === false`: `status = "fail"`
-   - If all stages succeeded: check **finish** report `wns` and **route** report `violations`
-     - `pass` = all stages succeed AND `wns >= 0` AND `violations == 0`
-     - If not pass: `status = "fail"`
-   - If pass: `status = "pass"`
-
-   **6c. Collect metrics from reports:**
-
-   Gather from available `get_report` responses:
-   - From **finish**: `wns`, `tns`, `area`, `total_w` (as `total_power_w`)
-   - From **route**: `violations` (as `drc_violations`)
-   - From **synth**: `cell_count`
-
-   Use partial metrics if a stage failed early. Set unavailable metrics to `null`.
-
-   **6d. Save run to QoR history only when the round is finishing:**
-
-   - If `status == "pass"`, save the passing round immediately.
+   - If `status == "pass"`, save immediately.
    - If `retry_attempt == max_retries_per_round`, save the failing round.
    - Otherwise, defer saving until retries are exhausted.
 
@@ -258,73 +228,48 @@ For each `round_plan` in `round_plans`:
    - `run`:
      - `round`: current round number
      - `config`: `current_params`
-     - `metrics`: `{ wns, tns, area, total_power_w, drc_violations, cell_count }`
+     - `metrics`: metrics from executor result (includes `wns`, `tns`, `area`, `total_power_w`, `drc_violations`, `cell_count`)
      - `status`: `"pass"` or `"fail"`
-     - `error_type`: the error type string if status is `"fail"`, omit if `"pass"`
+     - `error_type`: `diagnosis.error_type` if status is `"fail"`, omit if `"pass"`
 
-   **6e. Finish or retry the round:**
+   **5d. Finish or retry the round:**
 
    - If `status == "pass"`: Display `"Round {round}/{comparison_round_count} completed (PASSED). {comparison_round_count - round} rounds remaining."` and set `round_complete = true`.
    - If `retry_attempt == max_retries_per_round`: Display `"Round {round}/{comparison_round_count} completed (FAILED, retries exhausted). {comparison_round_count - round} rounds remaining."` and set `round_complete = true`.
-   - Otherwise continue to diagnosis.
+   - Otherwise continue to retry logic.
 
-   **Dynamic round expansion (after Round 1):**
+   **5e. Check severity and prepare retry:**
 
-   After Round 1 finishes (pass or exhausts retries), if `round_plans` has only 1 entry, expand based on `synth_cell_count`:
+   If `diagnosis.severity == "critical"`:
+   - Save the failing run to QoR history if it has not been saved yet
+   - Display `"Critical error: {diagnosis.details}. Not fixable by parameter adjustment. Ending round {round}/{comparison_round_count}."`
+   - Set `round_complete = true`
+
+   Otherwise, apply adjustments and retry:
+
+   1. Merge `diagnosis.suggested_params` into `current_params`: overwrite matching keys, keep others unchanged.
+   2. Display: `"Round {round} diagnosed: {diagnosis.error_type}. Adjusting: {list changed params with old -> new values}. Restarting from {diagnosis.restart_from}."`
+   3. Set `restart_from` = `diagnosis.restart_from`
+   4. Call `mcp__chipagent-backend__clean_design` with:
+      - `config_mk_path`: `CONFIG_MK`
+      - `orfs_flow_path`: `ORFS_FLOW_PATH`
+   5. Call `mcp__chipagent-backend__generate_config` with updated `current_params` (same arguments as step 3 above)
+   6. Update `CONFIG_MK` from the new response.
+   7. Increment `retry_attempt += 1`
+
+6. **Dynamic round expansion (after Round 1):**
+
+   After the round completes (pass or retries exhausted), if `round_index == 0` and `round_plans` has only 1 entry, expand based on `metrics.cell_count` (from synth):
 
    - Round 2: `{ clock_period_ns: max(1, <baseline clock> * 0.8), core_utilization: 40, gpl_timing_driven: true }`
    - Round 3: `{ clock_period_ns: max(1, <baseline clock> * 0.8), core_utilization: 35, gpl_timing_driven: true, gpl_routability_driven: true }`
-   - If `synth_cell_count > 1000`:
+   - If `cell_count > 1000`:
      - Round 4: `{ clock_period_ns: max(1, <baseline clock> * 0.8), core_utilization: 35, place_density: 0.55, gpl_routability_driven: true }`
      - Round 5: `{ clock_period_ns: max(1, <baseline clock> * 0.7), core_utilization: 30, gpl_timing_driven: true }`
 
-   Set `comparison_round_count` to the total number of rounds (3 or 5).
+   Append new entries to `round_plans`. Set `comparison_round_count` to the total number of rounds (3 or 5).
 
-   **6f. Diagnose failure and prepare retry:**
-
-   Call `mcp__chipagent-backend__diagnose_failure` with:
-   - `stage`: `failed_stage` (or `"finish"` if all stages succeeded but timing/DRC failed)
-   - `success`: `false` if stage failed, `true` if silent timing/DRC failure
-   - `stderr`: stderr from failed stage (or empty string if silent failure)
-   - `finish_report_content`: raw finish report text (if available)
-   - `drc_report_content`: raw DRC report text (if available)
-   - `sdc_content`: content of `MyDesign/$MODULE/workspace/pnr/constraint.sdc`
-   - `current_clock_period_ns`: `current_params.clock_period_ns`
-   - `current_place_density`: `current_params.place_density` (if set)
-   - `current_core_utilization`: `current_params.core_utilization`
-
-   **6g. Check severity:**
-
-   If `severity == "critical"`:
-   - Save the failing run to QoR history if it has not been saved yet
-   - Display `"Critical error: {details}. Not fixable by parameter adjustment. Ending round {round}/{comparison_round_count}."`
-   - Set `round_complete = true`
-
-   **6h. Apply adjustments:**
-
-   1. Merge `suggested_params` into `current_params`: overwrite matching keys, keep others unchanged.
-   2. Display: `"Round {round} diagnosed: {error_type}. Adjusting: {list changed params with old -> new values}. Restarting from {restart_from}."`
-
-   **6i. Clean and regenerate for retry:**
-
-   1. Call `mcp__chipagent-backend__clean_design` with:
-      - `config_mk_path`: `CONFIG_MK`
-      - `orfs_flow_path`: `ORFS_FLOW_PATH`
-
-   2. Call `mcp__chipagent-backend__generate_config` with:
-      - `module_name`: `$MODULE`
-      - `verilog_path`: absolute path to `MyDesign/$MODULE/workspace/generated/$MODULE.v`
-      - `workspace_dir`: absolute path to `MyDesign/$MODULE/workspace`
-      - `clock_port`: from spec.json or `"clock"`
-      - `clock_period_ns`: `current_params.clock_period_ns`
-      - `core_utilization`: `current_params.core_utilization`
-      - `place_density`: `current_params.place_density` (only if defined)
-      - `gpl_timing_driven`: `current_params.gpl_timing_driven` (only if defined)
-      - `gpl_routability_driven`: `current_params.gpl_routability_driven` (only if defined)
-
-   3. Update `CONFIG_MK` from the new response.
-   4. Set `restart_from` = `diagnosis.restart_from`
-   5. Increment `retry_attempt += 1`
+7. Increment `round_index += 1`
 
 ### Step 4 -- QoR Comparison and Recommendation
 
@@ -371,7 +316,7 @@ Call `mcp__chipagent-backend__compare_runs` with:
 
 Use the best run's metrics for the report.
 
-Read the agent definition at `agents/pnr-report-formatter.md` (relative to plugin root) and follow the agent's rules to format a PPA summary report.
+Run the agent `pnr-report-formatter.md` (relative to plugin root) and follow the agent's rules to format a PPA summary report.
 
 Pass the agent these data accumulated from the best run's get_report responses:
 - From **synth** get_report: `cell_count`, `synth_area`
