@@ -5,8 +5,9 @@
       "command": "node",
       "args": [
         "--experimental-strip-types",
-        "/home/aa/snap/chipagent/chip/ChipAgent/mcp-server/index.ts"
-      ]
+        "./.claude/mcp-server/index.ts"
+      ],
+      "cwd": "."
     }
   }
 }
