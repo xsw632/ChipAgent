@@ -91,7 +91,7 @@ export function registerRunStage(server: McpServer): void {
     },
     async ({ stage, config_mk_path, orfs_flow_path }) => {
       const workspaceConfig = readWorkspaceConfig();
-      const designName = extractDesignName(configMkPath);
+      const designName = extractDesignName(config_mk_path);
 
       // logPath uses the container path (for display), but in Docker mode
       // the actual results are at the mounted results_dir path
