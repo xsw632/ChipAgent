@@ -1,6 +1,7 @@
 ---
 name: chipyard-pnr
-description: "Run ORFS PnR flow on Chipyard-generated Verilog with sky130hd SRAM macros. Handles nosram preprocessing, SRAM override generation, ABC exclusion, OOM management, and all Chipyard-specific pitfalls."
+description: "Run full Chipyard-to-ORFS PnR flow: generate RTL from Chipyard with ENABLE_YOSYS_FLOW, preprocess nosram+SRAM override, run ORFS synth→finish on sky130hd."
+disable-model-invocation: true
 allowed-tools:
   - Bash
   - Read
@@ -8,6 +9,10 @@ allowed-tools:
   - Edit
   - Grep
   - Glob
+  - AskUserQuestion
+  - Agent
+  - WebSearch
+  - WebFetch
   - mcp__chipagent-backend__check_environment
   - mcp__chipagent-backend__generate_config
   - mcp__chipagent-backend__run_stage
@@ -19,446 +24,351 @@ allowed-tools:
 
 # chip-agent:chipyard-pnr
 
-Physical implementation pipeline for Chipyard-generated SoC designs with SRAM macros on sky130hd. Handles all Chipyard-specific preprocessing (nosram stripping, SRAM override generation), ORFS configuration tuning, and known pitfalls that differ from standard-cell-only PnR.
+End-to-end flow: Chipyard RTL generation → nosram preprocessing → SRAM override generation → ORFS full PnR (synth → floorplan → place → cts → route → finish) on sky130hd.
+
+This skill handles the **hard parts** of getting Chipyard-generated Verilog through ORFS:
+- `ENABLE_YOSYS_FLOW` flag for Yosys-compatible emission
+- Behavioral SRAM → sky130_sram macro override (avoids FF-based OOM)
+- SYNTH_BLACKBOXES + ADDITIONAL_LEFS/LIBS/GDS for SRAM macros
+- Multi-clock domain SDC constraints
+- Module consolidation from 260+ split SV files
 
 ## Usage
 
 ```
-/chip-agent:chipyard-pnr <ConfigName>
+/chip-agent:chipyard-pnr <config> [work_dir]
 ```
 
-**Example:**
+**Examples:**
 
 ```
+/chip-agent:chipyard-pnr tinyrocket
 /chip-agent:chipyard-pnr TinyRocketConfig
+/chip-agent:chipyard-pnr tinyrocket /path/to/try
 ```
 
 ## Instructions
 
-**Determine the project root directory** by finding the nearest ancestor directory of `.claude`. Use that directory as the base for all relative paths below.
+**Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Use that directory as the base for all relative paths below.
 
-## Critical Pitfalls Reference
+## Critical Pitfalls (READ FIRST)
 
-These issues were discovered through multiple PnR iterations on TinyRocketConfig. Each is marked with [PITFALL] in the pipeline steps below.
+These are non-obvious failure modes discovered through production runs. **Every one of these will cause the flow to fail silently or catastrophically if ignored.**
 
-| # | Pitfall | Root Cause | Fix | Severity |
-|---|---------|-----------|-----|----------|
-| 1 | ABC SIGABRT crash during synth | sky130ram liberty files cause ABC to crash in technology mapping | Exclude ADDITIONAL_LIBS from ABC lib_args in synth_preamble.tcl | CRITICAL |
-| 2 | Module redefinition errors | Chipyard Verilog has split_* sub-modules that conflict with SRAM overrides | Preprocess to strip _ext and split_* modules, create _nosram.v | CRITICAL |
-| 3 | Floorplan OOM (>13.9GB) | OpenROAD with default 20 threads exceeds 15GB RAM | Set NUM_CORES=4 (NOT OPENROAD_NUM_THREADS) | HIGH |
-| 4 | Route OOM during antenna repair | Antenna repair triggers second full route pass (2x memory) | Set SKIP_ANTENNA_REPAIR_POST_DRT=1 | HIGH |
-| 5 | IR drop PSM-0069 VDD connectivity | SRAM macro halo blocks met1-met4 PDN vias near die edge | Set PWR_NETS_VOLTAGES= and GND_NETS_VOLTAGES= (empty) | MEDIUM |
-| 6 | ABC9 crash (SWAP_ARITH_OPERATORS) | SWAP_ARITH_OPERATORS=1 triggers unstable ABC9 on large designs | Use ABC_AREA=1 instead, never set SWAP_ARITH_OPERATORS | HIGH |
-| 7 | SRAM power pins not connected | SRAM LEF uses lowercase vdd/gnd, some pdn.tcl only map uppercase | Verify pdn.tcl has lowercase add_global_connection entries | HIGH |
-| 8 | NUM_CORES vs OPENROAD_NUM_THREADS | OPENROAD_NUM_THREADS is ignored; NUM_CORES controls -threads | Always use NUM_CORES in config.mk | CRITICAL |
+### Pitfall 1: FF-based SRAMs cause OOM in routing (CRITICAL)
+
+**Problem:** If behavioral SRAM modules (`data_arrays_0_0_ext`, etc.) are synthesized to flip-flops, the design explodes from ~100K cells to millions of cells. Detailed routing (`5_2_route`) will be killed by OOM killer (signal 9) at 13+ GB memory.
+
+**Root cause:** `data_arrays_0_0_ext` is 4096x8 = 32,768 flip-flops per instance. With multiple instances, this creates hundreds of thousands of FFs that bloat the design.
+
+**Solution:** Use the **nosram + SRAM override** approach:
+1. Use the Chipyard-generated behavioral Verilog as-is (modules are undefined external modules)
+2. Provide `sram_override.v` that replaces behavioral SRAMs with `sky130_sram_*` macro instantiations
+3. Blackbox the `sky130_sram_*` macros during synthesis via `SYNTH_BLACKBOXES`
+4. Provide LEF/LIB/GDS files so OpenROAD can place the physical SRAM macros
+
+**NEVER** provide behavioral SRAM stubs (reg arrays) as substitutes — this causes the OOM problem.
+
+### Pitfall 2: ENABLE_YOSYS_FLOW is mandatory
+
+**Problem:** Without `ENABLE_YOSYS_FLOW=1`, firtool emits SystemVerilog packed-array patterns (`wire [2:0][8:0] _GEN = '{9'h0, ...}`) that Yosys cannot parse, causing `ERROR: syntax error, unexpected OP_CAST` in `1_1_yosys_canonicalize`.
+
+**Solution:** Always pass `ENABLE_YOSYS_FLOW=1` to `make buildfile` or `make verilog`. In Chipyard's `vlsi/tutorial.mk`, the `sky130-openroad` tutorial already sets this flag, but verify it is set.
+
+**What it does** (from `chipyard/common.mk`):
+1. Enables SFC LowFIRRTL lowering with `ReplSeqMem` for SRAM extraction
+2. Appends `disallowPackedArrays` to MFC lowering options
+
+### Pitfall 3: Duplicate module definitions
+
+**Problem:** If you concatenate `EICG_wrapper.v`, `IOCell.v`, `plusarg_reader.v` files AND they are already in the `top.f` filelist, Yosys errors: `ERROR: Re-definition of module \EICG_wrapper!`
+
+**Solution:** Only concatenate files from the `top.f` filelist (which already includes stubs). Do NOT manually append stub files that are already in the list.
+
+### Pitfall 4: SYNTH_MEMORY_MAX_BITS too small (if using behavioral fallback)
+
+**Problem:** If you fall back to behavioral SRAMs (FF-based), ORFS errors: `Error: Synthesized memory size 4096 exceeds SYNTH_MEMORY_MAX_BITS`
+
+**Solution:** Set `SYNTH_MEMORY_MAX_BITS = 131072` in config.mk. But this only applies to the FF-based fallback — the preferred SRAM macro approach does NOT need this.
+
+### Pitfall 5: SRAM blackbox cost information
+
+**Problem:** If you use `(* blackbox *)` attribute on SRAM modules without providing LEF/LIB, ORFS errors: `ERROR: Missing cost information on instanced blackbox sram22_*`
+
+**Solution:** Do NOT use custom sram22 blackbox stubs. Instead, use the ORFS-provided `sky130_sram_*` macros which have LEF/LIB/GDS files. Set `SYNTH_BLACKBOXES` in config.mk and provide `ADDITIONAL_LEFS/LIBS/GDS`.
+
+### Pitfall 6: Chipyard VLSI flow vs simulation flow
+
+**Problem:** `make verilog` (simulation flow) generates TestHarness + ChipTop in split SV files. `make buildfile` (VLSI flow) generates ChipTop-only in `top.f` filelist with SRAM MacroCompiler output.
+
+**Solution:** Use the **VLSI flow** (`make buildfile tutorial=sky130-openroad`) for ORFS. It produces a clean `top.f` filelist (ChipTop only, no TestHarness) and SRAM wrapper modules. The simulation flow includes TestHarness modules that are not needed and complicate the design.
 
 ## Pipeline
 
-### Step 0 -- Verify Prerequisites
-
-Set up variables:
+### Step 0 -- Parse Arguments and Setup
 
 ```bash
 PROJECT_ROOT="<project-root>"
-CONFIG="$ARGUMENTS"   # e.g. TinyRocketConfig
+RAW_CONFIG="$ARGUMENTS"
+WORK_DIR="${2:-$PROJECT_ROOT/try}"  # default: try/ in project root
 ```
 
-**Normalize config name** (same logic as chipyard skill):
-- If all lowercase: capitalize first letter, append `Config`
-- If has uppercase but no `Config` suffix: append `Config`
-- If empty: default to `TinyRocketConfig`
-
-Check that staged Chipyard Verilog exists:
+Normalize config name (same as `/chip-agent:chipyard`):
+- `tinyrocket` → `TinyRocketConfig`
+- `TinyRocket` → `TinyRocketConfig`
+- `TinyRocketConfig` → `TinyRocketConfig`
 
 ```bash
-test -f "$PROJECT_ROOT/MyDesign/$CONFIG/workspace/generated/$CONFIG.v"
+if [ -z "$RAW_CONFIG" ]; then
+    CONFIG="TinyRocketConfig"
+elif echo "$RAW_CONFIG" | grep -qE '[A-Z]'; then
+    if echo "$RAW_CONFIG" | grep -qE 'Config$'; then
+        CONFIG="$RAW_CONFIG"
+    else
+        CONFIG="${RAW_CONFIG}Config"
+    fi
+else
+    FIRST=$(echo "${RAW_CONFIG:0:1}" | tr '[:lower:]' '[:upper:]')
+    REST="${RAW_CONFIG:1}"
+    CONFIG="${FIRST}${REST}Config"
+fi
 ```
 
-- If **missing**: STOP with:
-  ```
-  No Chipyard Verilog found for $CONFIG.
-  Run `/chip-agent:chipyard $CONFIG` first.
-  ```
-- If **exists**: continue.
+Create work directory:
+```bash
+mkdir -p "$WORK_DIR"
+```
 
-Check for SRAM mapping file:
+### Step 1 -- Verify Environment
 
 ```bash
-test -f "$PROJECT_ROOT/MyDesign/$CONFIG/workspace/generated/sram_mapping.json"
+# Read env.json for paths
+CHIPYARD_DIR=$(jq -r '.chipyard.path' "$PROJECT_ROOT/.chipagent/env.json")
+RISCV=$(jq -r '.chipyard.riscv_path' "$PROJECT_ROOT/.chipagent/env.json")
+ORFS_FLOW_PATH=$(jq -r '.orfs.flow_path' "$PROJECT_ROOT/.chipagent/env.json")
 ```
-
-- If **missing**: warn the user but continue (SRAM steps will be skipped).
-
-### Step 1 -- Check Environment
-
-Call `mcp__chipagent-backend__check_environment` with no arguments.
 
 Verify:
-- `orfs.installed` must be `true`
-- `sky130hd.installed` must be `true`
-
-Extract and save:
-- `ORFS_FLOW_PATH` = `orfs.flow_path`
-
-Also verify the synth_preamble.tcl ABC exclusion patch is present:
-
 ```bash
-grep -q "Skipping ADDITIONAL_LIBS entry from ABC" "$ORFS_FLOW_PATH/scripts/synth_preamble.tcl"
+test -d "$CHIPYARD_DIR" && test -f "$CHIPYARD_DIR/build.sbt" || STOP "Chipyard not found at $CHIPYARD_DIR"
+test -d "$ORFS_FLOW_PATH" && test -f "$ORFS_FLOW_PATH/Makefile" || STOP "ORFS not found at $ORFS_FLOW_PATH"
 ```
 
-- If **missing**: STOP with:
-  ```
-  [PITFALL-1] synth_preamble.tcl is missing the ABC exclusion patch.
-  Without this, ABC will SIGABRT when SRAM liberty files are loaded.
-  Apply the patch from Appendix A before continuing.
-  ```
+Call `mcp__chipagent-backend__check_environment` to verify ORFS/sky130hd/Docker readiness.
 
-Verify sky130ram SRAM macros are available:
+### Step 2 -- Generate Verilog from Chipyard (VLSI Flow)
+
+**Use the VLSI flow**, not the simulation flow. The VLSI flow produces a clean ChipTop-only filelist.
 
 ```bash
-test -d "$ORFS_FLOW_PATH/platforms/sky130ram" && \
-  ls "$ORFS_FLOW_PATH/platforms/sky130ram"/sky130_sram_*/ 2>/dev/null | head -5
+# Setup conda environment
+eval "$(/home/mingzhenjia/miniconda3/bin/conda shell.bash hook)" 2>/dev/null
+conda activate "$CHIPYARD_DIR/.conda-env" 2>/dev/null
+
+# Clean previous build (optional but recommended)
+cd "$CHIPYARD_DIR/vlsi" && rm -rf build-sky130-openroad generated-src/chipyard.harness.TestHarness.${CONFIG}*
+
+# Run VLSI buildfile (elaboration + FIRRTL→Verilog + MacroCompiler)
+cd "$CHIPYARD_DIR/vlsi" && \
+export RISCV="$RISCV" && \
+export JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8" && \
+make buildfile tutorial=sky130-openroad 2>&1 | tail -80
 ```
 
-- If **missing**: STOP with:
-  ```
-  sky130ram SRAM macros not found in $ORFS_FLOW_PATH/platforms/sky130ram.
-  These are required for Chipyard SoC PnR.
-  ```
+**Timeout:** 600000ms (10 minutes). The `tutorial=sky130-openroad` automatically sets:
+- `CONFIG=TinyRocketConfig`
+- `ENABLE_YOSYS_FLOW=1`
+- `tech_name=sky130`
+- `VLSI_OBJ_DIR=build-sky130-openroad`
 
-Verify pdn.tcl has lowercase power pin mappings [PITFALL-7]:
-
+**Verification:**
 ```bash
-grep -q 'pin_pattern {^vdd$}' "$ORFS_FLOW_PATH/platforms/sky130hd/pdn.tcl" && \
-  grep -q 'pin_pattern {^gnd$}' "$ORFS_FLOW_PATH/platforms/sky130hd/pdn.tcl"
+GEN_DIR="$CHIPYARD_DIR/vlsi/generated-src/chipyard.harness.TestHarness.$CONFIG"
+TOP_F="$GEN_DIR/chipyard.harness.TestHarness.$CONFIG.top.f"
+MEMS_CONF="$GEN_DIR/chipyard.harness.TestHarness.$CONFIG.mems.conf"
+
+test -f "$TOP_F" || STOP "top.f not found — buildfile may have failed"
+test -f "$MEMS_CONF" || STOP "mems.conf not found"
+echo "Generated $(cat "$TOP_F" | wc -l) files in top.f"
+cat "$MEMS_CONF"
 ```
 
-- If **missing**: warn the user:
-  ```
-  [PITFALL-7] pdn.tcl lacks lowercase vdd/gnd global connections.
-  SRAM macro power pins will not connect to PDN.
-  Add the two add_global_connection lines from Appendix B.
-  ```
-
-### Step 2 -- Nosram Preprocessing
-
-**Purpose:** Chipyard-generated Verilog contains behavioral memory modules (e.g., `data_arrays_0_ext`, `split_data_arrays_0_ext`) that conflict with SRAM override definitions. We must strip these out to create a "nosram" version. [PITFALL-2]
-
-**2a. Identify memory modules to strip:**
-
-```bash
-SRC_V="$PROJECT_ROOT/MyDesign/$CONFIG/workspace/generated/$CONFIG.v"
-# Find all _ext memory module definitions
-grep -n '^module.*_ext\b' "$SRC_V"
+**Expected mems.conf content** (for TinyRocketConfig):
+```
+name data_arrays_0_0_ext depth 4096 width 8 ports mrw mask_gran 8
+name tag_array_0_ext depth 64 width 21 ports mrw mask_gran 21
+name data_arrays_0_0_0_ext depth 1024 width 32 ports mrw mask_gran 32
 ```
 
-Also find `split_*` modules that wrap the `_ext` modules:
+### Step 3 -- Consolidate Verilog Files
+
+Merge the split SV files from `top.f` into a single file. The `top.f` filelist contains ChipTop-only modules (no TestHarness) and already includes stub files (EICG_wrapper.v, IOCell.v, plusarg_reader.v).
 
 ```bash
-grep -n '^module split_.*_ext\b' "$SRC_V"
+COLL="$GEN_DIR/gen-collateral"
+TOP_F="$GEN_DIR/chipyard.harness.TestHarness.$CONFIG.top.f"
+NOSRAM_V="$WORK_DIR/${CONFIG}_nosram.sv"
+
+# Merge all files from top.f into single file
+cat "$TOP_F" | while read f; do
+    cat "$f"
+    echo ""
+done > "$NOSRAM_V"
+
+echo "Merged: $NOSRAM_V ($(wc -l < "$NOSRAM_V") lines)"
 ```
 
-**2b. Create nosram Verilog:**
+**Do NOT append** EICG_wrapper.v, IOCell.v, plusarg_reader.v — they are already in `top.f`.
 
-Strip all `_ext` and `split_*_ext` module definitions from the base Verilog. Use a Python one-liner:
+**Do NOT include** the SRAM wrapper (`*.top.mems.v`) — it uses sram22 macros which we replace with sky130_sram macros via the override.
 
+**Verify no duplicates:**
 ```bash
-NOSRAM_V="$PROJECT_ROOT/MyDesign/$CONFIG/workspace/generated/${CONFIG}_nosram.v"
+# Should show 0 — all modules should be unique
+grep "^module " "$NOSRAM_V" | sort | uniq -d | wc -l
+```
 
-python3 -c "
-import re, sys
-with open(sys.argv[1]) as f:
-    content = f.read()
-# Remove module definitions for *_ext and split_*_ext modules
-content = re.sub(
-    r'^module\s+(?:split_)?\w+_ext\b.*?^endmodule',
-    '',
-    content,
-    flags=re.MULTILINE | re.DOTALL
+### Step 4 -- Generate SRAM Override Modules
+
+**Delegate to `sram-mapping` subagent.**
+
+The SRAM override generation involves complex tiling logic (depth splitting, column grouping, wmask expansion, read MUX). Invoke the dedicated `sram-mapping` agent which encapsulates the full mapping analysis and code generation.
+
+Spawn the `sram-mapping` agent (from `agents/sram-mapping.md`) with this context in the prompt:
+
+```
+GEN_DIR: <path to gen-collateral directory>
+OUTPUT_DIR: <path to work directory>
+ORFS_FLOW_PATH: <path to ORFS flow/ directory>
+```
+
+Example:
+```
+Agent(
+  subagent_type: "sram-mapping",
+  description: "Generate SRAM override modules",
+  prompt: "Generate SRAM override modules for Chipyard design.
+    GEN_DIR: /home/user/chipyard/vlsi/generated-src/chipyard.harness.TestHarness.TinyRocketConfig/gen-collateral
+    OUTPUT_DIR: /home/user/ChipAgent-Test/try
+    ORFS_FLOW_PATH: /home/user/OpenROAD-flow-scripts/flow"
 )
-# Clean up excessive blank lines
-content = re.sub(r'\n{4,}', '\n\n', content)
-with open(sys.argv[2], 'w') as f:
-    f.write(content)
-" "$SRC_V" "$NOSRAM_V"
-
-echo "Created: $NOSRAM_V ($(wc -l < "$NOSRAM_V") lines)"
 ```
 
-**2c. Verify no _ext modules remain:**
+The agent will:
+1. Read `mems.conf` to parse SRAM specs (depth, width, ports, mask_gran)
+2. Find behavioral module instantiation sites to infer port interfaces
+3. Select the best-fit `sky130_sram_*` macro for each SRAM
+4. Design the tiling strategy (depth tiles, column groups, bit slicing)
+5. Generate `$WORK_DIR/sram_override.v` with correct override modules
+6. Write `$WORK_DIR/sram_mapping.json` with structured mapping metadata
+7. Perform a Yosys compile check
+
+**After the agent completes, verify the output:**
 
 ```bash
-grep -c '^module.*_ext\b' "$NOSRAM_V"
-# Should be 0
+test -f "$WORK_DIR/sram_override.v" || STOP "sram-mapping agent did not produce sram_override.v"
+test -f "$WORK_DIR/sram_mapping.json" || STOP "sram-mapping agent did not produce sram_mapping.json"
 ```
 
-If non-zero, the regex did not catch all modules. Inspect and fix manually.
-
-### Step 3 -- Generate SRAM Override Verilog
-
-**Purpose:** Create wrapper modules that instantiate sky130hd SRAM macros in place of the stripped behavioral memories. The override file is loaded after the nosram Verilog, so ORFS "last definition wins" redefines the `_ext` modules with SRAM-based implementations.
-
-**3a. Read sram_mapping.json:**
+**Extract SRAM macro list** from the generated mapping for Step 6:
 
 ```bash
-cat "$PROJECT_ROOT/MyDesign/$CONFIG/workspace/generated/sram_mapping.json"
+USED_MACROS=$(jq -r '.mappings[] | select(.macro != null) | .macro' "$WORK_DIR/sram_mapping.json" | sort -u)
+echo "Used SRAM macros: $USED_MACROS"
 ```
 
-Extract the mapping list. For each memory with `strategy: "sram_macro"` or `strategy: "multi_macro_tiling"`:
-- `rtl_module`: the `_ext` module name
-- `depth`, `width`, `ports`, `mask_gran`
-- `macro`: target sky130hd SRAM macro name
-- `tiles`: number of depth tiles (if > 1)
+This macro list is needed in Step 6 to populate `SYNTH_BLACKBOXES`, `ADDITIONAL_LEFS/LIBS/GDS`, and `DONT_USE_CELLS` in config.mk.
 
-**3b. Generate override Verilog:**
+### Step 5 -- Identify Clock Ports
 
-For each mapped memory, generate a Verilog module that:
-1. Matches the original `_ext` module port interface exactly
-2. Instantiates the appropriate sky130hd SRAM macro(s)
-3. Handles address decoding for depth-tiling (> 1 tile)
-4. Handles width tiling (multiple macros side-by-side for wide data)
-5. Connects byte-level write masks from the original port interface to the macro's wmask
-
-**Override module template -- single macro (1 tile):**
-
-```verilog
-module <ext_module_name>(
-  input  [ADDR_W-1:0] RW0_addr,
-  input                RW0_clk,
-  input  [DATA_W-1:0]  RW0_wdata,
-  output [DATA_W-1:0]  RW0_rdata,
-  input                RW0_en,
-  input                RW0_wmode,
-  input  [MASK_W-1:0]  RW0_wmask   // only if masked
-);
-
-  wire csb0 = ~RW0_en;
-  wire web0 = ~RW0_wmode;
-  wire [<WMASK_W-1>:0] wmask0 = <computed from RW0_wmask>;
-
-  wire [<MACRO_DATA_W-1>:0] dout0;
-  wire [<MACRO_DATA_W-1>:0] dout1;
-
-  sky130_sram_<macro_suffix> u_sram (
-    .clk0   (RW0_clk),
-    .csb0   (csb0),
-    .web0   (web0),
-    .wmask0 (wmask0),
-    .addr0  (RW0_addr),
-    .din0   ({<pad>, RW0_wdata}),
-    .dout0  (dout0),
-    .clk1   (RW0_clk),
-    .csb1   (1'b1),       // read port disabled
-    .addr1  ({<ADDR_W>{1'b0}}),
-    .dout1  (dout1)
-  );
-
-  assign RW0_rdata = dout0[<DATA_W-1>:0];
-endmodule
-```
-
-**Override module template -- depth-tiled (N tiles):**
-
-When memory depth > single macro depth (256 for sky130_sram_1rw1r_128x256_8), use N tiles:
-
-```verilog
-module <ext_module_name>(
-  input  [ADDR_W-1:0] RW0_addr,
-  input                RW0_clk,
-  input  [DATA_W-1:0]  RW0_wdata,
-  output [DATA_W-1:0]  RW0_rdata,
-  input                RW0_en,
-  input                RW0_wmode,
-  input  [MASK_W-1:0]  RW0_wmask   // only if masked
-);
-
-  wire [<TILE_SEL_W-1>:0] tile_sel = RW0_addr[ADDR_W-1 -: TILE_SEL_W];
-  wire [7:0] macro_addr = RW0_addr[7:0];  // lower 8 bits for 256-deep macros
-
-  wire csb0 = ~RW0_en;
-  wire web0 = ~RW0_wmode;
-
-  genvar i;
-  generate
-    for (i = 0; i < <N>; i = i + 1) begin : gen_sram_tile
-      wire [<MACRO_DATA_W-1>:0] dout0_tile;
-      wire [<MACRO_DATA_W-1>:0] dout1_tile;
-      wire [<WMASK_W-1>:0] wmask0 = <computed>;
-
-      sky130_sram_<macro_suffix> u_sram (
-        .clk0   (RW0_clk),
-        .csb0   (csb0 | (tile_sel != i[<TILE_SEL_W-1>:0])),
-        .web0   (web0),
-        .wmask0 (wmask0),
-        .addr0  (macro_addr),
-        .din0   ({<pad>, RW0_wdata}),
-        .dout0  (dout0_tile),
-        .clk1   (RW0_clk),
-        .csb1   (1'b1),
-        .addr1  (8'b0),
-        .dout1  (dout1_tile)
-      );
-    end
-  endgenerate
-
-  // MUX read data from active tile
-  reg [DATA_W-1:0] rdata_reg;
-  always @(*) begin
-    rdata_reg = {DATA_W{1'b0}};
-    case (tile_sel)
-      <case for each tile: N'd0: rdata_reg = dout0_tile_N[DATA_W-1:0];>
-      default: rdata_reg = {DATA_W{1'b0}};
-    endcase
-  end
-  assign RW0_rdata = rdata_reg;
-endmodule
-```
-
-**Width tiling for byte-lane architectures (like DCache data array):**
-
-When a memory has byte-masked writes with width > macro width, decompose into per-byte-lane groups, each with its own depth tiling:
-
-```verilog
-genvar byte_lane, tile;
-generate
-  for (byte_lane = 0; byte_lane < NUM_BYTE_LANES; byte_lane = byte_lane + 1) begin : gen_byte_lane
-    for (tile = 0; tile < NUM_DEPTH_TILES; tile = tile + 1) begin : gen_sram_tile
-      // Each byte lane + tile gets one SRAM macro
-      // Per-byte wmask: wmask0[0] = RW0_wmask[byte_lane]
-      ...
-    end
-    // MUX per byte lane
-    ...
-    assign RW0_rdata[byte_lane*8 +: 8] = rdata_lane;
-  end
-endgenerate
-```
-
-**3c. Write the override file:**
-
+Read the ChipTop module ports:
 ```bash
-OVERRIDE_V="$PROJECT_ROOT/MyDesign/$CONFIG/workspace/generated/${CONFIG}_sram_override.v"
-# Write the generated override Verilog to this path
+grep -A30 "^module ChipTop" "$WORK_DIR/${CONFIG}_nosram.sv" | head -20
 ```
 
-**3d. Verify override module port interfaces match the original:**
+Typical TinyRocketConfig ChipTop clock ports:
+- `clock_uncore_clock` — main core clock (10ns period)
+- `serial_tl_clock` — serial link clock
+- `jtag_TCK` — JTAG clock (100ns period)
 
-For each override module, confirm its ports exactly match what the nosram Verilog expects:
+### Step 6 -- Generate ORFS Config
 
-```bash
-# Extract module instantiation from nosram Verilog
-grep -A5 '<ext_module_name>' "$NOSRAM_V" | head -10
-# Compare with override module definition
-grep -A5 'module <ext_module_name>' "$OVERRIDE_V" | head -10
+Use `mcp__chipagent-backend__generate_config` to create base config, then manually enhance it.
+
+**6a. Generate base config:**
 ```
-
-### Step 4 -- Install Design Files into ORFS
-
-Copy all design files into the ORFS directory structure:
-
-```bash
-DESIGN_HOME="$ORFS_FLOW_PATH/designs"
-DESIGN_DIR="$DESIGN_HOME/sky130hd/tinyRocket"
-SRC_DIR="$DESIGN_HOME/src/tinyRocket"
-mkdir -p "$DESIGN_DIR" "$SRC_DIR"
-
-# Copy nosram Verilog
-cp "$NOSRAM_V" "$SRC_DIR/$(basename "$NOSRAM_V")"
-
-# Copy SRAM override Verilog
-cp "$OVERRIDE_V" "$DESIGN_DIR/$(basename "$OVERRIDE_V")"
-```
-
-### Step 5 -- Generate Config
-
-**5a. Read spec.json for clock parameters:**
-
-```bash
-cat "$PROJECT_ROOT/MyDesign/$CONFIG/workspace/spec.json"
-```
-
-Extract:
-- `clock_port` (default: `"clock"`)
-- `clock_period_ns` (default: `10`)
-
-**5b. Determine the top-level module:**
-
-For Chipyard designs, the actual synthesis top module is typically NOT `ChipTop`. Instead it's the core tile module. First check spec.json for `pnr_top_module`:
-
-```bash
-PNR_TOP=$(python3 -c "import json; d=json.load(open('$PROJECT_ROOT/MyDesign/$CONFIG/workspace/spec.json')); print(d.get('pnr_top_module',''))" 2>/dev/null)
-```
-
-If `pnr_top_module` is set and non-empty, use it. Otherwise, auto-detect:
-
-```bash
-if [ -z "$PNR_TOP" ]; then
-    # Common Chipyard top modules for PnR synthesis:
-    # - TinyRocketConfig -> RocketTile
-    # - Other configs may differ -- check the Verilog hierarchy
-    PNR_TOP=$(grep -o 'module [A-Za-z]*Tile ' "$NOSRAM_V" 2>/dev/null | head -1 | awk '{print $2}')
-    if [ -z "$PNR_TOP" ]; then
-        PNR_TOP="ChipTop"  # fallback
-    fi
-fi
-echo "PnR top module: $PNR_TOP"
-```
-
-**IMPORTANT:** The `DESIGN_NAME` in config.mk must be the tile-level module (e.g., `RocketTile`), NOT `ChipTop`. `ChipTop` includes the TestHarness which is not needed for PnR.
-
-**5c. Call `mcp__chipagent-backend__generate_config`:**
-
-```bash
 mcp__chipagent-backend__generate_config(
-  module_name = "$PNR_TOP"
-  verilog_path = absolute path to $NOSRAM_V
-  workspace_dir = absolute path to MyDesign/$CONFIG/workspace
-  clock_port = from spec.json
-  clock_period_ns = from spec.json
-  core_utilization = 55    # [PITFALL-3] Higher than default 40 for SRAM-heavy designs
+  module_name="ChipTop",
+  verilog_path="$WORK_DIR/${CONFIG}_nosram.sv",
+  workspace_dir="$WORK_DIR",
+  clock_port="clock_uncore_clock",
+  clock_period_ns=10,
+  core_utilization=55,
+  place_density=0.65
 )
 ```
 
-**5d. Post-process config.mk with SRAM parameters:**
+**6b. Overwrite config.mk with full Chipyard-specific settings:**
 
-The MCP tool generates a basic config.mk. We must add SRAM-specific parameters. Read the generated config.mk, then append/edit:
+The MCP-generated config is a minimal template. Replace it with the full config that includes SRAM macro paths, blackboxes, and physical constraints. The SRAM macro list is dynamically built from `sram_mapping.json` generated by `/chip-agent:sram-mapping`.
 
-```makefile
-# === SRAM Configuration (added by chipyard-pnr skill) ===
+```bash
+SRAM_DIR="$ORFS_FLOW_PATH/platforms/sky130ram"
 
+# Build SRAM macro lists dynamically from sram_mapping.json
+MACROS=$(jq -r '.mappings[] | select(.macro != null) | .macro' "$WORK_DIR/sram_mapping.json" | sort -u)
+MACRO_LIST=$(echo "$MACROS" | tr '\n' ' ')
+
+# Build VERILOG_FILES: nosram + override + each macro's behavioral .v
+VERILOG_LIST="$WORK_DIR/${CONFIG}_nosram.sv $WORK_DIR/sram_override.v"
+for m in $MACROS; do
+    VERILOG_LIST="$VERILOG_LIST $SRAM_DIR/$m/$m.v"
+done
+
+# Build ADDITIONAL_LEFS/LIBS/GDS lines
+LEFS=""; LIBS=""; GDS=""
+for m in $MACROS; do
+    LEFS="$LEFS $SRAM_DIR/$m/$m.lef"
+    LIBS="$LIBS $SRAM_DIR/$m/${m}_TT_1p8V_25C.lib"
+    GDS="$GDS $SRAM_DIR/$m/$m.gds"
+done
+
+# Format as backslash-continued Makefile lines
+VERILOG_LINES=$(echo "$VERILOG_LIST" | sed 's/  */ \\\n    /g')
+LEF_LINES=$(echo "$LEFS" | sed 's/^ *//' | sed 's/  */ \\\n    /g')
+LIB_LINES=$(echo "$LIBS" | sed 's/^ *//' | sed 's/  */ \\\n    /g')
+GDS_LINES=$(echo "$GDS" | sed 's/^ *//' | sed 's/  */ \\\n    /g')
+
+cat > "$WORK_DIR/pnr/config.mk" << CFGEOF
+export DESIGN_NAME = ChipTop
+export PLATFORM = sky130hd
 export DESIGN_NICKNAME = tinyRocket
-export VERILOG_FILES = \
-    $(DESIGN_HOME)/src/tinyRocket/TinyRocketConfig_nosram.v \
-    $(DESIGN_HOME)/$(PLATFORM)/$(DESIGN_NICKNAME)/TinyRocketConfig_sram_override.v \
-    $(PLATFORM_DIR)/../sky130ram/sky130_sram_1rw1r_128x256_8/sky130_sram_1rw1r_128x256_8.v \
-    $(PLATFORM_DIR)/../sky130ram/sky130_sram_1rw1r_44x64_8/sky130_sram_1rw1r_44x64_8.v
 
-# Blackbox SRAM macros during synthesis [PITFALL-1 prerequisite]
-export SYNTH_BLACKBOXES = sky130_sram_1rw1r_128x256_8 sky130_sram_1rw1r_44x64_8
+export VERILOG_FILES = \\
+    $VERILOG_LINES
 
-# SRAM macro library paths
-SRAM_DIR = $(PLATFORM_DIR)/../sky130ram
-export ADDITIONAL_LEFS = \
-    $(SRAM_DIR)/sky130_sram_1rw1r_128x256_8/sky130_sram_1rw1r_128x256_8.lef \
-    $(SRAM_DIR)/sky130_sram_1rw1r_44x64_8/sky130_sram_1rw1r_44x64_8.lef
-export ADDITIONAL_LIBS = \
-    $(SRAM_DIR)/sky130_sram_1rw1r_128x256_8/sky130_sram_1rw1r_128x256_8_TT_1p8V_25C.lib \
-    $(SRAM_DIR)/sky130_sram_1rw1r_44x64_8/sky130_sram_1rw1r_44x64_8_TT_1p8V_25C.lib
-export ADDITIONAL_GDS = \
-    $(SRAM_DIR)/sky130_sram_1rw1r_128x256_8/sky130_sram_1rw1r_128x256_8.gds \
-    $(SRAM_DIR)/sky130_sram_1rw1r_44x64_8/sky130_sram_1rw1r_44x64_8.gds
+export SDC_FILE = $WORK_DIR/pnr/constraint.sdc
 
-# Prevent ABC from mapping to SRAM cells [PITFALL-1 complementary]
-export DONT_USE_CELLS += sky130_sram_1rw1r_128x256_8 sky130_sram_1rw1r_44x64_8
+# Blackbox SRAM macros during synthesis (Yosys leaves them as abstract blocks)
+export SYNTH_BLACKBOXES = $MACRO_LIST
 
-# Hierarchical synthesis to preserve SRAM black box instances
+# SRAM macro physical files for OpenROAD floorplan/place/route
+export ADDITIONAL_LEFS = \\
+    $LEF_LINES
+export ADDITIONAL_LIBS = \\
+    $LIB_LINES
+export ADDITIONAL_GDS = \\
+    $GDS_LINES
+
+# Prevent ABC from mapping to SRAM cells
+export DONT_USE_CELLS += $MACRO_LIST
+
+# Hierarchical synthesis to preserve SRAM blackbox instances
 export SYNTH_HIERARCHICAL = 1
-export SYNTH_MINIMUM_KEEP_SIZE ?= 1000
-
-# Area-optimized ABC [PITFALL-6: never use SWAP_ARITH_OPERATORS]
+export SYNTH_MINIMUM_KEEP_SIZE = 1000
 export ABC_AREA = 1
 
-# Design-specific physical parameters
+# Physical parameters
 export CORE_UTILIZATION = 55
 export PLACE_DENSITY = 0.65
 export MACRO_PLACE_HALO = 20 20
@@ -468,299 +378,146 @@ export CTS_CLUSTER_SIZE = 20
 export CTS_CLUSTER_DIAMETER = 50
 
 export TNS_END_PERCENT = 100
-
-# [PITFALL-4] Skip antenna repair to avoid OOM during route
 export SKIP_ANTENNA_REPAIR_POST_DRT = 1
-
-# [PITFALL-3/PITFALL-8] Thread control: NUM_CORES (not OPENROAD_NUM_THREADS)
-# 4 threads: good balance for 15GB RAM systems
-# For <12GB RAM, use NUM_CORES=1
 export NUM_CORES = 4
 
-# [PITFALL-5] Skip IR drop analysis (SRAM halo blocks PDN vias)
+# Skip IR drop analysis (SRAM halo blocks PDN vias)
 export PWR_NETS_VOLTAGES =
 export GND_NETS_VOLTAGES =
+CFGEOF
 ```
 
-**Adaptive NUM_CORES based on system RAM:**
+**6c. Write SDC with multi-clock constraints:**
 
 ```bash
-TOTAL_RAM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
-TOTAL_RAM_GB=$((TOTAL_RAM_KB / 1024 / 1024))
-
-if [ "$TOTAL_RAM_GB" -lt 12 ]; then
-    NUM_CORES=1
-elif [ "$TOTAL_RAM_GB" -lt 16 ]; then
-    NUM_CORES=4
-else
-    NUM_CORES=8
-fi
+cat > "$WORK_DIR/pnr/constraint.sdc" << SDCEOF
+current_design ChipTop
+create_clock -name core_clock -period 10 [get_ports clock_uncore_clock]
+create_clock -name serial_clock -period 10 [get_ports serial_tl_clock]
+create_clock -name jtag_clock -period 100 [get_ports jtag_TCK]
+set_clock_groups -asynchronous -group {core_clock} -group {serial_clock} -group {jtag_clock}
+set_input_delay -clock core_clock 0 [all_inputs -no_clocks]
+set_output_delay -clock core_clock 0 [all_outputs]
+SDCEOF
 ```
 
-**5e. Generate constraint.sdc:**
+### Step 7 -- Run ORFS Full Flow
 
-```tcl
-set clk_name clock
-set clk_period <from spec.json, default 10.0>
-set clk_port [get_ports $clk_name]
-create_clock $clk_port -name $clk_name -period $clk_period
-set_input_delay 0.0 -clock $clk_name [all_inputs]
-set_output_delay 0.0 -clock $clk_name [all_outputs]
-set_clock_uncertainty 0.5 $clk_name
-set_dont_use sky130_fd_sc_hd__probe_p_8
-set_dont_use sky130_fd_sc_hd__probec_p_8
+Run each stage sequentially via `make`. Do NOT use `mcp__chipagent-backend__run_stage` — it may have parameter issues with absolute paths. Use direct `make` commands.
+
+```bash
+ORFS_FLOW="$ORFS_FLOW_PATH/flow"
+CONFIG_MK="$WORK_DIR/pnr/config.mk"
+DESIGN_CONFIG="$CONFIG_MK"
+
+# Clean any previous run
+cd "$ORFS_FLOW" && make DESIGN_CONFIG="$DESIGN_CONFIG" clean_all
+
+# 7a. Synthesis (~10 min, ~2.7 GB)
+cd "$ORFS_FLOW" && make DESIGN_CONFIG="$DESIGN_CONFIG" synth 2>&1 | tail -20
+
+# Verify synthesis output
+test -f "$ORFS_FLOW/results/sky130hd/tinyRocket/base/1_synth.odb" || STOP "Synthesis failed"
+
+# 7b. Floorplan (~1.5 min, ~12 GB for PDN)
+cd "$ORFS_FLOW" && make DESIGN_CONFIG="$DESIGN_CONFIG" floorplan 2>&1 | tail -10
+
+# 7c. Placement (~6 min, ~1.4 GB)
+cd "$ORFS_FLOW" && make DESIGN_CONFIG="$DESIGN_CONFIG" place 2>&1 | tail -10
+
+# 7d. CTS (~6 min, ~1.4 GB)
+cd "$ORFS_FLOW" && make DESIGN_CONFIG="$DESIGN_CONFIG" cts 2>&1 | tail -10
+
+# 7e. Routing (~56 min, ~7 GB peak during DRT)
+cd "$ORFS_FLOW" && make DESIGN_CONFIG="$DESIGN_CONFIG" route 2>&1 | tail -10
+
+# 7f. Finish + GDS merge (~2 min)
+cd "$ORFS_FLOW" && make DESIGN_CONFIG="$DESIGN_CONFIG" finish 2>&1 | tail -20
 ```
 
-Write this to `$PROJECT_ROOT/MyDesign/$CONFIG/workspace/pnr/constraint.sdc` and also copy to `$DESIGN_DIR/constraint.sdc`.
+**Total runtime:** ~82 minutes on a modern machine.
 
-**5f. Save variables:**
+**Timeout per stage:** Use 600000ms (10 min) for most stages. Routing may take up to 60 minutes.
 
-- `CONFIG_MK` = path to the generated config.mk
-- `DESIGN_NAME` = the tile module name (e.g., `RocketTile`)
+**Memory requirements:**
+- Synthesis: ~3 GB
+- Floorplan/PDN: ~12 GB (PDN generation is memory-intensive)
+- Place: ~2 GB
+- CTS: ~2 GB
+- Route (DRT): ~7-8 GB
+- Finish: ~2 GB
 
-### Step 5.5 -- Clear QoR History
+### Step 8 -- Collect Results and Report
 
-Call `mcp__chipagent-backend__compare_runs` with:
-- `action`: `"clear"`
-- `workspace_dir`: absolute path to `MyDesign/$CONFIG/workspace`
+```bash
+RESULTS_DIR="$ORFS_FLOW/results/sky130hd/tinyRocket/base"
+REPORTS_DIR="$ORFS_FLOW/reports/sky130hd/tinyRocket/base"
 
-### Step 6 -- Run Comparison Rounds
+# List output artifacts
+echo "=== Output Artifacts ==="
+ls -lh "$RESULTS_DIR"/6_final.* 2>/dev/null
 
-**MANDATORY: All rounds must run to completion.**
+# Read timing/area report
+cat "$REPORTS_DIR/6_finish.rpt" 2>/dev/null | grep -A1 "report_tns\|report_wns\|report_worst_slack\|report_clock_min_period\|violation count"
 
-Stage ordering: `STAGE_ORDER = ["synth", "floorplan", "place", "cts", "route", "finish"]`
-
-**Round plans for Chipyard+SRAM designs:**
-
-Unlike standard-cell PnR, Chipyard designs with SRAM macros need specific parameter ranges:
-
-- **Round 1 baseline:**
-  ```json
-  {
-    "clock_period_ns": 10,
-    "core_utilization": 55,
-    "place_density": 0.65,
-    "num_cores": "<adaptive from Step 5d>",
-    "skip_antenna_repair": true,
-    "sram_aware": true
-  }
-  ```
-
-- **Round 2** (if synth_cell_count > 5000):
-  ```json
-  {
-    "clock_period_ns": 12.5,
-    "core_utilization": 50,
-    "place_density": 0.60,
-    "num_cores": "<same>",
-    "skip_antenna_repair": true,
-    "sram_aware": true
-  }
-  ```
-
-- **Round 3** (aggressive relaxation):
-  ```json
-  {
-    "clock_period_ns": 15,
-    "core_utilization": 45,
-    "place_density": 0.55,
-    "num_cores": "<same>",
-    "skip_antenna_repair": true,
-    "sram_aware": true
-  }
-  ```
-
-**CRITICAL: SRAM-aware config regeneration:**
-
-When regenerating config for each round/retry, you MUST preserve all SRAM-related parameters (VERILOG_FILES, SYNTH_BLACKBOXES, ADDITIONAL_*, DONT_USE_CELLS, SYNTH_HIERARCHICAL, ABC_AREA, SKIP_ANTENNA_REPAIR_POST_DRT, NUM_CORES, PWR_NETS_VOLTAGES, GND_NETS_VOLTAGES, MACRO_PLACE_HALO). The MCP `generate_config` tool only generates standard-cell configs. After each `generate_config` call, re-apply the SRAM parameters as described in Step 5d.
-
-For each round:
-
-1. Set round variables (round number, current_params, restart_from="synth", retry_attempt=1)
-2. Display: `=== Chipyard-PnR Round {round}/{total} ===`
-3. Call `mcp__chipagent-backend__clean_design` before first attempt
-4. Generate config (MCP tool + SRAM post-processing)
-5. Run stages from restart_from through finish:
-   - Call `mcp__chipagent-backend__run_stage` for each stage
-   - Call `mcp__chipagent-backend__get_report` after each stage
-   - Display per-stage metrics immediately
-   - If stage fails, record failed_stage and stop
-
-6. Determine pass/fail:
-   - Pass = all stages succeed AND wns >= 0 AND violations == 0
-   - For Chipyard designs: timing violations (negative WNS) are **expected** on sky130hd. A round with WNS > -5ns and 0 DRC violations should be considered a "soft pass" for comparison purposes.
-
-7. Save run to QoR history via `mcp__chipagent-backend__compare_runs`
-8. If failed and retries remain, diagnose via `mcp__chipagent-backend__diagnose_failure` and retry
-9. If severity is "critical", end the round
-
-**OOM recovery [PITFALL-3]:**
-
-If a stage fails with OOM (check stderr for "Cannot allocate memory", "Out of memory", or exit code 137):
-1. Reduce `NUM_CORES` by half (minimum 1)
-2. If `NUM_CORES` is already 1 and still OOM, this is a hard limit -- accept the failure
-3. Clean and retry from the failed stage
-
-### Step 7 -- QoR Comparison and Recommendation
-
-**7a. Load all runs:**
-
-Call `mcp__chipagent-backend__compare_runs` with:
-- `action`: `"load"`
-- `workspace_dir`: absolute path to `MyDesign/$CONFIG/workspace`
-
-**7b. Display comparison table:**
-
-```
-=== QoR Comparison: <ConfigName> (Chipyard+SRAM) ===
-
-| Round | Clock (ns) | Util | Density | WNS (ns) | TNS (ns) | Area (um2) | Power (uW) | DRC | SRAMs | Status |
-|-------|-----------|------|---------|----------|----------|------------|------------|-----|-------|--------|
+# Read DRC report
+cat "$REPORTS_DIR/5_route_drc.rpt" 2>/dev/null | tail -5
 ```
 
-Include a `SRAMs` column showing total SRAM macro count for context.
+**Expected output files:**
+| File | Description |
+|------|-------------|
+| `6_final.gds` | Final GDSII layout (~255 MB) |
+| `6_final.odb` | Final OpenDB database (~540 MB) |
+| `6_final.v` | Final Verilog netlist (~40 MB) |
+| `6_final.spef` | Parasitic extraction (~156 MB) |
+| `6_final.def` | Final DEF file (~241 MB) |
 
-**7c. Best-run recommendation:**
+## Pipeline Stages Summary
 
-Call `mcp__chipagent-backend__compare_runs` with `action: "recommend"`.
+| # | Stage | Duration | Peak Memory | Key Notes |
+|---|-------|----------|-------------|-----------|
+| 0 | Parse & Setup | - | - | Normalize config, create work dir |
+| 1 | Verify Environment | - | - | Check chipyard, ORFS, sky130hd |
+| 2 | Generate Verilog | ~5 min | ~2 GB | `make buildfile tutorial=sky130-openroad` |
+| 3 | Consolidate SV | ~10 sec | ~100 MB | Merge 237 files from top.f |
+| 4 | SRAM Override | - | - | Delegate to `/chip-agent:sram-mapping`, yosys check |
+| 5 | Identify Clocks | - | - | Parse ChipTop ports |
+| 6 | Generate Config | - | - | config.mk + multi-clock SDC |
+| 7a | Synthesis | ~10 min | ~3 GB | Yosys + ABC |
+| 7b | Floorplan | ~1.5 min | ~12 GB | Init + tapcell + PDN |
+| 7c | Placement | ~6 min | ~2 GB | Global + detailed placement |
+| 7d | CTS | ~6 min | ~2 GB | Clock tree synthesis |
+| 7e | Routing | ~56 min | ~7 GB | GRT + DRT + antenna repair |
+| 7f | Finish | ~2 min | ~2 GB | Fill + GDS merge |
+| 8 | Report | - | - | Collect timing/area/DRC metrics |
 
-**Note for Chipyard designs:** It is normal for sky130hd to not meet timing at 100MHz with SRAM macros. The recommended run is the one with best WNS and clean DRC, even if WNS is negative. Report the achieved fmax:
+## Anti-Patterns
 
-```
-fmax = 1000 / (clock_period_ns - WNS_ns) MHz
-```
-
-### Step 8 -- Format PPA Report
-
-**Only run if at least one round completed (pass or soft-pass).**
-
-Read the agent definition at `agents/pnr-report-formatter.md` and follow its rules to format a PPA summary report.
-
-Add a Chipyard-specific section to the report:
-
-```
-Chipyard Configuration:
-  Config:        <ConfigName>
-  Top Module:    <DESIGN_NAME>
-  SRAM Macros:   <N> total
-    - sky130_sram_1rw1r_128x256_8: <count> instances
-    - sky130_sram_1rw1r_44x64_8:   <count> instances
-  Achieved fmax: <value> MHz (target: <target> MHz)
-
-Known Limitations:
-  - Timing not met: sky130hd 130nm process with SRAM macros limits achievable frequency
-  - Antenna violations: <count> (skipped repair to avoid OOM; non-critical)
-  - IR drop analysis: skipped (SRAM halo blocks PDN vias; functional where cells are placed)
-```
-
-## Pipeline Stages
-
-| # | Stage | Description |
-|---|-------|-------------|
-| 0 | Verify Prerequisites | Check Chipyard Verilog, SRAM mapping, and ORFS patches |
-| 1 | Check Environment | Verify ORFS, sky130hd, ABC patch, SRAM macros, pdn.tcl |
-| 2 | Nosram Preprocess | Strip behavioral memory modules from Chipyard Verilog |
-| 3 | SRAM Override | Generate wrapper modules instantiating sky130hd SRAM macros |
-| 4 | Install Design | Copy files into ORFS directory structure |
-| 5 | Generate Config | Create config.mk + constraint.sdc with SRAM parameters |
-| 5.5 | Clear QoR History | Reset for fresh run |
-| 6 | Run Comparison Rounds | Execute PnR with Chipyard+SRAM-aware parameters |
-| 7 | QoR Comparison | Display comparison table + best-run recommendation |
-| 8 | Format Report | PPA summary with Chipyard-specific annotations |
+- **NEVER** use behavioral SRAM stubs (reg arrays) — causes OOM in routing (13+ GB)
+- **NEVER** omit `ENABLE_YOSYS_FLOW=1` — causes Yosys parse errors on packed arrays
+- **NEVER** append stub files that are already in `top.f` — causes duplicate module errors
+- **NEVER** use `SYNTH_BLACKBOXES` without `ADDITIONAL_LEFS/LIBS/GDS` — causes missing cost error
+- **NEVER** use the simulation flow (`make verilog`) — includes TestHarness modules
+- **NEVER** use `mcp__chipagent-backend__run_stage` for this flow — parameter path issues
+- **NEVER** skip `clean_all` between retries — ORFS caches stale results
+- **ALWAYS** verify Yosys compiles the design before running ORFS (Step 4 verification)
+- **ALWAYS** set `SYNTH_HIERARCHICAL = 1` — preserves SRAM module boundaries
+- **ALWAYS** set `MACRO_PLACE_HALO = 20 20` — prevents standard cells from overlapping SRAM halo
+- **ALWAYS** set `DONT_USE_CELLS` for SRAM macros — prevents ABC from using them as logic cells
+- **ALWAYS** set `SKIP_ANTENNA_REPAIR_POST_DRT = 1` — avoids OOM during antenna repair
 
 ## Input
 
 $ARGUMENTS
 
-A Chipyard config name (e.g., `TinyRocketConfig`). The config must already have staged Verilog at `MyDesign/<Config>/workspace/generated/<Config>.v`, typically produced by `/chip-agent:chipyard`.
+A Chipyard config name (e.g., `tinyrocket`, `TinyRocketConfig`). Optional second argument for work directory.
 
 ## Output
 
 Upon completion:
-
-- Nosram Verilog: `MyDesign/<Config>/workspace/generated/<Config>_nosram.v`
-- SRAM override: `MyDesign/<Config>/workspace/generated/<Config>_sram_override.v`
-- ORFS design files in `$ORFS_FLOW_PATH/designs/sky130hd/tinyRocket/`
-- Netlist: `{orfs_flow_path}/results/sky130hd/{design_name}/base/1_2_yosys.v`
-- GDS: `{orfs_flow_path}/results/sky130hd/{design_name}/base/6_1_merged.gds`
-- ORFS reports: `{orfs_flow_path}/reports/sky130hd/{design_name}/base/`
-- Formatted PPA report with Chipyard annotations
-
-## Anti-Patterns
-
-- DO NOT pass SRAM liberty files to ABC -- they cause SIGABRT [PITFALL-1]
-- DO NOT include original `_ext` or `split_*_ext` modules alongside overrides -- redefinition errors [PITFALL-2]
-- DO NOT use `OPENROAD_NUM_THREADS` -- it is ignored by ORFS make flow; use `NUM_CORES` [PITFALL-8]
-- DO NOT set `SWAP_ARITH_OPERATORS = 1` -- causes ABC9 crash on large designs [PITFALL-6]
-- DO NOT run antenna repair on memory-constrained systems -- OOM from second route pass [PITFALL-4]
-- DO NOT expect timing closure at 100MHz on sky130hd with SRAM macros -- 130nm process limit
-- DO NOT skip verifying pdn.tcl lowercase vdd/gnd entries -- SRAM power pins won't connect [PITFALL-7]
-- DO NOT use DESIGN_NAME=ChipTop for PnR -- use the tile-level module (e.g., RocketTile)
-- DO NOT let the MCP generate_config tool overwrite SRAM parameters -- always re-apply them after
-- DO NOT skip clean_design between retries -- ORFS caches stale results
-
-## Appendix A: synth_preamble.tcl ABC Exclusion Patch
-
-Apply this patch to `$ORFS_FLOW_PATH/scripts/synth_preamble.tcl`. Find the section that builds `lib_args` (search for `foreach lib $::env(LIB_FILES)`) and replace it with:
-
-```tcl
-# Exclude ADDITIONAL_LIBS from ABC to prevent crashes on macro liberty files
-# (e.g. sky130ram SRAM libs that cause ABC to SIGABRT).  These libs are still
-# loaded via synth_stdcells.tcl for PnR timing, but must not reach ABC.
-set additional_libs [list]
-if { [env_var_exists_and_non_empty ADDITIONAL_LIBS] } {
-  set additional_libs $::env(ADDITIONAL_LIBS)
-}
-set lib_args ""
-foreach lib $::env(LIB_FILES) {
-  if { $lib in $additional_libs } {
-    puts "Skipping ADDITIONAL_LIBS entry from ABC: $lib"
-    continue
-  }
-  append lib_args "-liberty $lib "
-}
-```
-
-This replaces the original `foreach lib $::env(LIB_FILES) { append lib_args "-liberty $lib " }` loop.
-
-## Appendix B: pdn.tcl Lowercase Power Pin Entries
-
-Add these two lines to `$ORFS_FLOW_PATH/platforms/sky130hd/pdn.tcl` in the global connections section (after the existing uppercase entries):
-
-```tcl
-add_global_connection -net {VDD} -inst_pattern {.*} -pin_pattern {^vdd$}
-add_global_connection -net {VSS} -inst_pattern {.*} -pin_pattern {^gnd$}
-```
-
-These are needed because sky130ram SRAM LEF files use lowercase `vdd`/`gnd` for power pins.
-
-## Appendix C: TinyRocketConfig Reference Design
-
-The following configuration was validated on a 15GB RAM system with sky130hd:
-
-**SRAM macro inventory:**
-- `sky130_sram_1rw1r_128x256_8`: 68 instances (64 DCache + 4 ICache)
-- `sky130_sram_1rw1r_44x64_8`: 1 instance (DCache tag)
-- Total: 69 SRAM macros
-
-**Memory module mapping:**
-| RTL Module | Depth x Width | SRAM Macro | Tiles | Total Instances |
-|------------|---------------|------------|-------|-----------------|
-| data_arrays_0_ext | 4096x32 | sky130_sram_1rw1r_128x256_8 | 16 per byte lane x 4 lanes | 64 |
-| tag_array_0_ext | 64x21 | sky130_sram_1rw1r_44x64_8 | 1 | 1 |
-| data_arrays_0_0_ext | 1024x32 | sky130_sram_1rw1r_128x256_8 | 4 | 4 |
-
-**Achieved results (Round 1, clock=10ns):**
-- WNS: -3.10 ns (fmax = 78.52 MHz)
-- TNS: -428.83 ns
-- Area: ~1,100,000 um^2
-- DRC: 0 violations
-- Power: ~3,700,000 uW
-
-**Key parameters that made it work:**
-- `CORE_UTILIZATION = 55`, `PLACE_DENSITY = 0.65`
-- `NUM_CORES = 4` (15GB RAM system)
-- `SKIP_ANTENNA_REPAIR_POST_DRT = 1`
-- `ABC_AREA = 1` (never SWAP_ARITH_OPERATORS)
-- `SYNTH_HIERARCHICAL = 1`
-- Empty `PWR_NETS_VOLTAGES` / `GND_NETS_VOLTAGES`
+- GDS: `$ORFS_FLOW/results/sky130hd/tinyRocket/base/6_final.gds`
+- Netlist: `$ORFS_FLOW/results/sky130hd/tinyRocket/base/6_final.v`
+- SPEF: `$ORFS_FLOW/results/sky130hd/tinyRocket/base/6_final.spef`
+- Reports: `$ORFS_FLOW/reports/sky130hd/tinyRocket/base/`
+- Timing/area/DRC summary displayed in conversation
