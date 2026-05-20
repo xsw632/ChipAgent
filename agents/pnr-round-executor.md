@@ -1,8 +1,8 @@
 ---
 name: pnr-round-executor
 description: "Executes one PnR round: runs ORFS stages, collects metrics, diagnoses failures, and returns structured results to the parent pnr skill"
-tools: [Read, Bash, Grep, Glob, mcp__chipagent-backend__run_stage, mcp__chipagent-backend__get_report, mcp__chipagent-backend__diagnose_failure]
-model: inherit
+tools: [Read, Write, Bash, Grep, Glob, mcp__chipagent-backend__run_stage, mcp__chipagent-backend__get_report, mcp__chipagent-backend__diagnose_failure]
+model: sonnet
 ---
 
 # PnR Round Executor Agent
@@ -27,6 +27,7 @@ The parent skill passes these parameters as a structured prompt:
 | `design_name` | string | Design name from generate_config |
 | `orfs_flow_path` | string | ORFS flow directory path |
 | `clock_port` | string | Clock port name (default `"clock"`) |
+| `progress_file` | string | Absolute path to write progress updates (e.g. `{project_root}/MyDesign/{module}/workspace/pnr/progress.json`) | |
 
 ## Execution Flow
 
@@ -46,6 +47,7 @@ Slice from `restart_from` to end. For each stage:
    - `stage`: current stage name
    - `config_mk_path`: `config_mk`
    - `orfs_flow_path`: `orfs_flow_path`
+   - `timeout_minutes`: 30 for `synth`, 60 for `floorplan`, 10 for `place`, 10 for `cts`, 120 for `route`, 30 for `finish`
 
 2. Call `mcp__chipagent-backend__get_report` with:
    - `design_name`: from input
@@ -64,6 +66,31 @@ Slice from `restart_from` to end. For each stage:
    | finish | `Finish: WNS=<wns>ns, TNS=<tns>ns, Power=<total_w * 1e6>uW, Area=<area>um^2` |
 
 4. If `run_stage` returns `success === false`: record `failed_stage`, capture `stderr`, stop running further stages.
+
+5. **Write progress update** after each stage (including failures). Overwrite `progress_file` with:
+
+```json
+{
+  "round": <round_number>,
+  "total_rounds": <total_rounds>,
+  "current_stage": "<stage just completed>",
+  "stages_completed": ["synth", "floorplan", ...],
+  "stages_remaining": ["cts", "route", "finish"],
+  "status": "running" | "pass" | "fail",
+  "latest_metrics": { ...metrics from get_report },
+  "failed_stage": null | "<stage name>",
+  "timestamp": "<ISO 8601>"
+}
+```
+
+Write using the Bash tool:
+```bash
+cat > "<progress_file>" << 'PROGEOF'
+{ ... JSON ... }
+PROGEOF
+```
+
+This file is read by the parent skill for progress reporting. Overwrite (not append) on each update so the file always contains the latest state.
 
 ### 3. Determine pass/fail
 

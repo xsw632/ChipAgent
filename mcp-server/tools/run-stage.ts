@@ -88,8 +88,9 @@ export function registerRunStage(server: McpServer): void {
       stage: z.enum(VALID_STAGES).describe("ORFS make target to execute"),
       config_mk_path: z.string().describe("Absolute path to config.mk"),
       orfs_flow_path: z.string().describe("Absolute path to ORFS flow/ directory"),
+      timeout_minutes: z.number().min(1).max(120).optional().default(10).describe("Process timeout in minutes (default: 10, use 60 for routing)"),
     },
-    async ({ stage, config_mk_path, orfs_flow_path }) => {
+    async ({ stage, config_mk_path, orfs_flow_path, timeout_minutes }) => {
       const workspaceConfig = readWorkspaceConfig();
       const designName = extractDesignName(config_mk_path);
 
@@ -168,10 +169,11 @@ export function registerRunStage(server: McpServer): void {
           stderr += chunk.toString();
         });
 
+        const timeoutMs = (timeout_minutes ?? 10) * 60_000;
         const timeout = setTimeout(() => {
           proc.kill("SIGTERM");
-          resolve({ success: false, exit_code: null, stdout: tailLines(stdout, 500), stderr: "Process timed out after 10 minutes" });
-        }, 600_000);
+          resolve({ success: false, exit_code: null, stdout: tailLines(stdout, 500), stderr: `Process timed out after ${timeout_minutes ?? 10} minutes` });
+        }, timeoutMs);
 
         proc.on("close", (code) => {
           clearTimeout(timeout);

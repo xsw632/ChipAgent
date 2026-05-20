@@ -108,7 +108,7 @@ export function registerGenerateConfig(server: McpServer): void {
       const verilogAbsPath = resolve(params.verilog_path);
       const verilogContent = readFileSync(verilogAbsPath, "utf-8");
 
-      const pnrDir = resolve(params.workspace_dir, "pnr");
+      const pnrDir = resolve(params.workspace_dir);
       mkdirSync(pnrDir, { recursive: true });
 
       const sdcAbsPath = resolve(pnrDir, "constraint.sdc");
