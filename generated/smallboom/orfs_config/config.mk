@@ -1,0 +1,9 @@
+export DESIGN_NICKNAME = smallboom
+export DESIGN_NAME = ChipTop
+export PLATFORM = sky130hd
+export VERILOG_FILES = $(sort $(wildcard /OpenROAD-flow-scripts/flow/designs/sky130hd/smallboom/src/*.sv))
+export SDC_FILE = /OpenROAD-flow-scripts/flow/designs/sky130hd/smallboom/constraint.sdc
+export CORE_UTILIZATION = 30
+export PLACE_DENSITY_LB_ADDON = 0.25
+export TNS_END_PERCENT = 100
+export REMOVE_ABC_BUFFERS = 1

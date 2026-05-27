@@ -1,4 +1,2 @@
-create_clock -name virtual_clk -period 10
-set_input_delay -clock virtual_clk 0 [all_inputs]
-set_output_delay -clock virtual_clk 0 [all_outputs]
-set_max_delay 10 -from [all_inputs] -to [all_outputs]
+create_clock -period 10.000 -name clock -waveform {0.000 5.000} [get_ports clock]
+set_max_transition 0.800 [current_design]

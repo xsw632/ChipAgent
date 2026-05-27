@@ -1,0 +1,144 @@
+/dts-v1/;
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	compatible = "ucb-bar,chipyard-dev";
+	model = "ucb-bar,chipyard";
+	L25: aliases {
+		serial0 = &L19;
+	};
+	L10: chosen {
+		stdout-path = &L19;
+	};
+	L24: cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		timebase-frequency = <1000000>;
+		L5: cpu@0 {
+			clock-frequency = <0>;
+			compatible = "ucb-bar,boom0", "riscv";
+			d-cache-block-size = <64>;
+			d-cache-sets = <64>;
+			d-cache-size = <16384>;
+			d-tlb-sets = <1>;
+			d-tlb-size = <8>;
+			device_type = "cpu";
+			hardware-exec-breakpoint-count = <0>;
+			i-cache-block-size = <64>;
+			i-cache-sets = <64>;
+			i-cache-size = <16384>;
+			i-tlb-sets = <1>;
+			i-tlb-size = <32>;
+			mmu-type = "riscv,sv39";
+			next-level-cache = <&L3>;
+			reg = <0x0>;
+			riscv,isa = "rv64imafdcZicsr_Zifencei_Zihpm";
+			riscv,pmpgranularity = <4>;
+			riscv,pmpregions = <8>;
+			status = "okay";
+			timebase-frequency = <1000000>;
+			tlb-split;
+			L4: interrupt-controller {
+				#interrupt-cells = <1>;
+				compatible = "riscv,cpu-intc";
+				interrupt-controller;
+			};
+		};
+	};
+	L26: htif {
+		compatible = "ucb,htif0";
+	};
+	L13: memory@80000000 {
+		device_type = "memory";
+		reg = <0x80000000 0x10000000>;
+	};
+	L23: soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "ucb-bar,chipyard-soc", "simple-bus";
+		ranges;
+		L16: boot-address-reg@4000 {
+			reg = <0x4000 0x1000>;
+			reg-names = "control";
+		};
+		L3: cache-controller@2010000 {
+			cache-block-size = <64>;
+			cache-level = <2>;
+			cache-sets = <1024>;
+			cache-size = <524288>;
+			cache-unified;
+			compatible = "sifive,inclusivecache0", "cache";
+			next-level-cache = <&L13 &L17 &L18>;
+			reg = <0x2010000 0x1000>;
+			reg-names = "control";
+			sifive,mshr-count = <7>;
+		};
+		L7: clint@2000000 {
+			compatible = "riscv,clint0";
+			interrupts-extended = <&L4 3 &L4 7>;
+			reg = <0x2000000 0x10000>;
+			reg-names = "control";
+		};
+		L20: clock-gater@100000 {
+			reg = <0x100000 0x1000>;
+			reg-names = "control";
+		};
+		L8: debug-controller@0 {
+			compatible = "sifive,debug-013", "riscv,debug-013";
+			debug-attach = "jtag";
+			interrupts-extended = <&L4 65535>;
+			reg = <0x0 0x1000>;
+			reg-names = "control";
+		};
+		L1: error-device@3000 {
+			compatible = "sifive,error0";
+			reg = <0x3000 0x1000>;
+		};
+		L6: interrupt-controller@c000000 {
+			#interrupt-cells = <1>;
+			compatible = "riscv,plic0";
+			interrupt-controller;
+			interrupts-extended = <&L4 11 &L4 9>;
+			reg = <0xc000000 0x4000000>;
+			reg-names = "control";
+			riscv,max-priority = <1>;
+			riscv,ndev = <1>;
+		};
+		L17: lbwif-ram@10000000 {
+			reg = <0x10000000 0x1000>;
+		};
+		L18: lbwif-rom@20000 {
+			reg = <0x20000 0x10000>;
+		};
+		L15: rom@10000 {
+			compatible = "sifive,rom0";
+			reg = <0x10000 0x10000>;
+			reg-names = "mem";
+		};
+		L19: serial@54000000 {
+			clocks = <&L0>;
+			compatible = "sifive,uart0";
+			interrupt-parent = <&L6>;
+			interrupts = <1>;
+			reg = <0x54000000 0x1000>;
+			reg-names = "control";
+		};
+		L2: subsystem_mbus_clock {
+			#clock-cells = <0>;
+			clock-frequency = <100000000>;
+			clock-output-names = "subsystem_mbus_clock";
+			compatible = "fixed-clock";
+		};
+		L0: subsystem_pbus_clock {
+			#clock-cells = <0>;
+			clock-frequency = <100000000>;
+			clock-output-names = "subsystem_pbus_clock";
+			compatible = "fixed-clock";
+		};
+		L21: tile-reset-setter@110000 {
+			reg = <0x110000 0x1000>;
+			reg-names = "control";
+		};
+	};
+};
