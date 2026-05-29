@@ -324,6 +324,10 @@ if command -v jq >/dev/null 2>&1; then
         riscv_path: $riscv_path
       },
       backend_mode: $backend_mode,
+      docker_config: {
+        image: "openroad/orfs:latest",
+        workdir: "/OpenROAD-flow-scripts/flow"
+      },
       capabilities: {
         can_compile:    $can_compile,
         can_lint:       $can_lint,
@@ -375,6 +379,10 @@ else
     "riscv_path": "$(json_escape "$RISCV_PATH")"
   },
   "backend_mode": "$(json_escape "$BACKEND_MODE")",
+  "docker_config": {
+    "image": "openroad/orfs:latest",
+    "workdir": "/OpenROAD-flow-scripts/flow"
+  },
   "capabilities": {
     "can_compile":    $CAN_COMPILE,
     "can_lint":       $CAN_LINT,

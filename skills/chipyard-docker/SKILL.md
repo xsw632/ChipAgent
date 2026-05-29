@@ -73,7 +73,7 @@ Config: $CONFIG
 
 ```bash
 docker run --rm \
-  ucbbar/chipyard-image:latest \
+  ictmrc/chipyard-image \
   bash -c "
     echo 'Chipyard: /root/chipyard'
     test -f /root/chipyard/build.sbt && echo '  build.sbt: OK' || echo '  build.sbt: MISSING'
@@ -99,13 +99,13 @@ docker run --rm openroad/orfs:latest \
 
 ```bash
 docker run --rm \
-  ucbbar/chipyard-image:latest \
+  ictmrc/chipyard-image \
   bash -c "grep -r 'class ${CONFIG}\b' /root/chipyard/generators/ --include='*.scala' -l 2>/dev/null"
 ```
 
 If not found, list available configs:
 ```bash
-docker run --rm ucbbar/chipyard-image:latest \
+docker run --rm ictmrc/chipyard-image \
   bash -c "grep -r 'class \w\+Config extends Config' /root/chipyard/generators/chipyard/src/main/scala/config/ --include='*.scala' -h 2>/dev/null | sed 's/class /  - /;s/ extends.*//'"
 ```
 
@@ -120,7 +120,7 @@ PLUGIN_ROOT="/home/sh/snap/worklib/test/ChipAgent"
 docker run --rm \
   -v "${PLUGIN_ROOT}/MyDesign:/out" \
   -w /root/chipyard \
-  ucbbar/chipyard-image:latest \
+  ictmrc/chipyard-image \
   bash -c "
     export JAVA_TOOL_OPTIONS='-Dfile.encoding=UTF-8 -Xmx8G'
     export PATH=/root/chipyard/.conda-env/bin:\$PATH

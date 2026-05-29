@@ -1,5 +1,5 @@
 ---
-name: chipyard-pnr
+name: chipyard-pnr-local
 description: "Run full Chipyard-to-ORFS PnR flow with multi-round parameter iteration: generate RTL from Chipyard with ENABLE_YOSYS_FLOW, preprocess nosram+SRAM override, run 3 rounds of ORFS synth→finish on sky130hd with progressive clock/utilization/density tuning for optimal PPA."
 disable-model-invocation: true
 allowed-tools:
@@ -20,6 +20,7 @@ allowed-tools:
   - mcp__chipagent-backend__diagnose_failure
   - mcp__chipagent-backend__clean_design
   - mcp__chipagent-backend__compare_runs
+  - mcp__chipagent-backend__set_backend_mode
 ---
 
 # chip-agent:chipyard-pnr
@@ -36,7 +37,7 @@ This skill handles the **hard parts** of getting Chipyard-generated Verilog thro
 ## Usage
 
 ```
-/chip-agent:chipyard-pnr <config> [work_dir]
+/chip-agent:chipyard-pnr <config> 
 ```
 
 **Examples:**
@@ -44,9 +45,7 @@ This skill handles the **hard parts** of getting Chipyard-generated Verilog thro
 ```
 /chip-agent:chipyard-pnr tinyrocket
 /chip-agent:chipyard-pnr TinyRocketConfig
-/chip-agent:chipyard-pnr tinyrocket /path/to/try
 /chip-agent:chipyard-pnr tinyrocket 100MHz
-/chip-agent:chipyard-pnr tinyrocket 10ns
 ```
 
 Create the checklist and go on.
@@ -66,80 +65,6 @@ Create the checklist and go on.
 
 **Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Use that directory as the base for all relative paths below.
 
-## Critical Pitfalls
-
-See [Pitfall.md](../../Pitfall.md) for 7 production-verified failure modes. **Read before first run.**
-
-## Multi-Round PnR Iteration Strategy (混合模式)
-
-本流程至少执行 **3 轮** PnR 迭代。**用户设定目标频率，AI 根据每轮诊断结果自适应调参。**
-
-### 用户输入
-
-用户只需提供：
-- **目标频率** (target frequency)，例如 `100MHz` → `clock_period_ns = 10`
-- 可选：最大轮次数（默认 3）
-
-AI 根据目标频率和每轮诊断结果，自主决定每轮的具体参数。
-
-### 调参参数 (Parameter Knobs)
-
-| 参数 | 说明 | 调整方向 |
-|------|------|----------|
-| `clock_period_ns` | 时钟周期（纳秒）= 1000 / freq_mhz | 逐步逼近目标频率 |
-| `core_utilization` | 核心利用率（%） | 拥塞→降低，时序宽松→提高 |
-| `place_density` | 布局密度（0.0–1.0） | 拥塞→降低，时序宽松→提高 |
-| `gpl_timing_driven` | 时序驱动布局 | WNS 负值大→开启 |
-| `gpl_routability_driven` | 可布线性驱动布局 | DRC violations 多→开启 |
-| `setup_slack_margin` | 时序裕量（ns） | 逐步收紧至 0.05ns |
-
-### 已验证 Baseline（注入知识）
-
-以下参数组合已在 TinyRocketConfig + sky130hd 上通过完整 PnR 流程验证，**无需重复验证**：
-
-| 参数 | 验证值 | 验证结果 |
-|------|--------|----------|
-| `clock_period_ns` | 20 (50MHz) | WNS=0.00, TNS=0.00, DRC=0 |
-| `core_utilization` | 50 | Area=3,001,640µm², util=51% |
-| `place_density` | 0.65 | 无拥塞问题 |
-| `gpl_timing_driven` | 1 | **关键**：不开则 WNS=-0.12ns |
-| `gpl_routability_driven` | 1 | DRC=0 |
-| `setup_slack_margin` | 0.3 | 时序裕量充足 |
-| 设计 fmax 上限 | ~54MHz | critical path ~18.4ns，无法通过 PnR 调参突破 |
-| SRAM 宏数量 | 6 | 5×sky130_sram_1rw1r_64x256_8 + 1×sky130_sram_1rw1r_44x64_8 |
-
-**使用规则**：
-- 当用户指定的 baseline ≤ 50MHz 时，**跳过基准验证轮**，Round 1 直接使用 `baseline_clock_ns`（已知可通过）
-- 当用户指定的 target > fmax 上限时，AI 应在 Round 1 尝试 target，失败后收敛到可实现频率附近
-- 所有轮次默认启用 `gpl_timing_driven=1`
-
-### 自适应调参逻辑
-
-**Round 1（探索轮）**：直接使用 baseline 频率（已验证可通），如果是 baseline=target 则直接跑 target。Round 2 开始向 target 推进。
-
-**Round 2+（推进轮）**：AI 调用 `diagnose_failure` 和 `get_report` 读取上轮结果，然后根据以下信号调整参数：
-
-| 诊断信号 | 含义 | AI 应采取的调整 |
-|----------|------|-----------------|
-| WNS << 0（如 < -2ns） | 严重时序违例 | 放宽 clock_period (+2ns)，降低 utilization (-5%)，开启 gpl_timing_driven |
-| WNS 略负（如 -0.5ns） | 轻微时序违例 | 微调 clock_period (+0.5ns)，降低 place_density (-0.05)，收紧 slack_margin |
-| WNS >= 0 | 时序满足 | 可以收紧 clock_period (-1ns)，提高 utilization (+5%) |
-| DRC violations > 0 | 布线问题 | 降低 place_density (-0.1)，降低 utilization (-5%)，开启 gpl_routability_driven |
-| TNS 很大 | 多条路径违例 | 大幅放宽 clock_period，降低 utilization |
-| TNS 接近 0 | 只有少量路径违例 | 微调即可 |
-| routing congestion hotspots | 局部拥塞 | 降低 place_density，开启 gpl_routability_driven |
-| OOM / 超时 | 资源不足 | 降低 utilization 和 place_density |
-
-**调参原则：**
-1. 每轮只调整 1-2 个参数，不要同时大幅改动多个参数
-2. 时序违例优先解决，再追求面积/功耗优化
-3. 如果 WNS >= 0 且 DRC == 0，说明当前参数可行，可以尝试收紧 clock 继续逼近目标
-4. 如果连续两轮 WNS 没有改善，说明已到极限，停止迭代
-5. slack_margin 从 0.3ns 逐步收紧至 0.05ns，但不要在时序违例时收紧
-
-**终止条件**（见 Step 7f）：WNS>=0 且 DRC==0 / 达到最大轮次 / 连续两轮改善<0.1ns / 已达目标频率。
-
-所有轮次完成后，调用 `compare_runs(action="recommend")` 综合比较 WNS/TNS/面积/DRC/功耗，选最优轮次。
 
 ## Pipeline
 
@@ -147,8 +72,27 @@ AI 根据目标频率和每轮诊断结果，自主决定每轮的具体参数�
 
 ```bash
 PROJECT_ROOT="<project-root>"
-RAW_CONFIG="$ARGUMENTS"
+RAW_CONFIG=$(echo "$ARGUMENTS" | awk '{print $1}')
+FREQ_ARG=$(echo "$ARGUMENTS" | awk '{print $2}')
 if [ -z "$RAW_CONFIG" ]; then RAW_CONFIG="tinyrocket"; fi
+
+# Parse optional target frequency from second argument
+# e.g. "tinyrocket 100MHz" → TARGET_FREQ_MHZ=100, "tinyrocket 10ns" → TARGET_CLOCK_NS=10
+TARGET_FREQ_MHZ=""
+TARGET_CLOCK_NS=""
+if [ -n "$FREQ_ARG" ]; then
+    if echo "$FREQ_ARG" | grep -qiE 'MHz$'; then
+        TARGET_FREQ_MHZ=$(echo "$FREQ_ARG" | grep -oiE '[0-9]+')
+        TARGET_CLOCK_NS=$(echo "scale=1; 1000 / $TARGET_FREQ_MHZ" | bc)
+    elif echo "$FREQ_ARG" | grep -qiE 'ns$'; then
+        TARGET_CLOCK_NS=$(echo "$FREQ_ARG" | grep -oiE '[0-9]+(\.[0-9]+)?')
+        TARGET_FREQ_MHZ=$(echo "scale=0; 1000 / $TARGET_CLOCK_NS" | bc)
+    fi
+fi
+
+# Baseline defaults: validated 50MHz/20ns on sky130hd (WNS=0.00, DRC=0)
+BASELINE_FREQ_MHZ="${TARGET_FREQ_MHZ:-50}"
+BASELINE_CLOCK_NS="${TARGET_CLOCK_NS:-20}"
 
 # DESIGN (workspace path): strip "Config", capitalize → "TinyRocket"
 if echo "$RAW_CONFIG" | grep -qE '[A-Z]'; then
@@ -164,13 +108,6 @@ if echo "$RAW_CONFIG" | grep -qE '[A-Z]'; then
 else
     CONFIG="$(echo "${RAW_CONFIG:0:1}" | tr '[:lower:]' '[:upper:]')${RAW_CONFIG:1}Config"
 fi
-
-# Parse optional target frequency from arguments
-# e.g. "tinyrocket 100MHz" → TARGET_FREQ_MHZ=100, "tinyrocket 10ns" → TARGET_CLOCK_NS=10
-TARGET_FREQ_MHZ=""
-TARGET_CLOCK_NS=""
-BASELINE_FREQ_MHZ=""
-BASELINE_CLOCK_NS=""
 
 mkdir -p "$WORK_DIR"
 ```
@@ -445,9 +382,62 @@ set_output_delay -clock core_clock 0 [all_outputs]
 SDCEOF
 ```
 
-### Step 7 -- Run ORFS Full Flow
+### Step 7 -- Run ORFS Full Flow (Multi-Round Iteration)
 
-Run the full ORFS flow in a **background subagent** so the main agent remains responsive and can report progress to the user.
+Run at least **3 rounds** of PnR iteration. The user sets a target frequency; the AI adaptively tunes parameters based on each round's diagnostic results. Each round runs as a background subagent.
+
+**Parameter Knobs:**
+
+| Parameter | Description | Tuning Direction |
+|-----------|-------------|------------------|
+| `clock_period_ns` | Clock period (ns) = 1000 / freq_mhz | Progressively approach target frequency |
+| `core_utilization` | Core utilization (%) | Congestion → decrease, timing slack → increase |
+| `place_density` | Placement density (0.0–1.0) | Congestion → decrease, timing slack → increase |
+| `gpl_timing_driven` | Timing-driven placement | Large negative WNS → enable |
+| `gpl_routability_driven` | Routability-driven placement | Many DRC violations → enable |
+| `setup_slack_margin` | Timing margin (ns) | Progressively tighten to 0.05ns |
+
+**Validated Baseline** (TinyRocketConfig + sky130hd, no need to re-validate):
+
+| Parameter | Validated Value | Validation Result |
+|-----------|-----------------|-------------------|
+| `clock_period_ns` | 20 (50MHz) | WNS=0.00, TNS=0.00, DRC=0 |
+| `core_utilization` | 50 | Area=3,001,640µm², util=51% |
+| `place_density` | 0.65 | No congestion issues |
+| `gpl_timing_driven` | 1 | **Critical**: without it WNS=-0.12ns |
+| `gpl_routability_driven` | 1 | DRC=0 |
+| `setup_slack_margin` | 0.3 | Sufficient timing margin |
+| Design fmax ceiling | ~54MHz | Critical path ~18.4ns, cannot break through via PnR tuning |
+| SRAM macro count | 6 | 5×sky130_sram_1rw1r_64x256_8 + 1×sky130_sram_1rw1r_44x64_8 |
+
+**Usage rules:**
+- When target ≤ 50MHz, skip baseline validation — Round 1 directly uses `baseline_clock_ns` (known to pass)
+- When target > fmax ceiling, attempt target in Round 1, then converge to achievable frequency upon failure
+- All rounds enable `gpl_timing_driven=1` by default
+
+**Adaptive Tuning Logic:**
+
+Round 1 uses the baseline frequency. Round 2+ calls `diagnose_failure` and `get_report` to read previous round results, then adjusts parameters:
+
+| Diagnostic Signal | Meaning | AI Adjustment |
+|-------------------|---------|---------------|
+| WNS << 0 (e.g. < -2ns) | Severe timing violation | Relax clock_period (+2ns), reduce utilization (-5%), enable gpl_timing_driven |
+| WNS slightly negative (e.g. -0.5ns) | Minor timing violation | Fine-tune clock_period (+0.5ns), reduce place_density (-0.05), tighten slack_margin |
+| WNS >= 0 | Timing met | Can tighten clock_period (-1ns), increase utilization (+5%) |
+| DRC violations > 0 | Routing issues | Reduce place_density (-0.1), reduce utilization (-5%), enable gpl_routability_driven |
+| Large TNS | Multiple paths violating | Significantly relax clock_period, reduce utilization |
+| TNS close to 0 | Only a few paths violating | Fine-tune only |
+| Routing congestion hotspots | Local congestion | Reduce place_density, enable gpl_routability_driven |
+| OOM / timeout | Insufficient resources | Reduce utilization and place_density |
+
+**Tuning principles:**
+1. Adjust only 1-2 parameters per round; do not drastically change multiple parameters simultaneously
+2. Resolve timing violations first, then pursue area/power optimization
+3. If WNS >= 0 and DRC == 0, the current parameters are viable — try tightening the clock to continue approaching the target
+4. If WNS does not improve for two consecutive rounds, the limit has been reached — stop iterating
+5. Progressively tighten slack_margin from 0.3ns to 0.05ns, but do not tighten when timing is violating
+
+**Termination conditions:** WNS>=0 and DRC==0 / max rounds reached / consecutive WNS improvement < 0.1ns / target frequency achieved.
 
 **7a. Clean previous run (direct MCP call):**
 ```
@@ -457,7 +447,7 @@ mcp__chipagent-backend__clean_design(
 )
 ```
 
-**7b. Initialize progress file and iteration state:**
+**7b. Initialize round parameters:**
 
 ```bash
 # Set total rounds (minimum 3, maximum 5)
@@ -471,15 +461,6 @@ R1_DENSITY=0.65
 R1_TIMING_DRIVEN=1
 R1_ROUTABILITY_DRIVEN=1
 R1_SLACK_MARGIN=0.3
-
-cat > "$WORK_DIR/pnr/progress.json" << EOF
-{"round":1,"total_rounds":$TOTAL_ROUNDS,"current_stage":"starting","stages_completed":[],"stages_remaining":["synth","floorplan","place","cts","route","finish"],"status":"running","latest_metrics":{},"failed_stage":null,"timestamp":"$(date -Iseconds)","target_freq_mhz":"${TARGET_FREQ_MHZ:-adaptive}","target_clock_ns":"${TARGET_CLOCK_NS:-adaptive}"}
-EOF
-
-# Create iteration history file for AI decision-making
-cat > "$WORK_DIR/pnr/iteration_history.json" << 'EOF'
-{"rounds":[]}
-EOF
 ```
 
 **7c. Spawn background round executor (Round 1 — baseline):**
@@ -502,62 +483,31 @@ Agent(
     design_name: ChipTop
     orfs_flow_path: $ORFS_FLOW_PATH/flow
     clock_port: clock_uncore_clock
-    progress_file: $WORK_DIR/pnr/progress.json
     NOTE: Stage timeouts: synth=30min, floorplan=60min, place=30min, cts=30min, route=120min, finish=30min.
   "
 )
 ```
 
-**7d. Set up progress polling with ScheduleWakeup:**
-
-Schedule a recurring wakeup every 10 minutes to check progress and report to the user:
-
-```
-ScheduleWakeup(
-  delaySeconds: 600,
-  reason: "Check ChipTop PnR progress",
-  prompt: "<same prompt as the original /chip-agent:chipyard-pnr invocation>"
-)
-```
-
-On each wakeup, read `$WORK_DIR/pnr/progress.json` and report:
-```
-cat "$WORK_DIR/pnr/progress.json"
-```
-
-Format the report as:
-```
-PnR Progress: Round X/3 — <current_stage>
-  Completed: <stages_completed list>
-  Remaining: <stages_remaining list>
-  Params: clock=<ns>ns, util=<%>%, density=<d>, slack_margin=<sm>ns
-  Latest: <latest_metrics summary (WNS, area, violations)>
-```
-
-If `status === "running"`: continue polling (ScheduleWakeup again).
-If `status === "pass"` or `status === "fail"`: stop polling and proceed to Step 7e.
-
-**7e. Handle round completion — diagnose and decide next parameters:**
+**7d. Handle round completion — diagnose and decide next parameters:**
 
 When the background agent completes, you will receive a task notification. At that point:
-1. Stop the ScheduleWakeup (CronDelete)
-2. Read the final `$WORK_DIR/pnr/progress.json`
-3. **Save round results** via `compare_runs`:
+
+1. **Save round results** via `compare_runs`:
    ```
    mcp__chipagent-backend__compare_runs(
      action="save",
      workspace_dir="$WORK_DIR",
-     run={"round": <current_round>, "config": {<params>}, "metrics": {<from progress.json>}, "status": "pass"|"fail"}
+     run={"round": <current_round>, "config": {<params>}, "metrics": {<from report>}, "status": "pass"|"fail"}
    )
    ```
 
-4. **Collect detailed metrics** via MCP:
+2. **Collect detailed metrics** via MCP:
    ```
    mcp__chipagent-backend__get_report(design_name="ChipTop", stage="finish", orfs_flow_path="$ORFS_FLOW_PATH/flow")
    mcp__chipagent-backend__get_report(design_name="ChipTop", stage="route", orfs_flow_path="$ORFS_FLOW_PATH/flow")
    ```
 
-5. **Diagnose results** — call `diagnose_failure` to get AI-readable analysis:
+3. **Diagnose results** — call `diagnose_failure` to get AI-readable analysis:
    ```
    mcp__chipagent-backend__diagnose_failure(
      stage="finish",
@@ -570,13 +520,12 @@ When the background agent completes, you will receive a task notification. At th
    )
    ```
 
-6. **AI decides next round parameters** based on the diagnostic signals:
+4. **Decide next round parameters** based on diagnostic signals:
    - Read WNS, TNS, DRC violations, area, power from the reports
-   - Apply the "自适应调参逻辑" table (see Multi-Round Strategy section)
+   - Apply the Adaptive Tuning Logic (see below)
    - Determine the next round's `{clock_period_ns, core_utilization, place_density, gpl_timing_driven, gpl_routability_driven, setup_slack_margin}`
-   - Record the decision rationale in `iteration_history.json`
 
-**7f. Launch next round (if more rounds remain and termination conditions not met):**
+**7e. Launch next round (if more rounds remain and termination conditions not met):**
 
 Check termination conditions first:
 - If WNS >= 0 AND DRC == 0: **success**, proceed to Step 8
@@ -587,7 +536,7 @@ Otherwise, launch next round with AI-decided parameters:
 
 1. **Update `config.mk`** with the AI-decided parameters:
    ```bash
-   # CP, CU, PD, GTD, GRD, SSM are the AI-decided values from Step 7e
+   # CP, CU, PD, GTD, GRD, SSM are the AI-decided values from Step 7d
    sed -i "s/^export CORE_UTILIZATION = .*/export CORE_UTILIZATION = $CU/" "$WORK_DIR/pnr/config.mk"
    sed -i "s/^export PLACE_DENSITY = .*/export PLACE_DENSITY = $PD/" "$WORK_DIR/pnr/config.mk"
    sed -i "s/^export GPL_TIMING_DRIVEN = .*/export GPL_TIMING_DRIVEN = $GTD/" "$WORK_DIR/pnr/config.mk"
@@ -609,28 +558,9 @@ Otherwise, launch next round with AI-decided parameters:
    )
    ```
 
-4. **Update progress.json:**
-   ```bash
-   cat > "$WORK_DIR/pnr/progress.json" << EOF
-   {"round":$NEXT_ROUND,"total_rounds":$TOTAL_ROUNDS,"current_stage":"starting","stages_completed":[],"stages_remaining":["synth","floorplan","place","cts","route","finish"],"status":"running","latest_metrics":{},"failed_stage":null,"timestamp":"$(date -Iseconds)","target_freq_mhz":"${TARGET_FREQ_MHZ:-adaptive}","target_clock_ns":"${TARGET_CLOCK_NS:-adaptive}"}
-   EOF
-   ```
+4. **Spawn next round executor** — same as Step 7c, replacing round_number=$NEXT_ROUND and current_params={CP,CU,PD,GTD,GRD,SSM}.
 
-5. **Spawn next round executor** — same as Step 7c, replacing round_number=$NEXT_ROUND and current_params={CP,CU,PD,GTD,GRD,SSM}.
-
-6. **Resume ScheduleWakeup** for the new round (same as Step 7d).
-
-7. **Loop back to Step 7e** when this round completes.
-
-**Total runtime:** ~82 minutes per round, ~4.5 hours for all 3 rounds on a modern machine.
-
-**Memory requirements:**
-- Synthesis: ~3 GB
-- Floorplan/PDN: ~12 GB (PDN generation is memory-intensive)
-- Place: ~2 GB
-- CTS: ~2 GB
-- Route (DRT): ~7-8 GB
-- Finish: ~2 GB
+5. **Loop back to Step 7d** when this round completes.
 
 ### Step 8 -- Compare Rounds and Select Best Result
 
@@ -645,14 +575,6 @@ mcp__chipagent-backend__compare_runs(
 
 **8b. Collect detailed metrics for each round** (if not already saved):
 
-```bash
-for ROUND in $(seq 1 $TOTAL_ROUNDS); do
-  echo "=== Round $ROUND ==="
-  cat "$WORK_DIR/pnr/progress_round_${ROUND}.json" 2>/dev/null || echo "(no separate progress file)"
-done
-```
-
-Collect final metrics via MCP for each round:
 ```
 mcp__chipagent-backend__get_report(design_name="ChipTop", stage="finish", orfs_flow_path="$ORFS_FLOW_PATH/flow")
 mcp__chipagent-backend__get_report(design_name="ChipTop", stage="route", orfs_flow_path="$ORFS_FLOW_PATH/flow")
@@ -694,13 +616,38 @@ Status: PASS / FAIL
 | `6_final.spef` | Parasitic extraction (~156 MB) |
 | `6_final.def` | Final DEF file (~241 MB) |
 
+## Anti-Patterns
+
+- **NEVER** use behavioral SRAM stubs (reg arrays) — causes OOM in routing 
+- **NEVER** omit `ENABLE_YOSYS_FLOW=1` — causes Yosys parse errors on packed arrays
+- **NEVER** append stub files that are already in `top.f` — causes duplicate module errors
+- **NEVER** use `SYNTH_BLACKBOXES` without `ADDITIONAL_LEFS/LIBS/GDS` — causes missing cost error
+- **NEVER** use the simulation flow (`make verilog`) — includes TestHarness modules
+- **ALWAYS** use `timeout_minutes=120` for the `route` stage — detailed routing takes up to 120 minutes for complex designs
+- **ALWAYS** use `timeout_minutes=30` for the `synth` stage — ABC technology mapping for 70+ modules needs 30 minutes
+- **ALWAYS** use `timeout_minutes=30` for the `place` stage — repair_design resize processing 90K+ nets needs 30 minutes
+- **NEVER** skip `clean_all` between retries — ORFS caches stale results
+- **ALWAYS** verify Yosys compiles the design before running ORFS (Step 4 verification)
+- **ALWAYS** set `SYNTH_HIERARCHICAL = 1` — preserves SRAM module boundaries
+- **ALWAYS** set `MACRO_PLACE_HALO = 20 20` — prevents standard cells from overlapping SRAM halo
+- **ALWAYS** set `DONT_USE_CELLS` for SRAM macros — prevents ABC from using them as logic cells
+- **ALWAYS** set `SKIP_ANTENNA_REPAIR_POST_DRT = 1` — avoids OOM during antenna repair
+- **ALWAYS** run `clean_design` between PnR rounds — stale ORFS cache causes misleading results
+- **ALWAYS** save round results via `compare_runs` before starting the next round
+- **ALWAYS** use `compare_runs(action="recommend")` to select the best round objectively
+- **NEVER** skip the baseline round (R1) — it validates the flow before aggressive tuning
+- **NEVER** enable both `gpl_timing_driven` and `gpl_routability_driven` in early rounds — they conflict and can cause poor placement
+- **PREFER** starting with routability-driven in R1, then timing-driven in R2, then both in R3 only if needed
+- **NEVER** skip nosram preprocessing — behavioral SRAM modules cause OOM
+- **NEVER** use `SWAP_ARITH_OPERATORS=1` — causes ABC crash on large designs
+
 ## Input
 
 $ARGUMENTS
 
 A Chipyard config name (e.g., `tinyrocket`, `TinyRocketConfig`). Optional arguments:
 - **Work directory**: `/path/to/try`
-- **Target frequency**: `100MHz` or `10ns` (AI will adaptively tune parameters to reach this target over multiple rounds)
+- **Target frequency**: `100MHz` or `10ns` (AI will adaptively tune parameters to reach this target over multiple rounds)自动搜索更大 macro — 如果总 macro 数 >200，ORFS 默认 macro 太小，就克隆 SRAM22 仓库找更大 macro
 
 ## Output
 

@@ -1,6 +1,6 @@
 ---
 name: chipyard-pnr-docker
-description: "Docker Chipyard PnR flow: nosram preprocessing, SRAM override generation, multi-round ORFS PnR on sky130hd via Docker containers with adaptive parameter tuning."
+description: "Run full Chipyard-to-ORFS PnR flow with multi-round parameter iteration in Docker: generate RTL from Chipyard Docker, preprocess nosram+SRAM override, run 3 rounds of ORFS synth→finish on sky130hd with progressive clock/utilization/density tuning for optimal PPA."
 disable-model-invocation: true
 allowed-tools:
   - Bash
@@ -13,58 +13,50 @@ allowed-tools:
   - Agent
   - WebSearch
   - WebFetch
-  - mcp__chipagent-backend__check_environment
-  - mcp__chipagent-backend__generate_config
-  - mcp__chipagent-backend__run_stage
-  - mcp__chipagent-backend__get_report
-  - mcp__chipagent-backend__diagnose_failure
-  - mcp__chipagent-backend__clean_design
-  - mcp__chipagent-backend__compare_runs
+  - mcp__chipagent-backend-docker__check_environment
+  - mcp__chipagent-backend-docker__generate_config
+  - mcp__chipagent-backend-docker__run_stage
+  - mcp__chipagent-backend-docker__get_report
+  - mcp__chipagent-backend-docker__diagnose_failure
+  - mcp__chipagent-backend-docker__clean_design
+  - mcp__chipagent-backend-docker__compare_runs
 ---
 
 # chip-agent:chipyard-pnr-docker
 
-End-to-end Chipyard PnR flow using Docker containers:
-1. Find already-generated Verilog from `/chip-agent:chipyard`
-2. Generate SRAM override modules (via sram-mapping subagent)
-3. Run ORFS PnR via `openroad/orfs` Docker with multi-round parameter tuning
+End-to-end **Docker** flow: Chipyard RTL generation → nosram preprocessing → SRAM override generation → ORFS full PnR (synth → floorplan → place → cts → route → finish) on sky130hd.
 
-## Docker Strategy
+This skill handles the **hard parts** of getting Chipyard-generated Verilog through ORFS — entirely via Docker containers, no local Chipyard or ORFS installation required.
 
-| Container | Image | Purpose |
-|-----------|-------|---------|
-| ORFS PnR | `openroad/orfs:latest` | All OpenROAD/ORFS operations |
-| Chipyard generation | `ucbbar/chipyard-image:latest` | Verilog generation (if needed) |
-
-ORFS paths inside container: `/OpenROAD-flow-scripts/flow`
-sky130hd: `/OpenROAD-flow-scripts/flow/platforms/sky130hd`
-sky130ram: `/OpenROAD-flow-scripts/flow/platforms/sky130ram`
+- RTL generation via Chipyard Docker image (`ictmrc/chipyard-image:1.9.1-ubuntu-22.04`)
+- PnR execution via ORFS Docker image (`openroad/orfs:latest`) through MCP tools
+- Behavioral SRAM → sky130_sram macro override (avoids FF-based OOM)
+- SYNTH_BLACKBOXES + ADDITIONAL_LEFS/LIBS/GDS for SRAM macros
+- Multi-clock domain SDC constraints
+- Module consolidation from 260+ split SV files
 
 ## Usage
 
 ```
-/chip-agent:chipyard-pnr-docker <config> [work_dir]
+/chip-agent:chipyard-pnr <config>
 ```
 
 **Examples:**
 
 ```
-/chip-agent:chipyard-pnr-docker tinyrocket
-/chip-agent:chipyard-pnr-docker TinyRocketConfig
-/chip-agent:chipyard-pnr-docker tinyrocket /path/to/try
-/chip-agent:chipyard-pnr-docker tinyrocket 100MHz
-/chip-agent:chipyard-pnr-docker tinyrocket 10ns
+/chip-agent:chipyard-pnr tinyrocket
+/chip-agent:chipyard-pnr TinyRocketConfig
+/chip-agent:chipyard-pnr tinyrocket 100MHz
 ```
 
 Create the checklist and go on.
 ```
 □ Parse arguments and setup work directory
-□ Verify environment (Docker, ORFS, sky130hd)
-□ Locate generated Verilog
-□ Consolidate split SV files into single nosram.sv
-□ Generate SRAM override modules (sram-mapping agent)
+□ Verify environment (Docker, Chipyard image, ORFS image)
+□ Generate Verilog and consolidate nosram.sv (Docker)
+□ Generate SRAM override modules (sram-mapping-docker agent)
 □ Identify clock ports from ChipTop
-□ Generate ORFS config.mk and constraint.sdc
+□ Generate ORFS config.mk (container paths) and constraint.sdc
 □ Run multi-round PnR iteration (3 rounds adaptive)
 □ Compare rounds and select best result
 ```
@@ -73,171 +65,14 @@ Create the checklist and go on.
 
 **Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Use that directory as the base for all relative paths below.
 
-## Critical Pitfalls (READ FIRST)
+**IMPORTANT — No local ORFS/Chipyard required.** This skill assumes only Docker + `$PROJECT_ROOT` are available. All ORFS stages run inside Docker containers via MCP tools. Results are auto-mounted to host filesystem.
 
-These are non-obvious failure modes discovered through production runs. **Every one of these will cause the flow to fail silently or catastrophically if ignored.**
+**IMPORTANT — config.mk uses container paths.** All file paths in config.mk must use container paths:
+- Project files: `/workspace/MyDesign/...` (host `$PROJECT_ROOT/MyDesign/...` is mounted as `/workspace`)
+- ORFS internals: `/OpenROAD-flow-scripts/flow/...` (built into Docker image)
+- SRAM22 macros: `/OpenROAD-flow-scripts/flow/platforms/sky130ram/sram22_sky130_macros/...` (mounted from host by MCP server)
 
-### Pitfall 0: TinyRocket default caches overflow 16 GB RAM at PDN (CRITICAL)
-
-**Problem:** Default `With1TinyCore` uses D$ nSets=256 (16 KB scratchpad) and I$ nSets=64 (4 KB). This produces behavioral arrays of depth **4096** (D$ data) and **1024** (I$ data). sky130 SRAM macros max out at 256 deep, so a faithful mapping needs 16-way and 4-way depth tiling. With ~4 D$ banks × 16 tiles = ~64 macros plus icache/tag → **70+ physical SRAM macros**, die explodes to ~10000×10000 µm, and `pdngen` stdcell grid insertion (`[INFO PDN-0001] Inserting grid: grid`) peaks at **~14 GB RSS** → OOM killed on a 16 GB system.
-
-**Verify the symptom:** the floorplan log dies with `Command terminated by signal 9` immediately after `Inserting grid: grid` (before any macro grid lines). `mems.conf` shows `data_arrays_0_0_ext depth 4096`. `2_2_floorplan_macro.tcl` has 50+ lines.
-
-**Why simplifying PDN does NOT fix it:** the bottleneck is the stdcell met4/met5 stripe graph, which scales with die area. Die area is driven by SRAM macro count. Adding swap also doesn't help — OOM killer triggers on RSS, not virtual memory; swap thrash just delays the kill.
-
-**Solution:** Shrink the Chipyard cache config so each array fits in one sky130 SRAM macro (depth ≤ 256). Edit `generators/rocket-chip/src/main/scala/subsystem/Configs.scala`, change `With1TinyCore`'s `dcache.nSets` from 256→16 and `icache.nSets` from 64→16 (1 KB caches each). After this, `mems.conf` shows depth ≤ 256, override needs only ~6 macros, die ~2551×2551 µm, PDN peak **~4.5 GB**, full flow fits in 7 GB.
-
-Trade-off: 1 KB caches are functional but tiny. Only suitable for baremetal/bringup demos, not Linux. Verified: 50 MHz target → fmax 50.56 MHz, WNS 0, TNS 0, DRC 0, 189 MB GDS, route peak 6.5 GB.
-
-### Pitfall 1: FF-based SRAMs cause OOM in routing (CRITICAL)
-
-**Problem:** If behavioral SRAM modules (`data_arrays_0_0_ext`, etc.) are synthesized to flip-flops, the design explodes from ~100K cells to millions of cells. Detailed routing (`5_2_route`) will be killed by OOM killer (signal 9) at 13+ GB memory.
-
-**Root cause:** `data_arrays_0_0_ext` is 4096x8 = 32,768 flip-flops per instance. With multiple instances, this creates hundreds of thousands of FFs that bloat the design.
-
-**Solution:** Use the **nosram + SRAM override** approach:
-1. Use the Chipyard-generated behavioral Verilog as-is (modules are undefined external modules)
-2. Provide `sram_override.v` that replaces behavioral SRAMs with `sky130_sram_*` macro instantiations
-3. Blackbox the `sky130_sram_*` macros during synthesis via `SYNTH_BLACKBOXES`
-4. Provide LEF/LIB/GDS files so OpenROAD can place the physical SRAM macros
-
-**NEVER** provide behavioral SRAM stubs (reg arrays) as substitutes — this causes the OOM problem.
-
-### Pitfall 2: ENABLE_YOSYS_FLOW is mandatory
-
-**Problem:** Without `ENABLE_YOSYS_FLOW=1`, firtool emits SystemVerilog packed-array patterns (`wire [2:0][8:0] _GEN = '{9'h0, ...}`) that Yosys cannot parse, causing `ERROR: syntax error, unexpected OP_CAST` in `1_1_yosys_canonicalize`.
-
-**Solution:** Always pass `ENABLE_YOSYS_FLOW=1` to `make buildfile` or `make verilog`. In Chipyard's `vlsi/tutorial.mk`, the `sky130-openroad` tutorial already sets this flag, but verify it is set.
-
-**What it does** (from `chipyard/common.mk`):
-1. Enables SFC LowFIRRTL lowering with `ReplSeqMem` for SRAM extraction
-2. Appends `disallowPackedArrays` to MFC lowering options
-
-### Pitfall 3: Duplicate module definitions
-
-**Problem:** If you concatenate `EICG_wrapper.v`, `IOCell.v`, `plusarg_reader.v` files AND they are already in the `top.f` filelist, Yosys errors: `ERROR: Re-definition of module \EICG_wrapper!`
-
-**Solution:** Only concatenate files from the `top.f` filelist (which already includes stubs). Do NOT manually append stub files that are already in the list.
-
-### Pitfall 4: SYNTH_MEMORY_MAX_BITS too small (if using behavioral fallback)
-
-**Problem:** If you fall back to behavioral SRAMs (FF-based), ORFS errors: `Error: Synthesized memory size 4096 exceeds SYNTH_MEMORY_MAX_BITS`
-
-**Solution:** Set `SYNTH_MEMORY_MAX_BITS = 131072` in config.mk. But this only applies to the FF-based fallback — the preferred SRAM macro approach does NOT need this.
-
-### Pitfall 5: SRAM blackbox cost information
-
-**Problem:** If you use `(* blackbox *)` attribute on SRAM modules without providing LEF/LIB, ORFS errors: `ERROR: Missing cost information on instanced blackbox sram22_*`
-
-**Solution:** Do NOT use custom sram22 blackbox stubs. Instead, use the ORFS-provided `sky130_sram_*` macros which have LEF/LIB/GDS files. Set `SYNTH_BLACKBOXES` in config.mk and provide `ADDITIONAL_LEFS/LIBS/GDS`.
-
-### Pitfall 6: Chipyard VLSI flow vs simulation flow
-
-**Problem:** `make verilog` (simulation flow) generates TestHarness + ChipTop in split SV files. `make buildfile` (VLSI flow) generates ChipTop-only in `top.f` filelist with SRAM MacroCompiler output.
-
-**Solution:** Use the **VLSI flow** (`make buildfile tutorial=sky130-openroad`) for ORFS. It produces a clean `top.f` filelist (ChipTop only, no TestHarness) and SRAM wrapper modules. The simulation flow includes TestHarness modules that are not needed and complicate the design.
-
-## Multi-Round PnR Iteration Strategy (混合模式)
-
-本流程至少执行 **3 轮** PnR 迭代。**用户设定目标频率，AI 根据每轮诊断结果自适应调参。**
-
-### 用户输入
-
-用户只需提供：
-- **目标频率** (target frequency)，例如 `100MHz` → `clock_period_ns = 10`
-- 可选：最大轮次数（默认 3）
-
-AI 根据目标频率和每轮诊断结果，自主决定每轮的具体参数。
-
-### 调参参数 (Parameter Knobs)
-
-| 参数 | 说明 | 调整方向 |
-|------|------|----------|
-| `clock_period_ns` | 时钟周期（纳秒）= 1000 / freq_mhz | 逐步逼近目标频率 |
-| `core_utilization` | 核心利用率（%） | 拥塞→降低，时序宽松→提高 |
-| `place_density` | 布局密度（0.0–1.0） | 拥塞→降低，时序宽松→提高 |
-| `gpl_timing_driven` | 时序驱动布局 | WNS 负值大→开启 |
-| `gpl_routability_driven` | 可布线性驱动布局 | DRC violations 多→开启 |
-| `setup_slack_margin` | 时序裕量（ns） | 逐步收紧至 0.05ns |
-
-### 已验证 Baseline（注入知识）
-
-以下参数组合已在 TinyRocketConfig + sky130hd 上通过完整 PnR 流程验证，**无需重复验证**：
-
-| 参数 | 验证值 | 验证结果 |
-|------|--------|----------|
-| `clock_period_ns` | 20 (50MHz) | WNS=0.00, TNS=0.00, DRC=0 |
-| `core_utilization` | 50 | Area=3,001,640µm², util=51% |
-| `place_density` | 0.65 | 无拥塞问题 |
-| `gpl_timing_driven` | 1 | **关键**：不开则 WNS=-0.12ns |
-| `gpl_routability_driven` | 1 | DRC=0 |
-| `setup_slack_margin` | 0.3 | 时序裕量充足 |
-| 设计 fmax 上限 | ~54MHz | critical path ~18.4ns，无法通过 PnR 调参突破 |
-| SRAM 宏数量 | 6 | 5×sky130_sram_1rw1r_64x256_8 + 1×sky130_sram_1rw1r_44x64_8 |
-
-**使用规则**：
-- 当用户指定的 baseline ≤ 50MHz 时，**跳过基准验证轮**，Round 1 直接使用 `baseline_clock_ns`（已知可通过）
-- 当用户指定的 target > fmax 上限时，AI 应在 Round 1 尝试 target，失败后收敛到可实现频率附近
-- 所有轮次默认启用 `gpl_timing_driven=1`
-
-### 自适应调参逻辑
-
-**Round 1（探索轮）**：直接使用 baseline 频率（已验证可通），如果是 baseline=target 则直接跑 target。
-```json
-{
-  "clock_period_ns": "<baseline_clock_ns>",
-  "core_utilization": 50,
-  "place_density": 0.65,
-  "gpl_timing_driven": true,
-  "gpl_routability_driven": true,
-  "setup_slack_margin": 0.3
-}
-```
-> Round 1 直接跑 baseline 频率（如 50MHz/20ns），因为已知可通过。Round 2 开始向 target 推进。
-
-**Round 2+（推进轮）**：AI 调用 `diagnose_failure` 和 `get_report` 读取上轮结果，然后根据以下信号调整参数：
-
-| 诊断信号 | 含义 | AI 应采取的调整 |
-|----------|------|-----------------|
-| WNS << 0（如 < -2ns） | 严重时序违例 | 放宽 clock_period (+2ns)，降低 utilization (-5%)，开启 gpl_timing_driven |
-| WNS 略负（如 -0.5ns） | 轻微时序违例 | 微调 clock_period (+0.5ns)，降低 place_density (-0.05)，收紧 slack_margin |
-| WNS >= 0 | 时序满足 | 可以收紧 clock_period (-1ns)，提高 utilization (+5%) |
-| DRC violations > 0 | 布线问题 | 降低 place_density (-0.1)，降低 utilization (-5%)，开启 gpl_routability_driven |
-| TNS 很大 | 多条路径违例 | 大幅放宽 clock_period，降低 utilization |
-| TNS 接近 0 | 只有少量路径违例 | 微调即可 |
-| routing congestion hotspots | 局部拥塞 | 降低 place_density，开启 gpl_routability_driven |
-| OOM / 超时 | 资源不足 | 降低 utilization 和 place_density |
-
-**调参原则：**
-1. 每轮只调整 1-2 个参数，不要同时大幅改动多个参数
-2. 时序违例优先解决，再追求面积/功耗优化
-3. 如果 WNS >= 0 且 DRC == 0，说明当前参数可行，可以尝试收紧 clock 继续逼近目标
-4. 如果连续两轮 WNS 没有改善，说明已到极限，停止迭代
-5. slack_margin 从 0.3ns 逐步收紧至 0.05ns，但不要在时序违例时收紧
-
-### 轮次间操作
-
-每轮结束后：
-
-1. **调用 `get_report`** 获取本轮 finish/route 阶段的详细指标
-2. **调用 `diagnose_failure`** 分析失败原因或时序问题
-3. **调用 `compare_runs` 保存本轮结果**
-4. **AI 根据诊断信号决定下一轮参数**（参考上表）
-5. **更新 `config.mk`** 和 `constraint.sdc`
-6. **调用 `clean_design`** 清除 ORFS 缓存
-7. **启动新一轮 pnr-round-executor**
-
-### 终止条件
-
-满足以下任一条件时停止迭代：
-- WNS >= 0 且 DRC violations == 0（时序和布线都满足）
-- 达到最大轮次数（默认 3 轮）
-- 连续两轮 WNS 改善 < 0.1ns（已收敛）
-- clock_period 已达到用户目标频率
-
-### 最终选优
-
-所有轮次完成后，调用 `compare_runs(action="recommend")` 获取最佳结果建议，综合比较各轮的 WNS/TNS/面积/DRC violations/功耗，选择 PPA 最优的一轮作为最终结果。
+**IMPORTANT — MCP server name.** All MCP tools are `mcp__chipagent-backend-docker__*` (Python server at `.claude/mcp-server-docker-python/server.py`).
 
 ## Pipeline
 
@@ -245,248 +80,268 @@ AI 根据目标频率和每轮诊断结果，自主决定每轮的具体参数�
 
 ```bash
 PROJECT_ROOT="<project-root>"
-RAW_CONFIG="$ARGUMENTS"
-# Extract design name from config for workspace path
-# tinyrocket -> TinyRocket, TinyRocketConfig -> TinyRocket
-if [ -z "$RAW_CONFIG" ]; then
-    RAW_CONFIG="tinyrocket"
-fi
-if echo "$RAW_CONFIG" | grep -qE '[A-Z]'; then
-    DESIGN=$(echo "$RAW_CONFIG" | sed 's/Config$//')
-else
-    FIRST=$(echo "${RAW_CONFIG:0:1}" | tr '[:lower:]' '[:upper:]')
-    REST="${RAW_CONFIG:1}"
-    DESIGN="${FIRST}${REST}"
-fi
-WORK_DIR="$PROJECT_ROOT/MyDesign/$DESIGN/workspace/pnr"
+RAW_CONFIG=$(echo "$ARGUMENTS" | awk '{print $1}')
+FREQ_ARG=$(echo "$ARGUMENTS" | awk '{print $2}')
+if [ -z "$RAW_CONFIG" ]; then RAW_CONFIG="tinyrocket"; fi
 
-# Parse optional target frequency
-# Usage: /chip-agent:chipyard-pnr-docker tinyrocket 100MHz
-#        /chip-agent:chipyard-pnr-docker tinyrocket 10ns
-#        /chip-agent:chipyard-pnr-docker tinyrocket 基准线是50MHz    (baseline + implicit target)
-#        /chip-agent:chipyard-pnr-docker tinyrocket                   (no target → AI decides)
+# Parse optional target frequency from second argument
+# e.g. "tinyrocket 100MHz" → TARGET_FREQ_MHZ=100, "tinyrocket 10ns" → TARGET_CLOCK_NS=10
 TARGET_FREQ_MHZ=""
 TARGET_CLOCK_NS=""
-BASELINE_FREQ_MHZ=""
-BASELINE_CLOCK_NS=""
-# AI parses RAW_CONFIG to determine:
-#   BASELINE_FREQ_MHZ/CLOCK_NS: the "已知可通过" frequency (e.g., 50MHz/20ns)
-#   TARGET_FREQ_MHZ/CLOCK_NS: the goal frequency (e.g., 100MHz/10ns)
-# If only baseline is given (e.g., "基准线是50MHz"), target defaults to pushing beyond baseline
-# If only target is given, baseline defaults to validated 50MHz (from injected knowledge)
-# If neither, AI uses adaptive strategy
-```
-
-Normalize config name (same as `/chip-agent:chipyard`):
-- `tinyrocket` → `TinyRocketConfig`
-- `TinyRocket` → `TinyRocketConfig`
-- `TinyRocketConfig` → `TinyRocketConfig`
-
-```bash
-if [ -z "$RAW_CONFIG" ]; then
-    CONFIG="TinyRocketConfig"
-elif echo "$RAW_CONFIG" | grep -qE '[A-Z]'; then
-    if echo "$RAW_CONFIG" | grep -qE 'Config$'; then
-        CONFIG="$RAW_CONFIG"
-    else
-        CONFIG="${RAW_CONFIG}Config"
+if [ -n "$FREQ_ARG" ]; then
+    if echo "$FREQ_ARG" | grep -qiE 'MHz$'; then
+        TARGET_FREQ_MHZ=$(echo "$FREQ_ARG" | grep -oiE '[0-9]+')
+        TARGET_CLOCK_NS=$(echo "scale=1; 1000 / $TARGET_FREQ_MHZ" | bc)
+    elif echo "$FREQ_ARG" | grep -qiE 'ns$'; then
+        TARGET_CLOCK_NS=$(echo "$FREQ_ARG" | grep -oiE '[0-9]+(\.[0-9]+)?')
+        TARGET_FREQ_MHZ=$(echo "scale=0; 1000 / $TARGET_CLOCK_NS" | bc)
     fi
-else
-    FIRST=$(echo "${RAW_CONFIG:0:1}" | tr '[:lower:]' '[:upper:]')
-    REST="${RAW_CONFIG:1}"
-    CONFIG="${FIRST}${REST}Config"
 fi
+
+# Baseline defaults: validated 50MHz/20ns on sky130hd (WNS=0.00, DRC=0)
+BASELINE_FREQ_MHZ="${TARGET_FREQ_MHZ:-50}"
+BASELINE_CLOCK_NS="${TARGET_CLOCK_NS:-20}"
 ```
 
-Create work directory:
+**Resolve correct Chipyard config class name.** The user may pass a lowercase shorthand (e.g. `smallboom`, `tinyrocket`) that doesn't match the actual Scala class name. Search inside the Chipyard Docker image to find the exact `chipyard.*Config` class:
+
 ```bash
+# Search for matching config class in Chipyard Docker
+# Input like "smallboom" → find "SmallBoomConfig", "tinyrocket" → find "TinyRocketConfig"
+docker run --rm \
+  --entrypoint bash \
+  ictmrc/chipyard-image:1.9.1-ubuntu-22.04 \
+  -c "
+    cd /workspace/chipyard
+    # Search all config scala files for class definitions matching the user input
+    grep -rn 'class .*Config extends' generators/ --include='*.scala' \
+      | sed 's/.*class //' | sed 's/ extends.*//' \
+      | grep -i '$RAW_CONFIG' || true
+  "
+```
+
+From the search results, select the **first exact match** and set `CONFIG` and `DESIGN`:
+
+```bash
+# If user input already has uppercase (e.g. "SmallBoomConfig"), use it directly
+if echo "$RAW_CONFIG" | grep -qE '[A-Z]'; then
+    CONFIG=$(echo "$RAW_CONFIG" | grep -qE 'Config$' && echo "$RAW_CONFIG" || echo "${RAW_CONFIG}Config")
+    DESIGN=$(echo "$CONFIG" | sed 's/Config$//')
+else
+    # Otherwise use the resolved class name from Docker search
+    # e.g. RESOLVED_CONFIG="SmallBoomConfig" (from grep result above)
+    CONFIG="${RESOLVED_CONFIG}"
+    DESIGN=$(echo "$CONFIG" | sed 's/Config$//')
+fi
+
+WORK_DIR="$PROJECT_ROOT/MyDesign/$DESIGN/workspace/pnr"
 mkdir -p "$WORK_DIR"
-```
-
-Echo:
-```bash
-echo "=== Chipyard-PnR (Docker) ==="
-echo "Config: $CONFIG"
-echo "Work: $WORK_DIR"
 ```
 
 ### Step 1 -- Verify Environment
 
+**No local Chipyard/ORFS paths to check.** Only Docker and MCP backend are required.
+
 ```bash
-# Read env.json for paths
-ORFS_FLOW_PATH=$(jq -r '.orfs.flow_path' "$PROJECT_ROOT/.chipagent/env.json" 2>/dev/null)
+# Verify Docker is available
+docker --version || STOP "Docker not installed"
+
+# Verify Chipyard Docker image
+docker image inspect ictmrc/chipyard-image:1.9.1-ubuntu-22.04 >/dev/null 2>&1 || \
+    STOP "Chipyard Docker image not found: docker pull ictmrc/chipyard-image:1.9.1-ubuntu-22.04"
+
+# Verify ORFS Docker image
+docker image inspect openroad/orfs:latest >/dev/null 2>&1 || \
+    STOP "ORFS Docker image not found: docker pull openroad/orfs:latest"
 ```
 
-Verify Docker is available:
-```bash
-docker info >/dev/null 2>&1 || STOP "Docker not available"
-```
+Call `mcp__chipagent-backend-docker__check_environment` to verify ORFS/sky130hd/sky130ram availability inside Docker.
 
-Verify ORFS inside Docker:
+### Step 2 -- Generate Verilog and Consolidate nosram.sv (Docker)
+
+Run `make verilog CONFIG=<Config>` in `sims/verilator` inside Chipyard Docker to generate Verilog, then merge the split SV files listed in `.top.f` (excluding SRAM mems wrappers) into a single `nosram.sv`. Copy `mems.conf` files for SRAM mapping. All operations happen **inside the same Docker container** to preserve generated artifacts.
+
+**Why `sims/verilator` instead of `vlsi/buildfile`?** The `buildfile` target requires `tutorial=sky130-openroad` which assumes Rocket-core IO binders and fails for BOOM and other non-Rocket configs due to DontTouch annotation mismatches. `make verilog` in `sims/verilator` works for all configs.
+
 ```bash
-docker run --rm openroad/orfs:latest \
-  bash -c "
-    echo 'ORFS:'
-    test -f /OpenROAD-flow-scripts/flow/Makefile && echo '  Makefile: OK'
-    test -f /OpenROAD-flow-scripts/flow/platforms/sky130hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib && echo '  sky130hd LIB: OK'
-    test -f /OpenROAD-flow-scripts/flow/platforms/sky130hd/lef/sky130_fd_sc_hd_merged.lef && echo '  sky130hd LEF: OK'
-    ls /OpenROAD-flow-scripts/flow/platforms/sky130ram/ 2>/dev/null | head -3 && echo '  sky130ram: OK' || echo '  sky130ram: NOT FOUND'
-    echo 'OpenROAD version:'
-    /OpenROAD-flow-scripts/tools/install/OpenROAD/bin/openroad -version 2>&1 | head -1
+docker run --rm \
+  -v "$WORK_DIR:/out" \
+  --entrypoint bash \
+  ictmrc/chipyard-image:1.9.1-ubuntu-22.04 \
+  -c "
+    export RISCV=/workspace/chipyard/.conda-env/riscv-tools
+    export PATH=/workspace/chipyard/.conda-env/bin:\$PATH
+    export JAVA_TOOL_OPTIONS='-Dfile.encoding=UTF-8 -Xmx8G'
+    cd /workspace/chipyard/sims/verilator
+    make verilog CONFIG=${CONFIG} 2>&1 | tail -5 || true
+
+    GEN_DIR=/workspace/chipyard/sims/verilator/generated-src/chipyard.TestHarness.${CONFIG}
+    TOP_F=\$GEN_DIR/chipyard.TestHarness.${CONFIG}.top.f
+
+    # Merge all gen-collateral files listed in top.f into single nosram.sv
+    # Skip SRAM mems wrapper files (*.mems.v) — we replace them with sky130_sram overrides
+    NOSRAM_V=/out/${CONFIG}_nosram.sv
+    > \$NOSRAM_V
+    while IFS= read -r f; do
+        if [ -f \"\$f\" ]; then
+            if echo \"\$f\" | grep -q 'mems\.v'; then
+                continue
+            fi
+            cat \"\$f\"
+            echo \"\"
+        fi
+    done < \"\$TOP_F\" >> \$NOSRAM_V
+
+    # Copy mems.conf files for SRAM mapping
+    cp \$GEN_DIR/chipyard.TestHarness.${CONFIG}.top.mems.conf /out/mems.conf
+    cp \$GEN_DIR/chipyard.TestHarness.${CONFIG}.model.mems.conf /out/model.mems.conf
+
+    echo '=== nosram.sv generated ==='
+    echo \"Lines: \$(wc -l < \$NOSRAM_V)\"
+    echo \"Modules: \$(grep '^module ' \$NOSRAM_V | wc -l)\"
   "
 ```
 
-Call `mcp__chipagent-backend__check_environment` to verify Docker/ORFS/sky130hd readiness.
+**Timeout:** 600000ms (10 minutes).
 
-### Step 2 -- Locate Generated Verilog
-
+**Verification:**
 ```bash
-VERILOG="$PROJECT_ROOT/MyDesign/$DESIGN/workspace/generated/${CONFIG}.v"
-SRAM_MAP="$PROJECT_ROOT/MyDesign/$DESIGN/workspace/generated/sram_mapping.json"
-SPEC="$PROJECT_ROOT/MyDesign/$DESIGN/workspace/spec.json"
-
-test -f "$VERILOG" || STOP "Verilog not found: $VERILOG. Run /chip-agent:chipyard $DESIGN first."
-test -f "$SRAM_MAP" && echo "SRAM mapping: found" || echo "SRAM mapping: not found (will generate)"
-test -f "$SPEC" && echo "spec.json: found" || echo "spec.json: not found"
-
-echo "Verilog: $(wc -l < "$VERILOG") lines"
+NOSRAM_V="$WORK_DIR/${CONFIG}_nosram.sv"
+test -f "$NOSRAM_V" || STOP "nosram.sv not found — buildfile may have failed"
+echo "Generated $(wc -l < "$NOSRAM_V") lines, $(grep '^module ' "$NOSRAM_V" | wc -l) modules"
 ```
 
-### Step 3 -- Consolidate Verilog Files
+**Do NOT include** the SRAM wrapper (`*.top.mems.v`) — it uses sram22 macros which we replace with sky130_sram macros via the override.
 
-Merge the split SV files into a single file. The generated Verilog from `/chip-agent:chipyard` should already be consolidated, but verify and ensure a single nosram file exists.
+### Step 3 -- Generate SRAM Override Modules
+
+**Delegate to `sram-mapping-docker` subagent.**
+
+Before invoking the agent, prepare SRAM22 at `$PROJECT_ROOT/sram22_sky130_macros/`.
 
 ```bash
-NOSRAM_V="$WORK_DIR/${CONFIG}_nosram.v"
+SRAM22_DIR="$PROJECT_ROOT/sram22_sky130_macros"
 
-# If the staged Verilog exists, use it directly (already consolidated from chipyard-docker)
-if [ -f "$VERILOG" ]; then
-    cp "$VERILOG" "$NOSRAM_V"
-else
-    STOP "Verilog not found at $VERILOG"
+# Clone SRAM22 if not present
+if [ ! -d "$SRAM22_DIR" ]; then
+    git clone --depth 1 https://github.com/rahulk29/sram22_sky130_macros.git "$SRAM22_DIR"
 fi
 
-echo "Consolidated: $NOSRAM_V ($(wc -l < "$NOSRAM_V") lines)"
+# Decompress GDS files
+for gds_gz in "$SRAM22_DIR"/*/*.gds.gz; do
+    [ -f "${gds_gz%.gz}" ] || gunzip -k "$gds_gz"
+done
 ```
 
-**Verify no duplicate modules:**
-```bash
-# Should show 0 — all modules should be unique
-grep "^module " "$NOSRAM_V" | sort | uniq -d | wc -l
-```
+Spawn the `sram-mapping-docker` agent (from `agents/sram-mapping-docker.md`) with this context in the prompt:
 
-**Verify no behavioral SRAM modules remain:**
-```bash
-grep -c '^module.*_ext' "$NOSRAM_V" && echo "WARNING: _ext modules remain" || echo "No _ext modules: OK"
-```
-
-### Step 4 -- Generate SRAM Override Modules
-
-**Delegate to `sram-mapping` subagent.**
-
-The SRAM override generation involves complex tiling logic (depth splitting, column grouping, wmask expansion, read MUX). Invoke the dedicated `sram-mapping` agent which encapsulates the full mapping analysis and code generation.
-
-Spawn the `sram-mapping` agent (from `agents/sram-mapping.md`) with this context in the prompt:
-
-```
-GEN_DIR: <path to gen-collateral directory>
-OUTPUT_DIR: <path to work directory>
-ORFS_FLOW_PATH: <path to ORFS flow/ directory>
-```
-
-Example:
 ```
 Agent(
-  subagent_type: "sram-mapping",
-  description: "Generate SRAM override modules",
-  prompt: "Generate SRAM override modules for Chipyard design.
-    GEN_DIR: /home/user/chipyard/vlsi/generated-src/chipyard.harness.TestHarness.TinyRocketConfig/gen-collateral
-    OUTPUT_DIR: /home/user/ChipAgent-Test/try
-    ORFS_FLOW_PATH: /home/user/OpenROAD-flow-scripts/flow"
+  subagent_type: "sram-mapping-docker",
+  description: "Generate SRAM override modules (Docker)",
+  prompt: "Generate SRAM override modules for Chipyard design (Docker mode).
+    GEN_DIR: $WORK_DIR  (nosram.sv is here, read mems.conf from Docker or inline below)
+    OUTPUT_DIR: $WORK_DIR
+    ORFS_FLOW_PATH: $PROJECT_ROOT/OpenROAD-flow-scripts/flow
+    DOCKER_IMAGE: openroad/orfs:latest
+    SRAM22_DIR: $PROJECT_ROOT/sram22_sky130_macros
+    Use macro_source field in sram_mapping.json: 'orfs' for ORFS macros, 'sram22' for SRAM22 macros."
 )
 ```
-
-The agent will:
-1. Read `mems.conf` to parse SRAM specs (depth, width, ports, mask_gran)
-2. Find behavioral module instantiation sites to infer port interfaces
-3. Select the best-fit `sky130_sram_*` macro for each SRAM
-4. Design the tiling strategy (depth tiles, column groups, bit slicing)
-5. Generate `$WORK_DIR/sram_override.v` with correct override modules
-6. Write `$WORK_DIR/sram_mapping.json` with structured mapping metadata
-7. Perform a Yosys compile check
 
 **After the agent completes, verify the output:**
 
 ```bash
-test -f "$WORK_DIR/sram_override.v" || STOP "sram-mapping agent did not produce sram_override.v"
-test -f "$WORK_DIR/sram_mapping.json" || STOP "sram-mapping agent did not produce sram_mapping.json"
+test -f "$WORK_DIR/sram_override.v" || STOP "sram-mapping-docker agent did not produce sram_override.v"
+test -f "$WORK_DIR/sram_mapping.json" || STOP "sram-mapping-docker agent did not produce sram_mapping.json"
 ```
 
-**Extract SRAM macro list** from the generated mapping for Step 6:
+**Extract SRAM macro list** from the generated mapping for Step 5:
 
 ```bash
 USED_MACROS=$(jq -r '.mappings[] | select(.macro != null) | .macro' "$WORK_DIR/sram_mapping.json" | sort -u)
 echo "Used SRAM macros: $USED_MACROS"
 ```
 
-This macro list is needed in Step 6 to populate `SYNTH_BLACKBOXES`, `ADDITIONAL_LEFS/LIBS/GDS`, and `DONT_USE_CELLS` in config.mk.
-
-### Step 5 -- Identify Clock Ports
+### Step 4 -- Identify Clock Ports
 
 Read the ChipTop module ports:
 ```bash
-grep -A30 "^module ChipTop" "$WORK_DIR/${CONFIG}_nosram.v" | head -20
+grep -A30 "^module ChipTop" "$WORK_DIR/${CONFIG}_nosram.sv" | head -20
 ```
 
-Typical TinyRocketConfig ChipTop clock ports:
-- `clock_uncore_clock` — main core clock (10ns period)
-- `serial_tl_clock` — serial link clock
-- `jtag_TCK` — JTAG clock (100ns period)
+Typical TinyRocketConfig ChipTop clock ports (verify from actual module definition):
+- `clock_clock` — main core clock (input)
+- `jtag_TCK` — JTAG clock (input, 100ns period)
+- `serial_tl_clock` — serial link clock (**output**, generated clock — do NOT use `create_clock` on it)
 
-### Step 6 -- Generate ORFS Config
+### Step 5 -- Generate ORFS Config
 
-Use `mcp__chipagent-backend__generate_config` to create base config, then manually enhance it.
+Use `mcp__chipagent-backend-docker__generate_config` to create base config, then overwrite with full Chipyard-specific settings using **container paths**.
 
 **6a. Generate base config:**
 
-Note: `workspace_dir` is the output directory for config.mk and constraint.sdc.
-The tool writes files directly to this directory (no extra `/pnr` appended).
+Note: `workspace_dir` is the output directory for config.mk and constraint.sdc on the host.
+The tool writes files directly to this directory.
 
 ```
-mcp__chipagent-backend__generate_config(
+mcp__chipagent-backend-docker__generate_config(
   module_name="ChipTop",
-  verilog_path="$WORK_DIR/${CONFIG}_nosram.v",
+  verilog_path="$WORK_DIR/${CONFIG}_nosram.sv",
   workspace_dir="$WORK_DIR/pnr",
-  clock_port="clock_uncore_clock",
+  clock_port="clock_clock",
   clock_period_ns=10,
   core_utilization=55,
   place_density=0.65
 )
 ```
 
-**6b. Overwrite config.mk with full Chipyard-specific settings:**
+**6b. Overwrite config.mk with full Chipyard-specific settings (container paths):**
 
-The MCP-generated config is a minimal template. Replace it with the full config that includes SRAM macro paths, blackboxes, and physical constraints. The SRAM macro list is dynamically built from `sram_mapping.json` generated by `/chip-agent:sram-mapping`.
+The MCP-generated config uses host paths — replace with container paths for Docker execution. The SRAM macro list is dynamically built from `sram_mapping.json` generated by the sram-mapping-docker agent.
 
 ```bash
-SRAM_DIR="$ORFS_FLOW_PATH/platforms/sky130ram"
+# Container path for ORFS flow
+ORFS_CONTAINER="/OpenROAD-flow-scripts/flow"
+# Container path for SRAM22 (mounted by MCP server from host ORFS path)
+SRAM22_CONTAINER="/workspace/sram22_sky130_macros"
+
+# Container path for nosram and override (host $PROJECT_ROOT mounts as /workspace)
+NOSRAM_CONTAINER="/workspace/MyDesign/$DESIGN/workspace/pnr/${CONFIG}_nosram.sv"
+OVERRIDE_CONTAINER="/workspace/MyDesign/$DESIGN/workspace/pnr/sram_override.v"
+SDC_CONTAINER="/workspace/MyDesign/$DESIGN/workspace/pnr/constraint.sdc"
 
 # Build SRAM macro lists dynamically from sram_mapping.json
 MACROS=$(jq -r '.mappings[] | select(.macro != null) | .macro' "$WORK_DIR/sram_mapping.json" | sort -u)
 MACRO_LIST=$(echo "$MACROS" | tr '\n' ' ')
 
 # Build VERILOG_FILES: nosram + override + each macro's behavioral .v
-VERILOG_LIST="$WORK_DIR/${CONFIG}_nosram.v $WORK_DIR/sram_override.v"
+VERILOG_LIST="$NOSRAM_CONTAINER $OVERRIDE_CONTAINER"
 for m in $MACROS; do
-    VERILOG_LIST="$VERILOG_LIST $SRAM_DIR/$m/$m.v"
+    # Determine macro source (orfs vs sram22) from sram_mapping.json
+    SOURCE=$(jq -r ".mappings[] | select(.macro == \"$m\") | .macro_source" "$WORK_DIR/sram_mapping.json" | head -1)
+    if [ "$SOURCE" = "sram22" ]; then
+        VERILOG_LIST="$VERILOG_LIST $SRAM22_CONTAINER/$m/$m.v"
+    else
+        VERILOG_LIST="$VERILOG_LIST $ORFS_CONTAINER/platforms/sky130ram/$m/$m.v"
+    fi
 done
 
 # Build ADDITIONAL_LEFS/LIBS/GDS lines
 LEFS=""; LIBS=""; GDS=""
 for m in $MACROS; do
-    LEFS="$LEFS $SRAM_DIR/$m/$m.lef"
-    LIBS="$LIBS $SRAM_DIR/$m/${m}_TT_1p8V_25C.lib"
-    GDS="$GDS $SRAM_DIR/$m/$m.gds"
+    SOURCE=$(jq -r ".mappings[] | select(.macro == \"$m\") | .macro_source" "$WORK_DIR/sram_mapping.json" | head -1)
+    if [ "$SOURCE" = "sram22" ]; then
+        MACRO_BASE="$SRAM22_CONTAINER/$m"
+        LEFS="$LEFS $MACRO_BASE/$m.lef"
+        LIBS="$LIBS $MACRO_BASE/${m}_tt_025C_1v80.lib"
+        GDS="$GDS $MACRO_BASE/$m.gds"
+    else
+        MACRO_BASE="$ORFS_CONTAINER/platforms/sky130ram/$m"
+        LEFS="$LEFS $MACRO_BASE/$m.lef"
+        LIBS="$LIBS $MACRO_BASE/${m}_TT_1p8V_25C.lib"
+        GDS="$GDS $MACRO_BASE/$m.gds"
+    fi
 done
 
 # Format as backslash-continued Makefile lines
@@ -503,7 +358,7 @@ export DESIGN_NICKNAME = tinyRocket
 export VERILOG_FILES = \\
     $VERILOG_LINES
 
-export SDC_FILE = $WORK_DIR/pnr/constraint.sdc
+export SDC_FILE = $SDC_CONTAINER
 
 # Blackbox SRAM macros during synthesis (Yosys leaves them as abstract blocks)
 export SYNTH_BLACKBOXES = $MACRO_LIST
@@ -551,29 +406,82 @@ CFGEOF
 ```bash
 cat > "$WORK_DIR/pnr/constraint.sdc" << SDCEOF
 current_design ChipTop
-create_clock -name core_clock -period 10 [get_ports clock_uncore_clock]
-create_clock -name serial_clock -period 10 [get_ports serial_tl_clock]
+create_clock -name core_clock -period 10 [get_ports clock_clock]
 create_clock -name jtag_clock -period 100 [get_ports jtag_TCK]
+# NOTE: serial_tl_clock is an output (generated clock) — do NOT create_clock on it
 # NOTE: For multi-round iteration, update core_clock period here to match round's clock_period_ns
-set_clock_groups -asynchronous -group {core_clock} -group {serial_clock} -group {jtag_clock}
+set_clock_groups -asynchronous -group {core_clock} -group {jtag_clock}
 set_input_delay -clock core_clock 0 [all_inputs -no_clocks]
 set_output_delay -clock core_clock 0 [all_outputs]
 SDCEOF
 ```
 
-### Step 7 -- Run ORFS Full Flow
+### Step 6 -- Run ORFS Full Flow (Multi-Round Iteration)
 
-Run the full ORFS flow in a **background subagent** so the main agent remains responsive and can report progress to the user.
+Run at least **3 rounds** of PnR iteration. The user sets a target frequency; the AI adaptively tunes parameters based on each round's diagnostic results. Each round runs as a background subagent.
 
-**7a. Clean previous run (direct MCP call):**
+**Parameter Knobs:**
+
+| Parameter | Description | Tuning Direction |
+|-----------|-------------|------------------|
+| `clock_period_ns` | Clock period (ns) = 1000 / freq_mhz | Progressively approach target frequency |
+| `core_utilization` | Core utilization (%) | Congestion → decrease, timing slack → increase |
+| `place_density` | Placement density (0.0–1.0) | Congestion → decrease, timing slack → increase |
+| `gpl_timing_driven` | Timing-driven placement | Large negative WNS → enable |
+| `gpl_routability_driven` | Routability-driven placement | Many DRC violations → enable |
+| `setup_slack_margin` | Timing margin (ns) | Progressively tighten to 0.05ns |
+
+**Validated Baseline** (TinyRocketConfig + sky130hd, no need to re-validate):
+
+| Parameter | Validated Value | Validation Result |
+|-----------|-----------------|-------------------|
+| `clock_period_ns` | 20 (50MHz) | WNS=0.00, TNS=0.00, DRC=0 |
+| `core_utilization` | 50 | Area=3,001,640µm², util=51% |
+| `place_density` | 0.65 | No congestion issues |
+| `gpl_timing_driven` | 1 | **Critical**: without it WNS=-0.12ns |
+| `gpl_routability_driven` | 1 | DRC=0 |
+| `setup_slack_margin` | 0.3 | Sufficient timing margin |
+| Design fmax ceiling | ~54MHz | Critical path ~18.4ns, cannot break through via PnR tuning |
+| SRAM macro count | 6 | 5×sky130_sram_1rw1r_64x256_8 + 1×sky130_sram_1rw1r_44x64_8 |
+
+**Usage rules:**
+- When target ≤ 50MHz, skip baseline validation — Round 1 directly uses `baseline_clock_ns` (known to pass)
+- When target > fmax ceiling, attempt target in Round 1, then converge to achievable frequency upon failure
+- All rounds enable `gpl_timing_driven=1` by default
+
+**Adaptive Tuning Logic:**
+
+Round 1 uses the baseline frequency. Round 2+ calls `diagnose_failure` and `get_report` to read previous round results, then adjusts parameters:
+
+| Diagnostic Signal | Meaning | AI Adjustment |
+|-------------------|---------|---------------|
+| WNS << 0 (e.g. < -2ns) | Severe timing violation | Relax clock_period (+2ns), reduce utilization (-5%), enable gpl_timing_driven |
+| WNS slightly negative (e.g. -0.5ns) | Minor timing violation | Fine-tune clock_period (+0.5ns), reduce place_density (-0.05), tighten slack_margin |
+| WNS >= 0 | Timing met | Can tighten clock_period (-1ns), increase utilization (+5%) |
+| DRC violations > 0 | Routing issues | Reduce place_density (-0.1), reduce utilization (-5%), enable gpl_routability_driven |
+| Large TNS | Multiple paths violating | Significantly relax clock_period, reduce utilization |
+| TNS close to 0 | Only a few paths violating | Fine-tune only |
+| Routing congestion hotspots | Local congestion | Reduce place_density, enable gpl_routability_driven |
+| OOM / timeout | Insufficient resources | Reduce utilization and place_density |
+
+**Tuning principles:**
+1. Adjust only 1-2 parameters per round; do not drastically change multiple parameters simultaneously
+2. Resolve timing violations first, then pursue area/power optimization
+3. If WNS >= 0 and DRC == 0, the current parameters are viable — try tightening the clock to continue approaching the target
+4. If WNS does not improve for two consecutive rounds, the limit has been reached — stop iterating
+5. Progressively tighten slack_margin from 0.3ns to 0.05ns, but do not tighten when timing is violating
+
+**Termination conditions:** WNS>=0 and DRC==0 / max rounds reached / consecutive WNS improvement < 0.1ns / target frequency achieved.
+
+**6a. Clean previous run (direct MCP call):**
 ```
-mcp__chipagent-backend__clean_design(
+mcp__chipagent-backend-docker__clean_design(
   config_mk_path="$WORK_DIR/pnr/config.mk",
-  orfs_flow_path="$ORFS_FLOW_PATH/flow"
+  orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow"
 )
 ```
 
-**7b. Initialize progress file and iteration state:**
+**6b. Initialize round parameters:**
 
 ```bash
 # Set total rounds (minimum 3, maximum 5)
@@ -587,25 +495,16 @@ R1_DENSITY=0.65
 R1_TIMING_DRIVEN=1
 R1_ROUTABILITY_DRIVEN=1
 R1_SLACK_MARGIN=0.3
-
-cat > "$WORK_DIR/pnr/progress.json" << EOF
-{"round":1,"total_rounds":$TOTAL_ROUNDS,"current_stage":"starting","stages_completed":[],"stages_remaining":["synth","floorplan","place","cts","route","finish"],"status":"running","latest_metrics":{},"failed_stage":null,"timestamp":"$(date -Iseconds)","target_freq_mhz":"${TARGET_FREQ_MHZ:-adaptive}","target_clock_ns":"${TARGET_CLOCK_NS:-adaptive}"}
-EOF
-
-# Create iteration history file for AI decision-making
-cat > "$WORK_DIR/pnr/iteration_history.json" << 'EOF'
-{"rounds":[]}
-EOF
 ```
 
-**7c. Spawn background round executor (Round 1 — baseline):**
+**6c. Spawn background round executor (Round 1 — baseline):**
 
-Spawn the `pnr-round-executor` agent with `run_in_background: true`:
+Spawn the `pnr-round-executor-docker` agent with `run_in_background: true`:
 
 ```
 Agent(
-  subagent_type: "pnr-round-executor",
-  description: "PnR Round 1: ChipTop (tinyRocket) — baseline",
+  subagent_type: "pnr-round-executor-docker",
+  description: "PnR Round 1: ChipTop (tinyRocket) — baseline (Docker)",
   run_in_background: true,
   prompt: "
     module: ChipTop
@@ -616,66 +515,37 @@ Agent(
     current_params: { clock_period_ns: $R1_CLOCK, core_utilization: $R1_UTIL, place_density: $R1_DENSITY, gpl_timing_driven: $R1_TIMING_DRIVEN, gpl_routability_driven: $R1_ROUTABILITY_DRIVEN, setup_slack_margin: $R1_SLACK_MARGIN }
     config_mk: $WORK_DIR/pnr/config.mk
     design_name: ChipTop
-    orfs_flow_path: $ORFS_FLOW_PATH/flow
-    clock_port: clock_uncore_clock
-    progress_file: $WORK_DIR/pnr/progress.json
-    NOTE: Stage timeouts: synth=30min, floorplan=60min, place=30min, cts=30min, route=120min, finish=30min.
+    orfs_flow_path: $PROJECT_ROOT/OpenROAD-flow-scripts/flow
+    clock_port: clock_clock
+    backend: docker
+    NOTE: Use mcp__chipagent-backend-docker__* tools (NOT local).
+    Stage timeouts: synth=30min, floorplan=60min, place=30min, cts=30min, route=120min, finish=30min.
   "
 )
 ```
 
-**7d. Set up progress polling with ScheduleWakeup:**
-
-Schedule a recurring wakeup every 10 minutes to check progress and report to the user:
-
-```
-ScheduleWakeup(
-  delaySeconds: 600,
-  reason: "Check ChipTop PnR progress",
-  prompt: "<same prompt as the original /chip-agent:chipyard-pnr-docker invocation>"
-)
-```
-
-On each wakeup, read `$WORK_DIR/pnr/progress.json` and report:
-```
-cat "$WORK_DIR/pnr/progress.json"
-```
-
-Format the report as:
-```
-PnR Progress: Round X/3 — <current_stage>
-  Completed: <stages_completed list>
-  Remaining: <stages_remaining list>
-  Params: clock=<ns>ns, util=<%>%, density=<d>, slack_margin=<sm>ns
-  Latest: <latest_metrics summary (WNS, area, violations)>
-```
-
-If `status === "running"`: continue polling (ScheduleWakeup again).
-If `status === "pass"` or `status === "fail"`: stop polling and proceed to Step 7e.
-
-**7e. Handle round completion — diagnose and decide next parameters:**
+**6d. Handle round completion — diagnose and decide next parameters:**
 
 When the background agent completes, you will receive a task notification. At that point:
-1. Stop the ScheduleWakeup (CronDelete)
-2. Read the final `$WORK_DIR/pnr/progress.json`
-3. **Save round results** via `compare_runs`:
+
+1. **Save round results** via `compare_runs`:
    ```
-   mcp__chipagent-backend__compare_runs(
+   mcp__chipagent-backend-docker__compare_runs(
      action="save",
      workspace_dir="$WORK_DIR",
-     run={"round": <current_round>, "config": {<params>}, "metrics": {<from progress.json>}, "status": "pass"|"fail"}
+     run={"round": <current_round>, "config": {<params>}, "metrics": {<from report>}, "status": "pass"|"fail"}
    )
    ```
 
-4. **Collect detailed metrics** via MCP:
+2. **Collect detailed metrics** via MCP:
    ```
-   mcp__chipagent-backend__get_report(design_name="ChipTop", stage="finish", orfs_flow_path="$ORFS_FLOW_PATH/flow")
-   mcp__chipagent-backend__get_report(design_name="ChipTop", stage="route", orfs_flow_path="$ORFS_FLOW_PATH/flow")
+   mcp__chipagent-backend-docker__get_report(design_name="ChipTop", stage="finish", orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow")
+   mcp__chipagent-backend-docker__get_report(design_name="ChipTop", stage="route", orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow")
    ```
 
-5. **Diagnose results** — call `diagnose_failure` to get AI-readable analysis:
+3. **Diagnose results** — call `diagnose_failure` to get AI-readable analysis:
    ```
-   mcp__chipagent-backend__diagnose_failure(
+   mcp__chipagent-backend-docker__diagnose_failure(
      stage="finish",
      success=<true|false>,
      current_clock_period_ns=<current CP>,
@@ -686,24 +556,23 @@ When the background agent completes, you will receive a task notification. At th
    )
    ```
 
-6. **AI decides next round parameters** based on the diagnostic signals:
+4. **Decide next round parameters** based on diagnostic signals:
    - Read WNS, TNS, DRC violations, area, power from the reports
-   - Apply the "自适应调参逻辑" table (see Multi-Round Strategy section)
+   - Apply the Adaptive Tuning Logic (see above)
    - Determine the next round's `{clock_period_ns, core_utilization, place_density, gpl_timing_driven, gpl_routability_driven, setup_slack_margin}`
-   - Record the decision rationale in `iteration_history.json`
 
-**7f. Launch next round (if more rounds remain and termination conditions not met):**
+**6e. Launch next round (if more rounds remain and termination conditions not met):**
 
 Check termination conditions first:
-- If WNS >= 0 AND DRC == 0: **success**, proceed to Step 8
-- If `current_round >= total_rounds`: **max rounds reached**, proceed to Step 8
-- If consecutive WNS improvement < 0.1ns: **converged**, proceed to Step 8
+- If WNS >= 0 AND DRC == 0: **success**, proceed to Step 7
+- If `current_round >= total_rounds`: **max rounds reached**, proceed to Step 7
+- If consecutive WNS improvement < 0.1ns: **converged**, proceed to Step 7
 
 Otherwise, launch next round with AI-decided parameters:
 
 1. **Update `config.mk`** with the AI-decided parameters:
    ```bash
-   # CP, CU, PD, GTD, GRD, SSM are the AI-decided values from Step 7e
+   # CP, CU, PD, GTD, GRD, SSM are the AI-decided values from Step 6d
    sed -i "s/^export CORE_UTILIZATION = .*/export CORE_UTILIZATION = $CU/" "$WORK_DIR/pnr/config.mk"
    sed -i "s/^export PLACE_DENSITY = .*/export PLACE_DENSITY = $PD/" "$WORK_DIR/pnr/config.mk"
    sed -i "s/^export GPL_TIMING_DRIVEN = .*/export GPL_TIMING_DRIVEN = $GTD/" "$WORK_DIR/pnr/config.mk"
@@ -713,92 +582,43 @@ Otherwise, launch next round with AI-decided parameters:
 
 2. **Update `constraint.sdc`** with new clock period:
    ```bash
-   sed -i "s/-period [0-9]* \[get_ports clock_uncore_clock\]/-period $CP [get_ports clock_uncore_clock]/" "$WORK_DIR/pnr/constraint.sdc"
-   sed -i "s/-period [0-9]* \[get_ports serial_tl_clock\]/-period $CP [get_ports serial_tl_clock]/" "$WORK_DIR/pnr/constraint.sdc"
+   sed -i "s/-period [0-9]* \[get_ports clock_clock\]/-period $CP [get_ports clock_clock]/" "$WORK_DIR/pnr/constraint.sdc"
    ```
 
 3. **Clean ORFS cache:**
    ```
-   mcp__chipagent-backend__clean_design(
+   mcp__chipagent-backend-docker__clean_design(
      config_mk_path="$WORK_DIR/pnr/config.mk",
-     orfs_flow_path="$ORFS_FLOW_PATH/flow"
+     orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow"
    )
    ```
 
-4. **Update progress.json:**
-   ```bash
-   cat > "$WORK_DIR/pnr/progress.json" << EOF
-   {"round":$NEXT_ROUND,"total_rounds":$TOTAL_ROUNDS,"current_stage":"starting","stages_completed":[],"stages_remaining":["synth","floorplan","place","cts","route","finish"],"status":"running","latest_metrics":{},"failed_stage":null,"timestamp":"$(date -Iseconds)","target_freq_mhz":"${TARGET_FREQ_MHZ:-adaptive}","target_clock_ns":"${TARGET_CLOCK_NS:-adaptive}"}
-   EOF
-   ```
+4. **Spawn next round executor** — same as Step 6c, replacing round_number=$NEXT_ROUND and current_params={CP,CU,PD,GTD,GRD,SSM}.
 
-5. **Spawn next round executor** with AI-decided params:
-   ```
-   Agent(
-     subagent_type: "pnr-round-executor",
-     description: "PnR Round $NEXT_ROUND: ChipTop (tinyRocket) — adaptive",
-     run_in_background: true,
-     prompt: "
-       module: ChipTop
-       project_root: $PROJECT_ROOT
-       round_number: $NEXT_ROUND
-       total_rounds: $TOTAL_ROUNDS
-       restart_from: synth
-       current_params: { clock_period_ns: $CP, core_utilization: $CU, place_density: $PD, gpl_timing_driven: $GTD, gpl_routability_driven: $GRD, setup_slack_margin: $SSM }
-       config_mk: $WORK_DIR/pnr/config.mk
-       design_name: ChipTop
-       orfs_flow_path: $ORFS_FLOW_PATH/flow
-       clock_port: clock_uncore_clock
-       progress_file: $WORK_DIR/pnr/progress.json
-       NOTE: Stage timeouts: synth=30min, floorplan=60min, place=30min, cts=30min, route=120min, finish=30min.
-     "
-   )
-   ```
+5. **Loop back to Step 6d** when this round completes.
 
-6. **Resume ScheduleWakeup** for the new round (same as Step 7d).
+### Step 7 -- Compare Rounds and Select Best Result
 
-7. **Loop back to Step 7e** when this round completes.
-
-**Total runtime:** ~82 minutes per round, ~4.5 hours for all 3 rounds on a modern machine.
-
-**Memory requirements:**
-- Synthesis: ~3 GB
-- Floorplan/PDN: ~12 GB (PDN generation is memory-intensive)
-- Place: ~2 GB
-- CTS: ~2 GB
-- Route (DRT): ~7-8 GB
-- Finish: ~2 GB
-
-### Step 8 -- Compare Rounds and Select Best Result
-
-**8a. Load all round results and recommend best:**
+**7a. Load all round results and recommend best:**
 
 ```
-mcp__chipagent-backend__compare_runs(
+mcp__chipagent-backend-docker__compare_runs(
   action="recommend",
   workspace_dir="$WORK_DIR"
 )
 ```
 
-**8b. Collect detailed metrics for each round** (if not already saved):
-
-```bash
-for ROUND in $(seq 1 $TOTAL_ROUNDS); do
-  echo "=== Round $ROUND ==="
-  cat "$WORK_DIR/pnr/progress_round_${ROUND}.json" 2>/dev/null || echo "(no separate progress file)"
-done
-```
-
-Collect final metrics via MCP for each round:
-```
-mcp__chipagent-backend__get_report(design_name="ChipTop", stage="finish", orfs_flow_path="$ORFS_FLOW_PATH/flow")
-mcp__chipagent-backend__get_report(design_name="ChipTop", stage="route", orfs_flow_path="$ORFS_FLOW_PATH/flow")
-```
-
-**8c. Display comparison table:**
+**7b. Collect detailed metrics for each round** (if not already saved):
 
 ```
-=== Chipyard PnR Multi-Round Results: ChipTop (tinyRocket) ===
+mcp__chipagent-backend-docker__get_report(design_name="ChipTop", stage="finish", orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow")
+mcp__chipagent-backend-docker__get_report(design_name="ChipTop", stage="route", orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow")
+```
+
+**7c. Display comparison table:**
+
+```
+=== Chipyard PnR Multi-Round Results: ChipTop (tinyRocket) [Docker] ===
 
 | Round | Clock(ns) | Util% | Density | Timing-Driven | Routability | Slack Margin | WNS(ns) | TNS(ns) | Area(um^2) | DRC | Power(uW) | Status |
 |-------|-----------|-------|---------|---------------|-------------|--------------|---------|---------|------------|-----|-----------|--------|
@@ -809,10 +629,10 @@ mcp__chipagent-backend__get_report(design_name="ChipTop", stage="route", orfs_fl
 Best round: R<X> — <reason>
 ```
 
-**8d. Report final recommended result:**
+**7d. Report final recommended result:**
 
 ```
-=== Final Recommended Result ===
+=== Final Recommended Result [Docker] ===
 Round: R<X>
 Clock Period: <ns> ns (<freq> MHz)
 WNS: <wns> ns | TNS: <tns> ns
@@ -822,7 +642,7 @@ DRC Violations: <count>
 Status: PASS / FAIL
 ```
 
-**Expected output files** (at `$ORFS_FLOW_PATH/flow/results/sky130hd/tinyRocket/base/`):
+**Expected output files** (on host at `$PROJECT_ROOT/OpenROAD-flow-scripts/flow/results/sky130hd/tinyRocket/base/`):
 | File | Description |
 |------|-------------|
 | `6_final.gds` | Final GDSII layout (~255 MB) |
@@ -831,68 +651,44 @@ Status: PASS / FAIL
 | `6_final.spef` | Parasitic extraction (~156 MB) |
 | `6_final.def` | Final DEF file (~241 MB) |
 
-## Pipeline Stages Summary
-
-| # | Stage | Duration | Peak Memory | Key Notes |
-|---|-------|----------|-------------|-----------|
-| 0 | Parse & Setup | - | - | Normalize config, parse target frequency, create work dir |
-| 1 | Verify Environment | - | - | Check Docker, ORFS, sky130hd |
-| 2 | Locate Verilog | - | - | Find staged Verilog from chipyard-docker |
-| 3 | Consolidate SV | ~10 sec | ~100 MB | Verify single nosram file |
-| 4 | SRAM Override | - | - | Delegate to `/chip-agent:sram-mapping`, yosys check |
-| 5 | Identify Clocks | - | - | Parse ChipTop ports |
-| 6 | Generate Config | - | - | config.mk + multi-clock SDC |
-| 7a | Clean + Init | ~10 sec | - | `clean_design` + init progress.json + iteration_history.json |
-| 7b | PnR Round 1 | ~102 min | ~12 GB | Baseline with relaxed params (AI adapts from here) |
-| 7c | Diagnose R1 | ~2 min | - | `get_report` + `diagnose_failure` → AI decides R2 params |
-| 7d | PnR Round 2 | ~102 min | ~12 GB | AI-adapted params based on R1 diagnostics |
-| 7e | Diagnose R2 | ~2 min | - | `get_report` + `diagnose_failure` → AI decides R3 params |
-| 7f | PnR Round 3 | ~102 min | ~12 GB | AI-adapted params based on R2 diagnostics |
-| 8 | Compare & Report | - | - | `compare_runs` recommend, display multi-round comparison table |
-
-**Total runtime:** ~5.5 hours for 3 rounds (~102 min each + ~2 min diagnosis between rounds).
-
 ## Anti-Patterns
 
-- **NEVER** use behavioral SRAM stubs (reg arrays) — causes OOM in routing (13+ GB)
-- **NEVER** omit `ENABLE_YOSYS_FLOW=1` — causes Yosys parse errors on packed arrays
+- **NEVER** use `mcp__chipagent-backend__*` (local MCP) — use `mcp__chipagent-backend-docker__*`
+- **NEVER** use local host paths in config.mk `VERILOG_FILES`/`LEFS`/`LIBS`/`SDC_FILE` — must use container paths (`/workspace/...` and `/OpenROAD-flow-scripts/flow/...`)
+- **NEVER** use `make buildfile tutorial=sky130-openroad` for non-Rocket configs — it forces Rocket-specific IO binders and DontTouch annotations that fail for BOOM and other cores. Use `make verilog CONFIG=<Config>` in `sims/verilator` instead
+- **NEVER** use `/root/chipyard` — correct Chipyard path inside Docker is `/workspace/chipyard/`
+- **NEVER** forget to clone SRAM22 to host `$ORFS_FLOW_PATH/platforms/sky130ram/sram22_sky130_macros/` — the MCP server auto-mounts this path into Docker containers
+- **NEVER** assume local ORFS/Chipyard installation exists — only Docker + `$PROJECT_ROOT`
+- **NEVER** use behavioral SRAM stubs (reg arrays) — causes OOM in routing
+- **NEVER** add `ENABLE_YOSYS_FLOW=1` to `make verilog` — it causes firtool strict annotation checking that fails for non-Rocket configs. The SFC (Scala FIRRTL Compiler) used by `sims/verilator` handles DontTouch annotations leniently
 - **NEVER** append stub files that are already in `top.f` — causes duplicate module errors
 - **NEVER** use `SYNTH_BLACKBOXES` without `ADDITIONAL_LEFS/LIBS/GDS` — causes missing cost error
-- **NEVER** use the simulation flow (`make verilog`) — includes TestHarness modules
-- **ALWAYS** use `timeout_minutes=120` for the `route` stage — detailed routing takes up to 120 minutes for complex designs
-- **ALWAYS** use `timeout_minutes=30` for the `synth` stage — ABC technology mapping for 70+ modules needs 30 minutes
-- **ALWAYS** use `timeout_minutes=30` for the `place` stage — repair_design resize processing 90K+ nets needs 30 minutes
-- **NEVER** skip `clean_all` between retries — ORFS caches stale results
-- **ALWAYS** verify Yosys compiles the design before running ORFS (Step 4 verification)
+- **NEVER** skip `clean_design` between PnR rounds — stale ORFS cache causes misleading results
+- **NEVER** skip the baseline round (R1) — it validates the flow before aggressive tuning
+- **NEVER** skip nosram preprocessing — behavioral SRAM modules cause OOM
+- **NEVER** use `SWAP_ARITH_OPERATORS=1` — causes ABC crash on large designs
+- **ALWAYS** use `timeout_minutes=120` for the `route` stage — detailed routing takes up to 120 minutes
+- **ALWAYS** use `timeout_minutes=30` for the `synth` stage — ABC technology mapping needs 30 minutes
+- **ALWAYS** use `timeout_minutes=30` for the `place` stage — repair_design resize processing needs 30 minutes
 - **ALWAYS** set `SYNTH_HIERARCHICAL = 1` — preserves SRAM module boundaries
 - **ALWAYS** set `MACRO_PLACE_HALO = 20 20` — prevents standard cells from overlapping SRAM halo
 - **ALWAYS** set `DONT_USE_CELLS` for SRAM macros — prevents ABC from using them as logic cells
 - **ALWAYS** set `SKIP_ANTENNA_REPAIR_POST_DRT = 1` — avoids OOM during antenna repair
-- **ALWAYS** run `clean_design` between PnR rounds — stale ORFS cache causes misleading results
 - **ALWAYS** save round results via `compare_runs` before starting the next round
 - **ALWAYS** use `compare_runs(action="recommend")` to select the best round objectively
-- **NEVER** skip the baseline round (R1) — it validates the flow before aggressive tuning
-- **NEVER** enable both `gpl_timing_driven` and `gpl_routability_driven` in early rounds — they conflict and can cause poor placement
-- **PREFER** starting with routability-driven in R1, then timing-driven in R2, then both in R3 only if needed
-- **NEVER** use local paths inside Docker — use `/OpenROAD-flow-scripts/flow` paths
-- **NEVER** run ORFS on host — always inside `openroad/orfs` Docker container
-- **NEVER** skip nosram preprocessing — behavioral SRAM modules cause OOM
-- **NEVER** use `SWAP_ARITH_OPERATORS=1` — causes ABC crash on large designs
-- **NEVER** set `NUM_CORES` > 4 on systems with < 16GB RAM
 
 ## Input
 
 $ARGUMENTS
 
 A Chipyard config name (e.g., `tinyrocket`, `TinyRocketConfig`). Optional arguments:
-- **Work directory**: `/path/to/try`
 - **Target frequency**: `100MHz` or `10ns` (AI will adaptively tune parameters to reach this target over multiple rounds)
 
 ## Output
 
 Upon completion:
-- GDS: `$ORFS_FLOW/results/sky130hd/tinyRocket/base/6_final.gds`
-- Netlist: `$ORFS_FLOW/results/sky130hd/tinyRocket/base/6_final.v`
-- SPEF: `$ORFS_FLOW/results/sky130hd/tinyRocket/base/6_final.spef`
-- Reports: `$ORFS_FLOW/reports/sky130hd/tinyRocket/base/`
+- GDS: `$PROJECT_ROOT/OpenROAD-flow-scripts/flow/results/sky130hd/tinyRocket/base/6_final.gds`
+- Netlist: `$PROJECT_ROOT/OpenROAD-flow-scripts/flow/results/sky130hd/tinyRocket/base/6_final.v`
+- SPEF: `$PROJECT_ROOT/OpenROAD-flow-scripts/flow/results/sky130hd/tinyRocket/base/6_final.spef`
+- Reports: `$PROJECT_ROOT/OpenROAD-flow-scripts/flow/reports/sky130hd/tinyRocket/base/`
 - Timing/area/DRC summary displayed in conversation

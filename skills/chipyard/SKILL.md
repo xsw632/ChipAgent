@@ -45,8 +45,8 @@ If still empty after initialization, default to `local`.
 
 ## Configuration
 
-Edit `.chipagent/env.json` and change the `backend_mode` field:
-- `"local"` → run Chipyard locally
-- `"docker"` → run Chipyard in Docker containers
+Use either local or Docker MCP servers:
+- Local: `mcp__chipagent-backend__*` tools → run Chipyard locally
+- Docker: `mcp__chipagent-backend-docker__*` tools → run Chipyard in Docker containers
 
 Then invoke this skill again.

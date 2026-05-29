@@ -231,10 +231,12 @@ if (existsSync(agentsSrc)) {
   cpSync(agentsSrc, AGENTS_DEST, { recursive: true });
 }
 
-// Install CLAUDE-Fot-Test.md as CLAUDE.md to target .claude/
-const claudeTestSrc = join(SOURCE, "CLAUDE-Fot-Test.md");
+// Install CLAUDE-For-Test.md as CLAUDE.md to target project root (local) or HOME (global)
+const claudeTestSrc = join(SOURCE, "CLAUDE-For-Test.md");
+let claudeTestDest = null;
 if (existsSync(claudeTestSrc)) {
-  cpSync(claudeTestSrc, join(HOME, "CLAUDE.md"));
+  claudeTestDest = join(isLocal ? PROJECT_ROOT : HOME, "CLAUDE.md");
+  cpSync(claudeTestSrc, claudeTestDest);
 }
 
 if (!existsSync(MCP_ENTRYPOINT)) {
@@ -267,6 +269,9 @@ console.log(`  ${skillCount} command(s) -> ${COMMANDS_DEST}`);
 console.log(`  Agents -> ${AGENTS_DEST}`);
 console.log(`  Scripts -> ${join(PROJECT_ROOT, "scripts")}`);
 console.log(`  Support files -> ${SUPPORT_DEST}`);
+if (claudeTestDest) {
+  console.log(`  CLAUDE.md -> ${claudeTestDest}`);
+}
 console.log(`  MCP backend -> ${MCP_ENTRYPOINT}`);
 console.log(`  MCP config -> ${mcpConfigPath}`);
 console.log("\nRestart Claude Code, then use /chip-agent:generate or /chip-agent:pnr.");

@@ -45,8 +45,8 @@ If still empty after initialization, default to `local`.
 
 ## Configuration
 
-Edit `.chipagent/env.json` and change the `backend_mode` field:
-- `"local"` → run PnR locally via MCP tools
-- `"docker"` → run PnR in Docker containers
+Use either local or Docker MCP servers:
+- Local: `mcp__chipagent-backend__*` tools → run PnR locally via MCP tools
+- Docker: `mcp__chipagent-backend-docker__*` tools → run PnR in Docker containers
 
 Then invoke this skill again.
