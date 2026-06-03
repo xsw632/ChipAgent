@@ -73,6 +73,13 @@ Create the checklist and go on.
 
 **IMPORTANT — All-Mock means no SRAM macros.** This flow does NOT use `SYNTH_BLACKBOXES`, `ADDITIONAL_LEFS/LIBS/GDS`, `sram_override.v`, or `sram_mapping.json`. All memory handling is done automatically by ORFS via the three mock variables.
 
+**IMPORTANT — EDA reference knowledge.** Before choosing Round 2+ parameters, read the relevant reference from this skill directory:
+- `references/orfs-metrics-and-objectives.md` when comparing rounds or deciding if a round is a valid QoR candidate
+- `references/orfs-parameter-guide.md` before changing `config.mk` or `constraint.sdc`
+- `references/orfs-failure-signatures.md` after any failed, DRC-dirty, or timing-dirty round
+
+If this skill was installed as a single slash-command Markdown file, use the appended "Bundled chipyard-pnr-test references" section instead.
+
 ## Pipeline
 
 ### Step 0 -- Parse Arguments and Setup
@@ -314,6 +321,8 @@ SDCEOF
 
 Run at least **3 rounds** of PnR iteration. The user sets a target frequency; the AI adaptively tunes parameters based on each round's diagnostic results. Each round runs as a background subagent.
 
+For Round 2+ decisions, combine the bundled EDA references with `get_report`, `diagnose_failure`, and prior round history. The references are distilled from the repo's ORFS-Agent and EDA-Corpus material but do not replace actual run reports.
+
 **All-Mock flow characteristics:**
 - **Slower synthesis**: Yosys mock generation adds ~10-15 min to synth stage
 - **Longer runtime**: Full flow ~7 hours for SmallBOOM with default parameters
@@ -325,11 +334,11 @@ Run at least **3 rounds** of PnR iteration. The user sets a target frequency; th
 | Parameter | Description | Tuning Direction |
 |-----------|-------------|------------------|
 | `clock_period_ns` | Clock period (ns) = 1000 / freq_mhz | Progressively approach target frequency |
-| `core_utilization` | Core utilization (%) | Congestion → decrease, timing slack → increase |
-| `place_density` | Placement density (0.0–1.0) | Congestion → decrease, timing slack → increase |
-| `gpl_timing_driven` | Timing-driven placement | Large negative WNS → enable |
-| `gpl_routability_driven` | Routability-driven placement | Many DRC violations → enable |
-| `setup_slack_margin` | Timing margin (ns) | Progressively tighten to 0.05ns |
+| `core_utilization` | Initial post-synthesis floorplan target (%) | Overflow/congestion → decrease; clean slack-only rounds may increase carefully |
+| `place_density` | Placement density (0.0–1.0) | Congestion/DRC → decrease; area compaction only after routing is clean |
+| `gpl_timing_driven` | Timing-driven placement | Keep enabled for large timed designs |
+| `gpl_routability_driven` | Routability-driven placement | Keep enabled when congestion, overflow, or DRC appears |
+| `setup_slack_margin` | Timing margin (ns) | Tighten only when timing is close or clean |
 
 **Conservative Baseline for Large Designs:**
 
@@ -348,21 +357,22 @@ Round 1 uses the baseline frequency. Round 2+ calls `diagnose_failure` and `get_
 
 | Diagnostic Signal | Meaning | AI Adjustment |
 |-------------------|---------|---------------|
-| WNS << 0 (e.g. < -2ns) | Severe timing violation | Relax clock_period (+2ns), reduce utilization (-5%) |
-| WNS slightly negative (e.g. -0.5ns) | Minor timing violation | Fine-tune clock_period (+0.5ns), reduce place_density (-0.05) |
-| WNS >= 0 | Timing met | Can tighten clock_period (-1ns), increase utilization (+5%) |
-| DRC violations > 0 | Routing issues | Reduce place_density (-0.1), reduce utilization (-5%) |
-| Large TNS | Multiple paths violating | Significantly relax clock_period, reduce utilization |
-| Routing congestion hotspots | Local congestion | Reduce place_density, enable gpl_routability_driven |
-| OOM / timeout | Insufficient resources | Reduce utilization and place_density further |
+| WNS < -2ns or large negative TNS | Severe timing violation | Relax clock_period (+1-2ns); keep timing-driven placement enabled; do not increase density |
+| WNS slightly negative (e.g. -0.5ns) | Near timing closure | Fine-tune clock_period (+0.25-0.5ns) or reduce place_density slightly if congestion also appears |
+| WNS >= 0 and DRC == 0 | Viable point | Save result; tighten clock (-0.5 to -1ns) only if target frequency is not met |
+| DRC violations > 0 | Routing/detail-route legality issue | Reduce place_density (-0.05 to -0.10); reduce utilization if repeated |
+| Placement overflow / not enough sites | Effective utilization too high | Reduce utilization (-5 to -10%) and density (-0.05 to -0.10) |
+| Routing congestion hotspots | Too little routing whitespace | Reduce place_density; keep gpl_routability_driven enabled |
+| OOM / timeout | Insufficient resources or over-aggressive target | Confirm All-Mock config, keep hierarchy, reduce aggressiveness |
 
 **Tuning principles:**
 1. Adjust only 1-2 parameters per round; do not drastically change multiple parameters simultaneously
-2. Resolve timing violations first, then pursue area/power optimization
-3. If WNS >= 0 and DRC == 0, the current parameters are viable — try tightening the clock
+2. Fix route legality before area compaction
+3. If WNS >= 0 and DRC == 0, the current parameters are viable — save the round before tightening the clock
 4. If WNS does not improve for two consecutive rounds, the limit has been reached — stop iterating
 5. Progressively tighten slack_margin from 0.5ns to 0.05ns, but do not tighten when timing is violating
 6. For All-Mock flow, timing results exclude SRAM delays — expect optimistic WNS compared to physical SRAM flow
+7. Do not compare area/power from failed or DRC-dirty rounds as final QoR candidates
 
 **Termination conditions:** WNS>=0 and DRC==0 / max rounds reached / consecutive WNS improvement < 0.1ns / target frequency achieved.
 
@@ -451,7 +461,7 @@ When the background agent completes, you will receive a task notification. At th
 
 4. **Decide next round parameters** based on diagnostic signals:
    - Read WNS, TNS, DRC violations, area, power from the reports
-   - Apply the Adaptive Tuning Logic (see above)
+   - Apply `references/orfs-metrics-and-objectives.md`, `references/orfs-parameter-guide.md`, and `references/orfs-failure-signatures.md` as needed
    - Determine the next round's `{clock_period_ns, core_utilization, place_density, gpl_timing_driven, gpl_routability_driven, setup_slack_margin}`
 
 **5e. Launch next round (if more rounds remain and termination conditions not met):**
