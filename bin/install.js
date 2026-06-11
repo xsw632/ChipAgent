@@ -43,6 +43,7 @@ const PROJECT_ROOT = (localTarget && !localTarget.startsWith("-"))
   : process.cwd();
 const CLAUDE_DIR = isLocal ? join(PROJECT_ROOT, ".claude") : join(HOME, ".claude");
 const COMMANDS_DEST = join(CLAUDE_DIR, "commands", "chip-agent");
+const SKILLS_DEST = join(CLAUDE_DIR, "skills");
 const AGENTS_DEST = join(CLAUDE_DIR, "agents");
 const SUPPORT_DEST = CLAUDE_DIR;
 const MCP_SERVER_DEST = join(SUPPORT_DEST, "mcp-server");
@@ -168,13 +169,37 @@ if (!existsSync(skillsDir)) {
 
 ensureNodeSupportsStripTypes();
 
+function skillHasExtraFiles(skillDir) {
+  return readdirSync(skillDir).some((name) => name !== "SKILL.md");
+}
+
+function installSkillDirectory(skillDir, skillName) {
+  const dest = join(SKILLS_DEST, skillName);
+  mkdirSync(dest, { recursive: true });
+  cpSync(skillDir, dest, { recursive: true });
+  return dest;
+}
+
+function rewriteSkillRelativePaths(commandContent, installedSkillDir) {
+  // SKILL.md refers to companion files with paths relative to the skill
+  // directory (e.g. `references/foo.md`). The command copy runs from the
+  // user's project cwd, so point those paths at the installed skill dir.
+  return commandContent.split("`references/").join(`\`${installedSkillDir}/references/`);
+}
+
 mkdirSync(COMMANDS_DEST, { recursive: true });
 let skillCount = 0;
 for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
   if (entry.isDirectory()) {
-    const skillFile = join(skillsDir, entry.name, "SKILL.md");
+    const skillDir = join(skillsDir, entry.name);
+    const skillFile = join(skillDir, "SKILL.md");
     if (existsSync(skillFile)) {
-      cpSync(skillFile, join(COMMANDS_DEST, entry.name + ".md"));
+      let commandContent = readFileSync(skillFile, "utf8");
+      if (skillHasExtraFiles(skillDir)) {
+        const installedSkillDir = installSkillDirectory(skillDir, entry.name);
+        commandContent = rewriteSkillRelativePaths(commandContent, installedSkillDir);
+      }
+      writeFileSync(join(COMMANDS_DEST, entry.name + ".md"), commandContent, "utf8");
       skillCount++;
     }
   } else if (entry.name.endsWith(".md")) {
@@ -266,6 +291,7 @@ if (isLocal) {
   console.log(`  Project root -> ${PROJECT_ROOT}`);
 }
 console.log(`  ${skillCount} command(s) -> ${COMMANDS_DEST}`);
+console.log(`  Skill resources -> ${SKILLS_DEST}`);
 console.log(`  Agents -> ${AGENTS_DEST}`);
 console.log(`  Scripts -> ${join(PROJECT_ROOT, "scripts")}`);
 console.log(`  Support files -> ${SUPPORT_DEST}`);
