@@ -9,11 +9,17 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 from datetime import datetime
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from mcp.server.fastmcp import FastMCP
+
+import casebook as casebook_lib
+import orfs_metrics
 
 mcp = FastMCP("chipagent-backend-docker")
 
@@ -502,6 +508,56 @@ def _parse_synth_area(content: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Tool: get_stage_metrics
+# ---------------------------------------------------------------------------
+
+def _resolve_artifact_dirs(design_name: str, orfs_flow_path: str) -> tuple[Path, Path]:
+    """Locate host logs/ and reports/ base dirs for a design.
+
+    Prefers PROJECT_ROOT/OpenROAD-flow-scripts/flow (the run_stage mount
+    target); falls back to orfs_flow_path for externally produced artifacts.
+    """
+    candidates = [str(PROJECT_ROOT / "OpenROAD-flow-scripts" / "flow")]
+    if orfs_flow_path:
+        candidates.append(orfs_flow_path)
+    for base in candidates:
+        log_dir = Path(base) / "logs" / "sky130hd" / design_name / "base"
+        if log_dir.exists():
+            return log_dir, Path(base) / "reports" / "sky130hd" / design_name / "base"
+    # Default to the first candidate so the error message shows the expected path
+    base = candidates[0]
+    return (Path(base) / "logs" / "sky130hd" / design_name / "base",
+            Path(base) / "reports" / "sky130hd" / design_name / "base")
+
+
+@mcp.tool()
+def get_stage_metrics(
+    design_name: str,
+    stage: str,
+    orfs_flow_path: str = "",
+) -> str:
+    """Extract rich per-stage signals from ORFS metrics JSON files (Docker mode).
+
+    design_name must be the DESIGN_NICKNAME from config.mk (artifact dirs are
+    organized by nickname, not DESIGN_NAME). Returns normalized timing/area/
+    routing signals; for 'route' also a per-layer GRT congestion summary; for
+    'finish' also a critical-path cell-vs-wire delay breakdown.
+    """
+
+    log_dir, report_dir = _resolve_artifact_dirs(design_name, orfs_flow_path)
+    if not log_dir.exists():
+        return json.dumps({
+            "stage": stage,
+            "error": f"Log dir not found. Run stage '{stage}' first.",
+            "log_path": str(log_dir),
+        }, indent=2)
+
+    result = orfs_metrics.collect_stage_metrics(log_dir, report_dir, stage)
+    result["log_path"] = str(log_dir)
+    return json.dumps(result, indent=2)
+
+
+# ---------------------------------------------------------------------------
 # Tool: diagnose_failure
 # ---------------------------------------------------------------------------
 
@@ -520,8 +576,16 @@ def diagnose_failure(
     current_clock_period_ns: float = 10,
     current_place_density: float = 0.6,
     current_core_utilization: float = 40,
+    stage_metrics: dict | None = None,
+    congestion: dict | None = None,
 ) -> str:
-    """Classify ORFS flow failure and suggest parameter adjustments for retry (Docker mode)."""
+    """Classify ORFS flow failure and suggest parameter adjustments for retry (Docker mode).
+
+    Optionally pass stage_metrics (the 'signals' dict from get_stage_metrics)
+    and congestion (the 'congestion' dict from get_stage_metrics route stage)
+    for signal-driven classification: hold violations, layer vs global
+    congestion, wire- vs logic-dominated timing, and repair pressure.
+    """
 
     finish_wns = None
     if finish_report_content:
@@ -533,14 +597,115 @@ def diagnose_failure(
     if drc_report_content:
         drc_violations = _parse_drc_report(drc_report_content)["violations"]
 
-    classification = _classify_error(stage, success, stderr, finish_wns, drc_violations, sdc_content)
+    critical_path = None
+    if finish_report_content:
+        critical_path = orfs_metrics.parse_critical_path(finish_report_content)
+
+    classification = _classify_with_signals(
+        stage_metrics or {}, congestion or {}, critical_path,
+        finish_wns, current_clock_period_ns,
+    )
+    if classification is None:
+        classification = _classify_error(stage, success, stderr, finish_wns, drc_violations, sdc_content)
+
+    effective_wns = finish_wns if finish_wns is not None else (stage_metrics or {}).get("setup_ws")
     suggested = _suggest_params(
         classification["error_type"],
         current_clock_period_ns, current_place_density, current_core_utilization,
+        finish_wns=effective_wns,
     )
 
     result = {**classification, "suggested_params": suggested}
     return json.dumps(result, indent=2)
+
+
+# Signal thresholds for the metrics-driven classifier
+WIRE_DOMINATED_PCT = 60.0
+LOGIC_DOMINATED_PCT = 40.0
+REPAIR_PRESSURE_UTILIZATION = 0.85
+
+
+def _classify_with_signals(signals, congestion, critical_path, finish_wns, clock_period) -> dict | None:
+    """Signal-driven classification from get_stage_metrics output.
+
+    Returns None when no structured signal matches, falling back to the
+    stderr-regex classifier.
+    """
+    setup_ws = signals.get("setup_ws")
+    wns = finish_wns if finish_wns is not None else setup_ws
+
+    # Hold violations with clean setup: a CTS/skew problem, not a clock-target problem
+    hold_count = signals.get("hold_violation_count")
+    if hold_count and (wns is None or wns >= 0):
+        return {
+            "error_type": "hold_violation", "severity": "recoverable",
+            "details": (f"{hold_count} hold violation(s) with clean setup timing. "
+                        "Hold is frequency-independent — do NOT relax the clock. "
+                        "Primary fix: HOLD_SLACK_MARGIN=0.1 (tool auto-inserts hold buffers). "
+                        f"Root cause is usually clock skew (skew={signals.get('clock_skew_hold')}); "
+                        "CTS clustering review is the secondary option."),
+            "restart_from": "cts",
+        }
+
+    # Congestion: distinguish layer-local hotspots from global shortage
+    layers = congestion.get("layers") or {}
+    total_overflow = congestion.get("total_overflow") or 0
+    hotspots = congestion.get("hotspot_layers") or []
+    if total_overflow > 0 and layers:
+        if 0 < len(hotspots) <= 2:
+            return {
+                "error_type": "layer_congestion", "severity": "recoverable",
+                "details": (f"GRT overflow {total_overflow} concentrated on {hotspots}. "
+                            "Consider routing-layer resource adjustment "
+                            "(PIN_LAYER_ADJUST/UP_LAYER_ADJUST) plus a small density reduction."),
+                "restart_from": "place",
+            }
+        return {
+            "error_type": "global_congestion", "severity": "recoverable",
+            "details": (f"GRT overflow {total_overflow} spread across {len(hotspots)} layers. "
+                        "Reduce place_density and/or core_utilization to add whitespace."),
+            "restart_from": "place",
+        }
+
+    # Repair pressure: utilization grew far past target or repair buffers exploded
+    utilization = signals.get("utilization")
+    repair_buffers = signals.get("repair_buffer_count") or signals.get("setup_buffer_count")
+    instance_count = signals.get("instance_count")
+    buffer_heavy = (repair_buffers and instance_count and repair_buffers / instance_count > 0.15)
+    if (utilization and utilization >= REPAIR_PRESSURE_UTILIZATION) or buffer_heavy:
+        return {
+            "error_type": "repair_pressure", "severity": "recoverable",
+            "details": (f"Timing repair pressure: utilization={utilization}, "
+                        f"repair buffers={repair_buffers}/{instance_count} instances. "
+                        "Lower core_utilization to leave repair headroom."),
+            "restart_from": "floorplan",
+        }
+
+    # Timing violation: split by wire- vs logic-dominated critical path
+    if wns is not None and wns < 0:
+        wire_pct = (critical_path or {}).get("wire_delay_pct")
+        if wire_pct is not None and wire_pct >= WIRE_DOMINATED_PCT:
+            return {
+                "error_type": "wire_dominated_timing", "severity": "recoverable",
+                "details": (f"WNS={wns}ns with {wire_pct}% of critical-path delay in wires. "
+                            "Add whitespace (lower density/utilization) before relaxing the clock."),
+                "restart_from": "place",
+            }
+        if wire_pct is not None and wire_pct <= LOGIC_DOMINATED_PCT:
+            return {
+                "error_type": "logic_dominated_timing", "severity": "recoverable",
+                "details": (f"WNS={wns}ns with only {wire_pct}% wire delay — logic depth dominates. "
+                            "Relax the clock target; physical knobs will not help much."),
+                "restart_from": "synth",
+            }
+        # No path breakdown available: plain timing violation from signals
+        return {
+            "error_type": "timing_violation", "severity": "recoverable",
+            "details": f"Timing violation: WNS = {wns} ns (from stage metrics)",
+            "restart_from": "synth",
+        }
+
+    return None
 
 
 def _classify_error(stage, success, stderr, finish_wns, drc_violations, sdc_content) -> dict:
@@ -580,9 +745,36 @@ def _round_to(v, decimals):
     return round(v * factor) / factor
 
 
-def _suggest_params(error_type, cp, pd, cu) -> dict:
+def _suggest_params(error_type, cp, pd, cu, finish_wns=None) -> dict:
     if error_type == "timing_violation":
+        # When WNS is known, target ECP (clock - WNS) plus a small margin
+        # instead of the blunt 1.5x multiplier.
+        if finish_wns is not None and finish_wns < 0:
+            target = cp - finish_wns  # WNS negative -> increases period
+            return {"clock_period_ns": _clamp(_round_to(target * 1.05, 2), 1.0, 100.0)}
         return {"clock_period_ns": _clamp(_round_to(cp * 1.5, 2), 1.0, 100.0)}
+    elif error_type == "logic_dominated_timing":
+        if finish_wns is not None and finish_wns < 0:
+            target = cp - finish_wns
+            return {"clock_period_ns": _clamp(_round_to(target * 1.05, 2), 1.0, 100.0)}
+        return {"clock_period_ns": _clamp(_round_to(cp * 1.25, 2), 1.0, 100.0)}
+    elif error_type == "wire_dominated_timing":
+        return {
+            "place_density": _clamp(_round_to(pd - 0.05, 2), 0.30, 0.85),
+            "core_utilization": _clamp(cu - 5, 20, 70),
+        }
+    elif error_type == "hold_violation":
+        # Frequency-independent: the proven fix is hold-buffer insertion
+        return {"hold_slack_margin": 0.1}
+    elif error_type == "layer_congestion":
+        return {"place_density": _clamp(_round_to(pd - 0.05, 2), 0.30, 0.85)}
+    elif error_type == "global_congestion":
+        return {
+            "place_density": _clamp(_round_to(pd - 0.08, 2), 0.30, 0.85),
+            "core_utilization": _clamp(cu - 5, 20, 70),
+        }
+    elif error_type == "repair_pressure":
+        return {"core_utilization": _clamp(cu - 8, 20, 70)}
     elif error_type == "congestion":
         return {"place_density": _clamp(_round_to(pd - 0.1, 2), 0.30, 0.85)}
     elif error_type == "drc":
@@ -601,8 +793,25 @@ def _suggest_params(error_type, cp, pd, cu) -> dict:
 def clean_design(
     config_mk_path: str,
     orfs_flow_path: str,
+    from_stage: str = "all",
 ) -> str:
-    """Reset ORFS cached artifacts for a design via docker run make clean_all."""
+    """Reset ORFS cached artifacts for a design via docker run make clean targets.
+
+    from_stage="all" runs clean_all (full reset). Passing a stage name
+    (floorplan/place/cts/route/finish) cleans only that stage and everything
+    after it, preserving earlier results for staged restarts — e.g.
+    from_stage="place" keeps synth+floorplan and cleans place/cts/route/finish.
+    """
+
+    if from_stage == "all":
+        clean_targets = ["clean_all"]
+    elif from_stage in VALID_STAGES:
+        idx = VALID_STAGES.index(from_stage)
+        clean_targets = [f"clean_{s}" for s in VALID_STAGES[idx:]]
+    else:
+        return json.dumps({
+            "error": f"Invalid from_stage '{from_stage}'. Use 'all' or one of {VALID_STAGES}."
+        }, indent=2)
 
     config = _read_docker_config()
     workspace_dir = str(PROJECT_ROOT)
@@ -618,6 +827,16 @@ def clean_design(
         "-w", config.workdir,
     ]
 
+    # Staged clean operates on artifacts mounted from the host, mirroring run_stage
+    if from_stage != "all":
+        design_nickname = _extract_design_nickname(config_mk_path)
+        host_flow_dir = os.path.join(workspace_dir, "OpenROAD-flow-scripts", "flow")
+        for sub in ["results", "logs", "reports", "objects"]:
+            host_path = os.path.join(host_flow_dir, sub, "sky130hd", design_nickname, "base")
+            container_path = f"{config.workdir}/{sub}/sky130hd/{design_nickname}/base"
+            _ensure_dir(host_path)
+            docker_args.extend(["-v", f"{host_path}:{container_path}"])
+
     # Conditional SRAM22 mount (prefer PROJECT_ROOT/sram22_sky130_macros)
     sram22_host = str(PROJECT_ROOT / "sram22_sky130_macros")
     if not os.path.isdir(sram22_host):
@@ -627,11 +846,12 @@ def clean_design(
 
     docker_args.extend([
         config.image,
-        "make", "clean_all",
+        "make", *clean_targets,
         f"DESIGN_CONFIG={container_config_path}",
     ])
 
     result = _run_docker_command(docker_args, 30, tail_stdout=100, tail_stderr=100)
+    result["clean_targets"] = clean_targets
     return json.dumps(result, indent=2)
 
 
@@ -723,6 +943,76 @@ def _recommend_best(history: list) -> dict | None:
 
     passing.sort(key=sort_key)
     return passing[0]
+
+
+# ---------------------------------------------------------------------------
+# Tool: casebook
+# ---------------------------------------------------------------------------
+
+def _casebook_path() -> Path:
+    return PROJECT_ROOT / ".chipagent" / casebook_lib.CASEBOOK_FILENAME
+
+
+@mcp.tool()
+def casebook(
+    action: str,
+    design: str = "",
+    platform: str = "sky130hd",
+    features: dict | None = None,
+    best_config: dict | None = None,
+    rounds: list | None = None,
+    outcome: str = "",
+) -> str:
+    """Cross-design PnR experience casebook: save tuning trajectories, query similar past cases for warm-start (Docker mode).
+
+    action="save": persist this design's trajectory. Requires design and
+    features ({cell_count, target_clock_ns, macro_count?, instance_area?});
+    best_config is the winning {clock_period_ns, core_utilization,
+    place_density, ...}; rounds is a list of {params, key_metrics,
+    error_type?, fix_applied?}; outcome is "pass"/"fail"/"partial".
+
+    action="query": retrieve up to 3 most similar past cases (by platform,
+    design scale, clock target). Each result carries a warm-start best_config
+    and a failure->fix history. Empty matches mean: use the conservative
+    baseline.
+    """
+
+    path = _casebook_path()
+    cases = casebook_lib.load_cases(path)
+
+    if action == "save":
+        if not design or features is None:
+            return json.dumps({"error": "design and features are required for save action"}, indent=2)
+        new_case = {
+            "design": design,
+            "platform": platform,
+            "features": features,
+            "best_config": best_config,
+            "rounds": rounds or [],
+            "outcome": outcome or "unknown",
+            "timestamp": datetime.now().isoformat(),
+        }
+        updated = casebook_lib.save_case(cases, new_case)
+        casebook_lib.write_cases(path, updated)
+        return json.dumps({"saved": True, "total_cases": len(updated), "casebook_path": str(path)}, indent=2)
+
+    elif action == "query":
+        if features is None:
+            return json.dumps({"error": "features are required for query action"}, indent=2)
+        matches = casebook_lib.query_similar({**features, "platform": platform}, cases)
+        return json.dumps({
+            "total_cases": len(cases),
+            "matches": matches,
+            "guidance": (
+                "Use the nearest match's best_config as the Round 1 warm-start "
+                "and review its failure_fixes before choosing knobs."
+                if matches else
+                "No similar case found — use the conservative baseline."
+            ),
+        }, indent=2)
+
+    else:
+        return json.dumps({"error": f"Unknown action: {action}. Use 'save' or 'query'."}, indent=2)
 
 
 # ---------------------------------------------------------------------------

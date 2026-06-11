@@ -6,7 +6,8 @@ designs such as SmallBOOM.
 
 ## Baseline Policy
 
-- Start conservative: `clock_period_ns=20`, `CORE_UTILIZATION=40`, `PLACE_DENSITY=0.55`, timing/routability driven placement enabled.
+- Start from the casebook warm-start when a similar past design exists (`casebook(action="query")`); otherwise use the proven SmallBOOM baseline: `clock_period_ns=18.5`, `CORE_UTILIZATION=40`, `PLACE_DENSITY=0.45`, `SETUP_SLACK_MARGIN=0.5`, `HOLD_SLACK_MARGIN=0.1`, timing/routability driven placement enabled. This point closed setup AND hold (WNS +0.357 / +0.034) at 54 MHz on SmallBOOM with 384k cells.
+- `PLACE_DENSITY=0.50` caused routing congestion (GRT-0116) on SmallBOOM — 0.45 is the safe starting point for BOOM-class designs.
 - Change only one or two knobs per round.
 - Treat clock, utilization, and density as sensitive knobs:
   - Clock: initial changes of 0.25-2 ns are usually enough.
@@ -14,6 +15,26 @@ designs such as SmallBOOM.
   - Density: changes of 0.05 are meaningful; 0.10 is large.
 - Record the reason for every changed knob.
 - If two rounds show no meaningful WNS improvement, stop broad churn and report the best clean point.
+
+## Structured Signals → Knob Selection
+
+`get_stage_metrics` returns normalized signals per stage. Use them to pick the
+RIGHT knob instead of guessing:
+
+| Signal | Where | What it tells you | Knob response |
+| --- | --- | --- | --- |
+| `setup_ws` / `setup_tns` | every stage | Setup timing health; ECP = clock - WS | Negative and logic-dominated → clock; negative and wire-dominated → whitespace |
+| `hold_violation_count` with clean setup | cts/route/finish | CTS/skew problem, NOT a clock-target problem | CTS_CLUSTER_SIZE/DIAMETER; never relax clock for this |
+| `critical_path.wire_delay_pct` | finish | >60%: wires dominate → physical fix; <40%: logic dominates → clock/synthesis fix | Wire: lower density/utilization. Logic: relax clock toward ECP |
+| `congestion.hotspot_layers` | route | Overflow on 1-2 layers = layer-local; spread wide = global whitespace shortage | Local: small density cut, consider layer adjust. Global: density -0.05..-0.10 and utilization -5 |
+| `drc_errors_by_iter` | route | DRC trend across detailed-route iterations. Converging to 0 = healthy; plateauing = structural congestion | Plateau → density/utilization, not more route iterations |
+| `utilization` (actual) | place/finish | Post-repair real utilization vs your CORE_UTILIZATION target | Actual >> target = repair pressure → lower CORE_UTILIZATION |
+| `repair_buffer_count` / `instance_count` | finish | Buffer ratio > ~15% = timing repair fighting the floorplan | Lower utilization; possibly relax clock |
+| `clock_skew_setup` / `clock_skew_hold` | cts/route/finish | Large skew amplifies both setup and hold problems | CTS knobs; check SDC clock definitions |
+
+`diagnose_failure(stage_metrics=..., congestion=...)` applies these rules
+automatically and returns `error_type` + `suggested_params` + `restart_from`.
+Treat its output as the starting point; override with judgment and this guide.
 
 ## Main Knobs
 
@@ -24,7 +45,8 @@ designs such as SmallBOOM.
 | `place_density` | `PLACE_DENSITY` | Placement spread target. 1.0 is dense, 0.0 is spread. | Lower for DRC/congestion; raise only for area compaction after route is clean. |
 | timing-driven placement | `GPL_TIMING_DRIVEN` | Runs timing-aware global placement. | Keep enabled for large timed designs. |
 | routability-driven placement | `GPL_ROUTABILITY_DRIVEN` | Uses global routing congestion during placement. | Keep enabled for congestion/DRC-prone rounds. |
-| setup margin | `SETUP_SLACK_MARGIN` | Extra timing repair margin. | Start relaxed and tighten only when timing is close or clean. |
+| setup margin | `SETUP_SLACK_MARGIN` | Extra setup repair margin. | Start relaxed and tighten only when timing is close or clean. |
+| hold margin | `HOLD_SLACK_MARGIN` | Hold repair margin; makes the tool insert hold buffers at CTS/route. | Keep at 0.1 for BOOM-class designs (clock skew ~1 ns causes hold violations). Hold is frequency-independent — never fix hold by changing the clock. |
 
 ## Secondary Knobs Worth Knowing
 
@@ -105,10 +127,39 @@ Those belong to the physical SRAM flow, not this skill.
 
 | Situation | Next-round recipe |
 | --- | --- |
-| First run | 20 ns, util 40, density 0.55, timing/routability driven on, slack margin 0.5. |
-| Severe timing failure, route clean | Relax clock by 1-2 ns; keep density/util unchanged unless utilization is high. |
+| First run | Casebook warm-start if a similar design exists; else 18.5 ns, util 40, density 0.45, hold margin 0.1, timing/routability driven on, setup margin 0.5. |
+| Severe timing failure, route clean | Relax clock toward ECP: new period ≈ old − WNS + 0.3-0.5 margin (setup WNS moves ~1:1 with clock). |
 | Slight timing failure, route clean | Relax clock by 0.25-0.5 ns or keep clock and increase timing effort/margin. |
+| Hold violations, setup clean | Add/keep `HOLD_SLACK_MARGIN = 0.1`; restart from cts. Never touch the clock for hold. |
 | DRC/congestion, timing also bad | Lower density by 0.05-0.10; optionally lower util by 5; do not tighten clock. |
 | Placement overflow | Lower util by 5-10 and density by 0.05-0.10. |
 | Clean with large positive slack | Save result, then tighten clock by 0.5-1 ns. |
 | Clean with target met | Try one area cleanup round: util +5 or density +0.03-0.05, not both. |
+
+## Candidate Set Design (Parallel Exploration)
+
+When the diagnosis gives a clear direction but the magnitude is unknown,
+run 2-3 candidates in parallel instead of one sequential guess:
+
+- **One knob, one direction.** Sweep a single knob along the diagnosed direction with the other knobs frozen. Example for global congestion at density 0.55: candidates {0.45, 0.50} or {0.45, 0.50, 0.55-as-control}.
+- **No full-factorial.** Never cross two knobs in one candidate set — attribution becomes impossible.
+- **Spacing.** Use meaningful steps: density 0.05 apart, utilization 5 apart, clock 0.5-1 ns apart. Candidates closer than that waste a run.
+- **Anchor.** When unsure, keep one candidate at the previous round's values as a control point.
+- **Isolation.** Each candidate needs its own `DESIGN_NICKNAME` (own config.mk + SDC copy) so ORFS artifact directories do not collide. Parallel candidates always run the full flow from synth.
+- **Resources.** Each BOOM-class run peaks ~20 GB. Check free memory before spawning; fall back to sequential when short.
+- **Selection.** After all candidates finish, apply the validity-first rules from `orfs-metrics-and-objectives.md` and continue from the winner only.
+
+## Restart Levels (Staged Restart)
+
+Re-running everything from synth wastes hours when only late-stage knobs
+changed. Use `clean_design(from_stage=...)` + executor `restart_from`:
+
+| Changed knob | Restart from | Rationale |
+| --- | --- | --- |
+| Clock period (SDC), any SYNTH_* variable | synth (`from_stage="all"`) | Synthesis timing targets derive from the SDC; ORFS does not re-propagate a changed SDC into cached results |
+| CORE_UTILIZATION | floorplan | Floorplan consumes utilization; synth netlist unchanged |
+| PLACE_DENSITY, GPL_*, SETUP_SLACK_MARGIN | place | Placement and later consume these |
+| HOLD_SLACK_MARGIN, CTS_CLUSTER_SIZE, CTS_CLUSTER_DIAMETER | cts | Hold buffers are inserted at CTS/route; clock tree reads CTS knobs |
+
+When multiple knobs change, restart from the EARLIEST affected stage.
+Never use a staged restart after a clock or synthesis change.

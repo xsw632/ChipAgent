@@ -3,13 +3,17 @@
 Use this reference after a failed round or a DRC/timing-dirty round. Match the
 first strong signal, then choose a small parameter change.
 
+Signal names below refer to `get_stage_metrics` output (`signals.*`,
+`congestion.*`, `critical_path.*`) and `diagnose_failure` error types.
+
 ## Triage Order
 
 1. Identify the failed or dirty stage: synth, floorplan, place, CTS, route, finish.
 2. Check whether All-Mock variables are present if synth memory/OOM behavior appears.
-3. Check DRC count before comparing final QoR.
-4. Check WNS/TNS after route/finish.
-5. Change only the knobs tied to the dominant failure.
+3. Check `signals.drc_errors` before comparing final QoR.
+4. Check `signals.setup_ws` / `signals.setup_tns` after route/finish.
+5. Run `diagnose_failure` with `stage_metrics` and `congestion` — its `error_type` maps directly to the sections below.
+6. Change only the knobs tied to the dominant failure.
 
 ## Synthesis Failures
 
@@ -89,7 +93,12 @@ Action:
 
 ## Routing and DRC Failures
 
-### Global-route congestion / overflow
+### Global-route congestion / overflow (`global_congestion` / `layer_congestion`)
+
+Signals:
+
+- `congestion.total_overflow > 0` from route stage metrics.
+- `congestion.hotspot_layers` lists layers at >=80% usage or with overflow.
 
 Likely causes:
 
@@ -99,12 +108,17 @@ Likely causes:
 
 Action:
 
+- If overflow is concentrated on 1-2 layers (`layer_congestion`): small density cut (-0.05); a routing-layer resource adjustment is a secondary option.
+- If overflow is spread across layers (`global_congestion`): reduce `PLACE_DENSITY` by 0.05-0.10 and `CORE_UTILIZATION` by 5.
 - Keep `GPL_ROUTABILITY_DRIVEN=1`.
-- Reduce `PLACE_DENSITY` by 0.05-0.10.
-- Reduce `CORE_UTILIZATION` by 5 if repeated.
 - Do not tighten clock in the same retry.
 
-### Detailed-route DRC violations
+### Detailed-route DRC violations (`drc`)
+
+Signals:
+
+- `signals.drc_errors > 0` after route.
+- `signals.drc_errors_by_iter` shows the per-iteration trend: converging to 0 is healthy; a plateau means structural congestion that more iterations cannot fix.
 
 Likely causes:
 
@@ -126,7 +140,71 @@ Action:
 
 ## Timing Failures
 
-### WNS < -2 ns or large negative TNS
+### Wire-dominated timing (`wire_dominated_timing`)
+
+Signals:
+
+- `signals.setup_ws < 0` AND `critical_path.wire_delay_pct > 60`.
+
+Meaning: the critical path is dominated by interconnect delay. Relaxing the
+clock hides the symptom without fixing the cause.
+
+Action:
+
+- Lower `PLACE_DENSITY` by 0.05 and/or `CORE_UTILIZATION` by 5 to give the router and repair engine whitespace.
+- Keep `GPL_TIMING_DRIVEN=1`.
+- Only relax the clock if a whitespace round fails to improve WNS.
+- Restart from place.
+
+### Logic-dominated timing (`logic_dominated_timing`)
+
+Signals:
+
+- `signals.setup_ws < 0` AND `critical_path.wire_delay_pct < 40`.
+
+Meaning: logic depth dominates; physical knobs will not help much.
+
+Action:
+
+- Relax clock toward ECP: new period ≈ `(clock_period - WNS) * 1.05`.
+- Do not burn rounds on density/utilization changes.
+- Restart from synth (the SDC changes).
+
+### Hold violations with clean setup (`hold_violation`)
+
+Signals:
+
+- `signals.hold_violation_count > 0` while `signals.setup_ws >= 0`.
+- Often with elevated `signals.clock_skew_hold` (BOOM-class designs commonly show ~1 ns skew).
+
+Meaning: a clock-skew problem. **Hold is frequency-independent** — changing the
+clock period (18 ns or 100 ns) does not move hold WNS at all, because hold
+checks data stability within the same clock edge.
+
+Action (proven on SmallBOOM: 144 hold violations → 0):
+
+1. **Primary fix: `export HOLD_SLACK_MARGIN = 0.1`** — the tool auto-inserts hold buffers at CTS/route (SmallBOOM: ~9,150 buffers added, area/power essentially unchanged).
+2. Secondary: reduce clock skew via CTS knobs (`CTS_CLUSTER_SIZE` 10-40, `CTS_CLUSTER_DIAMETER` 80-120) — the root-cause fix, but large designs rarely get skew low enough.
+3. Do NOT relax the clock — it never fixes hold.
+4. Restart from cts.
+
+### Timing repair pressure (`repair_pressure`)
+
+Signals:
+
+- Actual `signals.utilization` far above the configured `CORE_UTILIZATION`, or
+- `signals.repair_buffer_count / signals.instance_count > ~0.15`.
+
+Meaning: timing repair is consuming all placement headroom; later stages will
+congest or fail to legalize.
+
+Action:
+
+- Reduce `CORE_UTILIZATION` by 5-10 to restore repair headroom.
+- Consider a modest clock relax if WNS is also negative.
+- Restart from floorplan.
+
+### WNS < -2 ns or large negative TNS (no path breakdown available)
 
 Likely causes:
 
@@ -136,7 +214,7 @@ Likely causes:
 
 Action:
 
-- Relax clock by 1-2 ns.
+- Relax clock toward ECP (`clock_period - WNS`), not a blind increment.
 - Keep `GPL_TIMING_DRIVEN=1`.
 - Keep `TNS_END_PERCENT` high.
 - Reduce density/utilization if congestion or overflow is also present.
@@ -163,6 +241,16 @@ Action:
 - Re-read finish and route reports.
 - If reports disagree, mark the round diagnostic and rerun rather than using it as best QoR.
 
+## Early-Stopped Rounds
+
+The round executor aborts before route when place/CTS signals show the round
+cannot recover (`setup_ws < -0.25 × clock_period`, or hold+setup both broken
+after CTS). For these rounds:
+
+- The saved metrics are surrogate (place/CTS-stage) metrics — never QoR candidates.
+- The early-stop threshold breach itself is the signature: the clock target or whitespace is far off. Apply the matching timing/congestion action above with a LARGER step than usual (the signal is unambiguous).
+- An early-stopped round costs ~1-2 h instead of ~7 h; spending its saved budget on one extra exploration round is usually worthwhile.
+
 ## Clean but Not Optimal
 
 ### DRC == 0 and WNS >= 0, target not met
@@ -180,6 +268,16 @@ Action:
 - Save the round.
 - If performance is the goal, tighten clock.
 - If area/wirelength is the goal, run one compaction experiment: increase utilization by 5 or density by 0.03-0.05.
+
+## Known Pitfalls (verified on SmallBOOM, 2026-06)
+
+| Pitfall | Symptom | Resolution |
+| --- | --- | --- |
+| SDC not propagated | Changed clock period but WNS unchanged across rounds | ORFS does not re-propagate the SDC into cached results. Staged restart is NOT safe after an SDC change — use `clean_design(from_stage="all")` and restart from synth |
+| Routing congestion at density 0.50 | GRT-0116 errors during global route | `PLACE_DENSITY = 0.45` is the proven SmallBOOM point; lower CORE_UTILIZATION if it persists |
+| New variant missing synth | `1_synth.odb does not exist` | A new DESIGN_NICKNAME variant starts with empty artifact dirs — parallel candidates must run the full flow from synth |
+| Relaxing clock to fix hold | Hold WNS unchanged after clock change | Hold is frequency-independent. Use `HOLD_SLACK_MARGIN = 0.1` instead |
+| Setup WNS vs clock relation | — | Setup WNS moves ~1:1 with clock period (+1 ns clock ≈ +1 ns WNS). Use this to compute the exact relax step: new period ≈ old period − WNS + desired margin |
 
 ## Stop Conditions
 

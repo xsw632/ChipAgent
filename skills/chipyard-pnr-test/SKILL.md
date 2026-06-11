@@ -17,9 +17,11 @@ allowed-tools:
   - mcp__chipagent-backend-docker__generate_config
   - mcp__chipagent-backend-docker__run_stage
   - mcp__chipagent-backend-docker__get_report
+  - mcp__chipagent-backend-docker__get_stage_metrics
   - mcp__chipagent-backend-docker__diagnose_failure
   - mcp__chipagent-backend-docker__clean_design
   - mcp__chipagent-backend-docker__compare_runs
+  - mcp__chipagent-backend-docker__casebook
 ---
 
 # chip-agent:chipyard-pnr-docker-test (All-Mock)
@@ -55,8 +57,10 @@ Create the checklist and go on.
 □ Generate Verilog and consolidate nosram.sv (Docker)
 □ Identify clock ports from ChipTop
 □ Generate ORFS config.mk (All-Mock, container paths) and constraint.sdc
-□ Run multi-round PnR iteration (3 rounds adaptive)
+□ Query casebook for warm-start parameters
+□ Run multi-round PnR iteration (3 rounds adaptive, early-stop + staged restart)
 □ Compare rounds and select best result
+□ Save trajectory to casebook
 ```
 
 ## Instructions
@@ -104,9 +108,9 @@ if [ -n "$FREQ_ARG" ]; then
     fi
 fi
 
-# Baseline defaults for large designs: start conservative
-BASELINE_FREQ_MHZ="${TARGET_FREQ_MHZ:-50}"
-BASELINE_CLOCK_NS="${TARGET_CLOCK_NS:-20}"
+# Baseline defaults for large designs: proven SmallBOOM closure point (54 MHz)
+BASELINE_FREQ_MHZ="${TARGET_FREQ_MHZ:-54}"
+BASELINE_CLOCK_NS="${TARGET_CLOCK_NS:-18.5}"
 ```
 
 **Resolve correct Chipyard config class name.** The user may pass a lowercase shorthand (e.g. `smallboom`, `tinyrocket`) that doesn't match the actual Scala class name. Search inside the Chipyard Docker image to find the exact `chipyard.*Config` class:
@@ -279,12 +283,15 @@ export SYNTH_HIERARCHICAL = 1
 export SYNTH_MINIMUM_KEEP_SIZE = 1000
 export ABC_AREA = 1
 
-# Physical parameters (conservative defaults for large designs)
+# Physical parameters (proven SmallBOOM baseline — casebook 2026-06)
 export CORE_UTILIZATION = 40
-export PLACE_DENSITY = 0.55
+export PLACE_DENSITY = 0.45
 export GPL_TIMING_DRIVEN = 1
 export GPL_ROUTABILITY_DRIVEN = 1
 export SETUP_SLACK_MARGIN = 0.5
+# Hold repair margin — REQUIRED for BOOM-class designs (clock skew ~1ns
+# causes hold violations; the tool auto-inserts hold buffers at CTS/route)
+export HOLD_SLACK_MARGIN = 0.1
 export MACRO_PLACE_HALO = 20 20
 
 # CTS tuning
@@ -306,22 +313,27 @@ CFGEOF
 ```bash
 cat > "$WORK_DIR/pnr/constraint.sdc" << SDCEOF
 current_design ChipTop
-create_clock -name core_clock -period 20 [get_ports clock_clock]
-# NOTE: Update clock port name based on Step 3 inspection
+create_clock -name core_clock -period 18.5 [get_ports clock_clock]
+# JTAG clock (if jtag_TCK port exists — verify in Step 3)
+create_clock -name jtag_clock -period 100 [get_ports jtag_TCK]
+set_clock_groups -asynchronous -group {core_clock} -group {jtag_clock}
+# NOTE: Update clock port names based on Step 3 inspection
 # NOTE: For multi-round iteration, update core_clock period here to match round's clock_period_ns
-set_clock_groups -asynchronous -group {core_clock}
-set_input_delay -clock core_clock 0 [all_inputs -no_clocks]
-set_output_delay -clock core_clock 0 [all_outputs]
+set_input_delay -clock core_clock 2.0 [all_inputs -no_clocks]
+set_output_delay -clock core_clock 2.0 [all_outputs]
+set_clock_uncertainty 0.5 [get_clocks core_clock]
+set_clock_transition 0.2 [get_clocks core_clock]
+set_max_fanout 16 [current_design]
 SDCEOF
 ```
 
-**NOTE:** Verify the clock port name and additional clock domains from Step 3 before writing the SDC. The above is a template — adjust `create_clock` port and add other clocks (JTAG, etc.) as needed.
+**NOTE:** Verify the clock port names and additional clock domains from Step 3 before writing the SDC. The above is the proven SmallBOOM template (casebook) — if `jtag_TCK` does not exist in this design's ChipTop, drop the jtag_clock lines and the `-group {jtag_clock}` term. Default core clock period is 18.5 ns (54 MHz, proven SmallBOOM closure point); the user's frequency argument overrides it.
 
 ### Step 5 -- Run ORFS Full Flow (Multi-Round Iteration)
 
-Run at least **3 rounds** of PnR iteration. The user sets a target frequency; the AI adaptively tunes parameters based on each round's diagnostic results. Each round runs as a background subagent.
+Run at least **3 rounds** of PnR iteration. The user sets a target frequency; the AI adaptively tunes parameters based on each round's diagnostic results. Each round runs as a background subagent (`pnr-round-executor-docker-test`) with **early-stop gates** that abort hopeless rounds before the 3-hour route stage.
 
-For Round 2+ decisions, combine the bundled EDA references with `get_report`, `diagnose_failure`, and prior round history. The references are distilled from the repo's ORFS-Agent and EDA-Corpus material but do not replace actual run reports.
+For Round 2+ decisions, combine the bundled EDA references with `get_stage_metrics`, `get_report`, `diagnose_failure`, and prior round history. The references are distilled from the repo's ORFS-Agent and EDA-Corpus material but do not replace actual run reports.
 
 **All-Mock flow characteristics:**
 - **Slower synthesis**: Yosys mock generation adds ~10-15 min to synth stage
@@ -338,32 +350,39 @@ For Round 2+ decisions, combine the bundled EDA references with `get_report`, `d
 | `place_density` | Placement density (0.0–1.0) | Congestion/DRC → decrease; area compaction only after routing is clean |
 | `gpl_timing_driven` | Timing-driven placement | Keep enabled for large timed designs |
 | `gpl_routability_driven` | Routability-driven placement | Keep enabled when congestion, overflow, or DRC appears |
-| `setup_slack_margin` | Timing margin (ns) | Tighten only when timing is close or clean |
+| `setup_slack_margin` | Setup timing margin (ns) | Tighten only when timing is close or clean |
+| `hold_slack_margin` | Hold repair margin (ns) | Keep at 0.1 for BOOM-class designs — fixes hold violations via auto-inserted hold buffers; hold is frequency-independent |
 
-**Conservative Baseline for Large Designs:**
+**Proven Baseline for Large Designs (SmallBOOM casebook, 2026-06):**
 
 | Parameter | Default (Round 1) | Rationale |
 |-----------|-------------------|-----------|
-| `clock_period_ns` | 20 (50MHz) | Conservative baseline |
+| `clock_period_ns` | 18.5 (54MHz) | Proven SmallBOOM closure point (setup WNS +0.357) |
 | `core_utilization` | 40 | Lower than small designs (35-45% for BOOM) |
-| `place_density` | 0.55 | Lower to reduce congestion |
+| `place_density` | 0.45 | 0.50 causes routing congestion (GRT-0116) on SmallBOOM |
 | `gpl_timing_driven` | 1 | Always on for large designs |
 | `gpl_routability_driven` | 1 | Always on for large designs |
 | `setup_slack_margin` | 0.5 | Start relaxed, tighten in later rounds |
+| `hold_slack_margin` | 0.1 | REQUIRED: clock skew ~1ns causes hold violations; this fixed 144 → 0 on SmallBOOM |
 
 **Adaptive Tuning Logic:**
 
-Round 1 uses the baseline frequency. Round 2+ calls `diagnose_failure` and `get_report` to read previous round results, then adjusts parameters:
+Round 1 uses the casebook warm-start (Step 5b) or the conservative baseline. Round 2+ reads the executor's returned `stage_signals` and `diagnosis`, plus `get_stage_metrics` for any stage needing a closer look, then adjusts parameters:
 
-| Diagnostic Signal | Meaning | AI Adjustment |
+| Diagnostic Signal (error_type) | Meaning | AI Adjustment |
 |-------------------|---------|---------------|
-| WNS < -2ns or large negative TNS | Severe timing violation | Relax clock_period (+1-2ns); keep timing-driven placement enabled; do not increase density |
-| WNS slightly negative (e.g. -0.5ns) | Near timing closure | Fine-tune clock_period (+0.25-0.5ns) or reduce place_density slightly if congestion also appears |
-| WNS >= 0 and DRC == 0 | Viable point | Save result; tighten clock (-0.5 to -1ns) only if target frequency is not met |
-| DRC violations > 0 | Routing/detail-route legality issue | Reduce place_density (-0.05 to -0.10); reduce utilization if repeated |
-| Placement overflow / not enough sites | Effective utilization too high | Reduce utilization (-5 to -10%) and density (-0.05 to -0.10) |
-| Routing congestion hotspots | Too little routing whitespace | Reduce place_density; keep gpl_routability_driven enabled |
+| `logic_dominated_timing` (wire_delay_pct < 40) | Logic depth dominates the critical path | Relax clock toward ECP (clock - WNS); physical knobs won't help |
+| `wire_dominated_timing` (wire_delay_pct > 60) | Wire delay dominates | Add whitespace: reduce density/utilization BEFORE relaxing clock |
+| `hold_violation` (hold viols, setup clean) | Clock skew problem, frequency-independent | Set `HOLD_SLACK_MARGIN = 0.1` (auto hold-buffer insertion); do NOT relax clock — it never fixes hold |
+| `layer_congestion` (overflow on 1-2 layers) | Layer-local routing shortage | Small density reduction; consider layer adjustment |
+| `global_congestion` (overflow spread wide) | Too little whitespace overall | Reduce density (-0.05 to -0.10) and utilization (-5) |
+| `repair_pressure` (util near 1.0 or buffer explosion) | Timing repair consuming all headroom | Reduce utilization (-8); keep clock unchanged |
+| `timing_violation` (no path breakdown) | Generic timing failure | Relax clock toward ECP × 1.05 |
+| `drc` / DRC violations > 0 | Routing legality issue | Reduce place_density (-0.05 to -0.10); reduce utilization if repeated |
+| `placement_overflow` | Effective utilization too high | Reduce utilization (-5 to -10%) and density |
 | OOM / timeout | Insufficient resources or over-aggressive target | Confirm All-Mock config, keep hierarchy, reduce aggressiveness |
+
+The `diagnose_failure` tool computes these classifications automatically when given `stage_metrics` (from `get_stage_metrics`) and returns `suggested_params` plus a precise `restart_from` stage. Treat its suggestion as the starting point and adjust with reference knowledge.
 
 **Tuning principles:**
 1. Adjust only 1-2 parameters per round; do not drastically change multiple parameters simultaneously
@@ -380,32 +399,48 @@ Round 1 uses the baseline frequency. Round 2+ calls `diagnose_failure` and `get_
 ```
 mcp__chipagent-backend-docker__clean_design(
   config_mk_path="$WORK_DIR/pnr/config.mk",
-  orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow"
+  orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow",
+  from_stage="all"
 )
 ```
 
-**5b. Initialize round parameters:**
+**5b. Query casebook and initialize round parameters:**
+
+Before fixing Round 1 parameters, query the cross-design casebook for similar past designs:
+
+```
+mcp__chipagent-backend-docker__casebook(
+  action="query",
+  platform="sky130hd",
+  features={"cell_count": <estimated or from a prior synth>, "target_clock_ns": $BASELINE_CLOCK_NS}
+)
+```
+
+- If a match with small `distance` exists: use its `best_config` as the Round 1 warm-start (overriding the conservative baseline), read its `failure_fixes` for knobs to avoid, and tell the user: `Warm-starting from casebook entry '<design>' (distance <d>)`.
+- If no match: use the conservative baseline below.
+- If cell_count is unknown before synth, query again after Round 1's synth completes and apply the knowledge from Round 2 onward.
 
 ```bash
 # Set total rounds (minimum 3, maximum 5)
 TOTAL_ROUNDS=3
 
-# Round 1 parameters: conservative baseline for large designs
-R1_CLOCK="${BASELINE_CLOCK_NS:-20}"
+# Round 1 parameters: casebook warm-start if available, else proven SmallBOOM baseline
+R1_CLOCK="${BASELINE_CLOCK_NS:-18.5}"
 R1_UTIL=40
-R1_DENSITY=0.55
+R1_DENSITY=0.45
 R1_TIMING_DRIVEN=1
 R1_ROUTABILITY_DRIVEN=1
 R1_SLACK_MARGIN=0.5
+R1_HOLD_MARGIN=0.1
 ```
 
 **5c. Spawn background round executor (Round 1 — baseline):**
 
-Spawn the `pnr-round-executor-docker` agent with `run_in_background: true`:
+Spawn the `pnr-round-executor-docker-test` agent with `run_in_background: true`:
 
 ```
 Agent(
-  subagent_type: "pnr-round-executor-docker",
+  subagent_type: "pnr-round-executor-docker-test",
   description: "PnR Round 1: ChipTop (All-Mock) — baseline (Docker)",
   run_in_background: true,
   prompt: "
@@ -414,14 +449,16 @@ Agent(
     round_number: 1
     total_rounds: 3
     restart_from: synth
-    current_params: { clock_period_ns: $R1_CLOCK, core_utilization: $R1_UTIL, place_density: $R1_DENSITY, gpl_timing_driven: $R1_TIMING_DRIVEN, gpl_routability_driven: $R1_ROUTABILITY_DRIVEN, setup_slack_margin: $R1_SLACK_MARGIN }
+    current_params: { clock_period_ns: $R1_CLOCK, core_utilization: $R1_UTIL, place_density: $R1_DENSITY, gpl_timing_driven: $R1_TIMING_DRIVEN, gpl_routability_driven: $R1_ROUTABILITY_DRIVEN, setup_slack_margin: $R1_SLACK_MARGIN, hold_slack_margin: $R1_HOLD_MARGIN }
     config_mk: $WORK_DIR/pnr/config.mk
     design_name: ChipTop
+    design_nickname: $NICKNAME
     orfs_flow_path: $PROJECT_ROOT/OpenROAD-flow-scripts/flow
     clock_port: clock_clock
     backend: docker
     NOTE: Use mcp__chipagent-backend-docker__* tools (NOT local).
     NOTE: All-Mock flow — synth stage will be slower due to mock SRAM generation.
+    NOTE: get_stage_metrics/get_report take design_nickname, NOT design_name.
     Stage timeouts: synth=60min, floorplan=60min, place=60min, cts=60min, route=180min, finish=30min.
   "
 )
@@ -429,40 +466,28 @@ Agent(
 
 **5d. Handle round completion — diagnose and decide next parameters:**
 
-When the background agent completes, you will receive a task notification. At that point:
+When the background agent completes, you will receive a task notification. The executor's JSON result already contains `stage_signals`, `early_stopped_at`, and a `diagnosis` (with `suggested_params` and `restart_from`). At that point:
 
 1. **Save round results** via `compare_runs`:
    ```
    mcp__chipagent-backend-docker__compare_runs(
      action="save",
      workspace_dir="$WORK_DIR",
-     run={"round": <current_round>, "config": {<params>}, "metrics": {<from report>}, "status": "pass"|"fail"}
+     run={"round": <current_round>, "config": {<params>}, "metrics": {<from executor result>}, "status": "pass"|"fail", "error_type": <diagnosis.error_type if fail>}
    )
    ```
 
-2. **Collect detailed metrics** via MCP:
+2. **Inspect deeper if needed** — the executor returns key signals; for a closer look at any stage:
    ```
-   mcp__chipagent-backend-docker__get_report(design_name="ChipTop", stage="finish", orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow")
-   mcp__chipagent-backend-docker__get_report(design_name="ChipTop", stage="route", orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow")
+   mcp__chipagent-backend-docker__get_stage_metrics(design_name="$NICKNAME", stage="route", orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow")
+   mcp__chipagent-backend-docker__get_report(design_name="$NICKNAME", stage="finish", orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow")
    ```
+   `get_stage_metrics` returns normalized signals (setup/hold WS+TNS, utilization, repair-buffer counts, per-layer congestion for route, cell-vs-wire critical path breakdown for finish).
 
-3. **Diagnose results** — call `diagnose_failure` to get AI-readable analysis:
-   ```
-   mcp__chipagent-backend-docker__diagnose_failure(
-     stage="finish",
-     success=<true|false>,
-     current_clock_period_ns=<current CP>,
-     current_core_utilization=<current CU>,
-     current_place_density=<current PD>,
-     sdc_content=<read constraint.sdc>,
-     finish_report_content=<from get_report>
-   )
-   ```
-
-4. **Decide next round parameters** based on diagnostic signals:
-   - Read WNS, TNS, DRC violations, area, power from the reports
+3. **Decide next round parameters** based on the executor's `diagnosis.suggested_params` and the Adaptive Tuning table above:
    - Apply `references/orfs-metrics-and-objectives.md`, `references/orfs-parameter-guide.md`, and `references/orfs-failure-signatures.md` as needed
    - Determine the next round's `{clock_period_ns, core_utilization, place_density, gpl_timing_driven, gpl_routability_driven, setup_slack_margin}`
+   - Record which knob changed and why (needed for the casebook in Step 6)
 
 **5e. Launch next round (if more rounds remain and termination conditions not met):**
 
@@ -471,34 +496,75 @@ Check termination conditions first:
 - If `current_round >= total_rounds`: **max rounds reached**, proceed to Step 6
 - If consecutive WNS improvement < 0.1ns: **converged**, proceed to Step 6
 
-Otherwise, launch next round with AI-decided parameters:
+Otherwise, launch the next round. **Use staged restart** — do not redo stages whose inputs did not change:
+
+| What changed | restart_from | clean_design from_stage |
+|---|---|---|
+| clock period (SDC) or any SYNTH_* variable | `synth` | `"all"` |
+| CORE_UTILIZATION | `floorplan` | `"floorplan"` |
+| PLACE_DENSITY / GPL_* / SETUP_SLACK_MARGIN | `place` | `"place"` |
+| HOLD_SLACK_MARGIN / CTS_CLUSTER_SIZE / CTS_CLUSTER_DIAMETER | `cts` | `"cts"` |
+
+When multiple parameters change, use the EARLIEST stage among them. The executor's `diagnosis.restart_from` already follows this mapping — prefer it when consistent.
 
 1. **Update `config.mk`** with the AI-decided parameters:
    ```bash
-   # CP, CU, PD, GTD, GRD, SSM are the AI-decided values from Step 5d
+   # CP, CU, PD, GTD, GRD, SSM, HSM are the AI-decided values from Step 5d
    sed -i "s/^export CORE_UTILIZATION = .*/export CORE_UTILIZATION = $CU/" "$WORK_DIR/pnr/config.mk"
    sed -i "s/^export PLACE_DENSITY = .*/export PLACE_DENSITY = $PD/" "$WORK_DIR/pnr/config.mk"
    sed -i "s/^export GPL_TIMING_DRIVEN = .*/export GPL_TIMING_DRIVEN = $GTD/" "$WORK_DIR/pnr/config.mk"
    sed -i "s/^export GPL_ROUTABILITY_DRIVEN = .*/export GPL_ROUTABILITY_DRIVEN = $GRD/" "$WORK_DIR/pnr/config.mk"
    sed -i "s/^export SETUP_SLACK_MARGIN = .*/export SETUP_SLACK_MARGIN = $SSM/" "$WORK_DIR/pnr/config.mk"
+   sed -i "s/^export HOLD_SLACK_MARGIN = .*/export HOLD_SLACK_MARGIN = $HSM/" "$WORK_DIR/pnr/config.mk"
    ```
 
-2. **Update `constraint.sdc`** with new clock period:
+2. **Update `constraint.sdc`** with new clock period (only if the clock changed):
    ```bash
-   sed -i "s/-period [0-9]* \[get_ports clock_clock\]/-period $CP [get_ports clock_clock]/" "$WORK_DIR/pnr/constraint.sdc"
+   sed -i "s/-period [0-9.]* \[get_ports clock_clock\]/-period $CP [get_ports clock_clock]/" "$WORK_DIR/pnr/constraint.sdc"
    ```
 
-3. **Clean ORFS cache:**
+3. **Clean ORFS cache from the restart stage only:**
    ```
    mcp__chipagent-backend-docker__clean_design(
      config_mk_path="$WORK_DIR/pnr/config.mk",
-     orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow"
+     orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow",
+     from_stage="<restart stage from the mapping table, or 'all' for synth>"
    )
    ```
 
-4. **Spawn next round executor** — same as Step 5c, replacing round_number=$NEXT_ROUND and current_params={CP,CU,PD,GTD,GRD,SSM}.
+4. **Spawn next round executor** — same as Step 5c, replacing round_number=$NEXT_ROUND, restart_from=<mapped stage> and current_params={CP,CU,PD,GTD,GRD,SSM}.
 
 5. **Loop back to Step 5d** when this round completes.
+
+**5f. (Optional) Parallel candidate exploration for Round 2+:**
+
+When the diagnosis points to a clear direction but the magnitude is uncertain (e.g. "reduce density, but by how much?"), run 2-3 candidate configs in parallel instead of one:
+
+1. **Check resources first** — each BOOM-class candidate needs ~20 GB peak:
+   ```bash
+   AVAILABLE_GB=$(free -g | awk '/^Mem:/{print $7}')
+   MAX_PARALLEL=$(( AVAILABLE_GB / 20 ))
+   if [ "$MAX_PARALLEL" -gt 3 ]; then MAX_PARALLEL=3; fi
+   if [ "$MAX_PARALLEL" -lt 2 ]; then echo "Not enough memory for parallel candidates — falling back to sequential"; fi
+   ```
+
+2. **Design the candidate set** — vary ONE knob along the diagnosed direction, keep everything else fixed (see `references/orfs-parameter-guide.md` § Candidate Set Design). Example for global_congestion: density ∈ {0.45, 0.50, 0.55}.
+
+3. **Create isolated artifacts per candidate** — copy config/SDC with a per-candidate nickname so ORFS results/logs/reports directories do not collide:
+   ```bash
+   for SUF in a b c; do
+     cp "$WORK_DIR/pnr/config.mk" "$WORK_DIR/pnr/config_r${ROUND}${SUF}.mk"
+     cp "$WORK_DIR/pnr/constraint.sdc" "$WORK_DIR/pnr/constraint_r${ROUND}${SUF}.sdc"
+     sed -i "s/^export DESIGN_NICKNAME = .*/export DESIGN_NICKNAME = ${NICKNAME}r${ROUND}${SUF}/" "$WORK_DIR/pnr/config_r${ROUND}${SUF}.mk"
+     sed -i "s|^export SDC_FILE = .*|export SDC_FILE = /workspace/MyDesign/$DESIGN/workspace/pnr/constraint_r${ROUND}${SUF}.sdc|" "$WORK_DIR/pnr/config_r${ROUND}${SUF}.mk"
+     # then apply the candidate's knob value with sed as in 5e
+   done
+   ```
+   Parallel candidates always run the full flow from synth (their artifact dirs start empty) — staged restart does not apply across nicknames.
+
+4. **Spawn all candidates in ONE message** (multiple Agent calls, each `run_in_background: true`, subagent_type `pnr-round-executor-docker-test`, `design_nickname: ${NICKNAME}r${ROUND}${SUF}`, `config_mk: .../config_r${ROUND}${SUF}.mk`).
+
+5. **When all complete**: save each via `compare_runs(action="save", run={..., "config": {..., "candidate": "r${ROUND}${SUF}"}})`, pick the best candidate by the rules in `references/orfs-metrics-and-objectives.md`, and either terminate or continue from the winner's parameters (copy the winner's config values back into the main `config.mk`).
 
 ### Step 6 -- Compare Rounds and Select Best Result
 
@@ -514,9 +580,12 @@ mcp__chipagent-backend-docker__compare_runs(
 **6b. Collect detailed metrics for each round** (if not already saved):
 
 ```
-mcp__chipagent-backend-docker__get_report(design_name="ChipTop", stage="finish", orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow")
-mcp__chipagent-backend-docker__get_report(design_name="ChipTop", stage="route", orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow")
+mcp__chipagent-backend-docker__get_stage_metrics(design_name="$NICKNAME", stage="finish", orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow")
+mcp__chipagent-backend-docker__get_report(design_name="$NICKNAME", stage="finish", orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow")
+mcp__chipagent-backend-docker__get_report(design_name="$NICKNAME", stage="route", orfs_flow_path="$PROJECT_ROOT/OpenROAD-flow-scripts/flow")
 ```
+
+(Pass the DESIGN_NICKNAME — artifact directories are organized by nickname, not DESIGN_NAME. For parallel candidates use the per-candidate nickname.)
 
 **6c. Display comparison table:**
 
@@ -547,6 +616,27 @@ Status: PASS / FAIL
 NOTE: Timing is optimistic — SRAM delays not modeled in All-Mock flow.
 ```
 
+**6e. Save trajectory to casebook:**
+
+Persist this design's full tuning trajectory so future runs of similar designs can warm-start:
+
+```
+mcp__chipagent-backend-docker__casebook(
+  action="save",
+  design="$DESIGN",
+  platform="sky130hd",
+  features={"cell_count": <from synth>, "macro_count": <if known>, "instance_area": <from finish>, "target_clock_ns": $BASELINE_CLOCK_NS},
+  best_config={<the winning round's full params>},
+  rounds=[
+    {"params": {<round params>}, "key_metrics": {"wns": ..., "drc": ..., "area": ...}, "error_type": "<diagnosis if failed>", "fix_applied": "<which knob changed and why>"},
+    ...
+  ],
+  outcome="pass"|"fail"|"partial"
+)
+```
+
+Include EVERY round (passing and failing) — failed rounds with their `error_type` → `fix_applied` pairs are the most valuable knowledge for future designs.
+
 **Expected output files** (on host at `$PROJECT_ROOT/OpenROAD-flow-scripts/flow/results/sky130hd/<nickname>/base/`):
 | File | Description |
 |------|-------------|
@@ -569,12 +659,16 @@ NOTE: Timing is optimistic — SRAM delays not modeled in All-Mock flow.
 - **NEVER** remove the three All-Mock variables (`SYNTH_MEMORY_MAX_BITS`, `SYNTH_MOCK_LARGE_MEMORIES`, `SYNTH_KEEP_MOCKED_MEMORIES`) — removing any one causes OOM or incorrect SRAM handling
 - **NEVER** set `SYNTH_MEMORY_MAX_BITS` higher than 1 for large designs — defeats the purpose of All-Mock
 - **NEVER** use `SYNTH_BLACKBOXES` + All-Mock simultaneously — they are conflicting approaches
+- **NEVER** pass DESIGN_NAME ("ChipTop") to `get_report`/`get_stage_metrics` — artifact dirs are keyed by DESIGN_NICKNAME
+- **NEVER** use staged restart (`from_stage` != "all") after changing the clock or SYNTH_* variables — those invalidate synthesis
+- **NEVER** spawn parallel candidates without checking available memory first (each BOOM-class run needs ~20 GB)
 - **ALWAYS** use `timeout_minutes=60` for the `synth` stage — All-Mock mock generation is slower
 - **ALWAYS** use `timeout_minutes=180` for the `route` stage — detailed routing takes up to 3 hours for large designs
 - **ALWAYS** set `SYNTH_HIERARCHICAL = 1` — preserves module boundaries for large designs
-- **ALWAYS** start with conservative utilization (35-45%) for BOOM-class designs
+- **ALWAYS** start with conservative utilization (35-45%) for BOOM-class designs unless the casebook suggests a proven better point
 - **ALWAYS** save round results via `compare_runs` before starting the next round
 - **ALWAYS** use `compare_runs(action="recommend")` to select the best round objectively
+- **ALWAYS** save the trajectory to the casebook at the end (Step 6e) — including failed rounds
 
 ## Input
 
