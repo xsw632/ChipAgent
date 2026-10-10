@@ -1,2 +1,0 @@
-%Warning-UNUSEDSIGNAL: /home/aa/snap/chipagent/ChipAgent/MyDesign/ALU8/workspace/generated/ALU8.v:2:16: Signal is not used: 'clock'
-%Warning-UNUSEDSIGNAL: /home/aa/snap/chipagent/ChipAgent/MyDesign/ALU8/workspace/generated/ALU8.v:3:16: Signal is not used: 'reset'

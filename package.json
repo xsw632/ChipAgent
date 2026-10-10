@@ -10,9 +10,23 @@
     "skills/",
     "agents/",
     "scripts/",
-    "mcp-server/",
-    "chisel-project/",
-    "CLAUDE-For-Test.md"
+    "mcp-server/index.ts",
+    "mcp-server/lib/",
+    "mcp-server/tools/",
+    "mcp-server/package.json",
+    "mcp-server/package-lock.json",
+    "mcp-server-python/server.py",
+    "mcp-server-python/requirements.txt",
+    "mcp-server-docker-python/server.py",
+    "mcp-server-docker-python/casebook.py",
+    "mcp-server-docker-python/orfs_metrics.py",
+    "mcp-server-docker-python/requirements.txt",
+    "chisel-project/build.sbt",
+    "chisel-project/project/build.properties",
+    "chisel-project/project/plugins.sbt",
+    "chisel-project/src/",
+    "templates/",
+    ".claude-plugin/"
   ],
   "keywords": [
     "claude-code",
@@ -21,5 +35,10 @@
     "verilog",
     "hardware"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "test:backend": "npm --prefix mcp-server test",
+    "test:metrics": "python3 mcp-server-docker-python/test_orfs_metrics.py"
+  }
 }

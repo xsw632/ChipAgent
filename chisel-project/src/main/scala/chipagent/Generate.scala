@@ -15,15 +15,12 @@ object Generate extends App {
     val idx = args.indexOf("--module")
     args(idx + 1)
   } else {
-    "TrivialModule"
+    "ALU"
   }
 
   val module: () => Module = moduleName match {
-    case "TrivialModule" => () => new TrivialModule
     case "ALU"           => () => new ALU
-    case "Decoder3to8"   => () => new Decoder3to8
-    case "Counter8"    => () => new Counter8
-    case other => throw new IllegalArgumentException(s"Unknown module: $other. Available: TrivialModule, ALU, Decoder3to8, Counter8")
+    case other => throw new IllegalArgumentException(s"Unknown module: $other. Available: ALU")
   }
 
   (new ChiselStage).emitVerilog(

@@ -16,3 +16,30 @@ if [ -z "$_plugin_root" ]; then
 else
   PLUGIN_ROOT="$_plugin_root"
 fi
+
+# Resolve the shared source project and per-module artifacts in one place.
+# Legacy workspace/<Module> paths remain accepted for existing callers.
+resolve_module_paths() {
+  local arg="$1"
+  if [[ "$arg" == workspace/* || "$arg" == "$PLUGIN_ROOT/workspace/"* ]]; then
+    case "$arg" in
+      /*) WORKSPACE_DIR="$arg" ;;
+      *)  WORKSPACE_DIR="$PLUGIN_ROOT/$arg" ;;
+    esac
+    PROJECT_DIR="$PLUGIN_ROOT/chisel-project"
+  else
+    case "$arg" in
+      /*) BASE="$arg" ;;
+      */*) BASE="$PLUGIN_ROOT/$arg" ;;
+      *) BASE="$PLUGIN_ROOT/MyDesign/$arg" ;;
+    esac
+    WORKSPACE_DIR="$BASE/workspace"
+    PROJECT_DIR="$BASE/chisel-project"
+  fi
+  MODULE="$(basename "$arg")"
+  GENERATED_DIR="$WORKSPACE_DIR/generated"
+  OUTPUT_DIR="$GENERATED_DIR"
+  SIM_DIR="$WORKSPACE_DIR/sim"
+  LOG_DIR="$SIM_DIR/logs"
+  OBJ_DIR="$SIM_DIR/obj_dir"
+}

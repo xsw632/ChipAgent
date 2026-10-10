@@ -13,7 +13,7 @@ from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("chipagent-backend")
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+PROJECT_ROOT = Path(os.environ.get("PROJECT_ROOT") or os.getcwd()).expanduser().resolve()
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -20,7 +20,6 @@ allowed-tools:
   - mcp__chipagent-backend__diagnose_failure
   - mcp__chipagent-backend__clean_design
   - mcp__chipagent-backend__compare_runs
-  - mcp__chipagent-backend__set_backend_mode
 ---
 
 # chip-agent:chipyard-pnr
@@ -63,7 +62,7 @@ Create the checklist and go on.
 
 ## Instructions
 
-**Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Use that directory as the base for all relative paths below.
+**Determine the project root directory** from the user's current working project (the directory containing `scripts/` and `chisel-project/`; `MyDesign/` is created on first use), not from the skill's installation location. Use that directory as the base for all relative paths below.
 
 
 ## Pipeline

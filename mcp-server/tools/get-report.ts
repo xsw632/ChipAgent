@@ -1,26 +1,8 @@
+import { readWorkspaceConfig } from "../lib/workspace-config.ts";
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-
-interface WorkspaceConfig {
-  workspace_dir: string;
-  backend_mode: string;
-  docker_results_dir?: string;
-  orfs_flow_path?: string;
-}
-
-function readWorkspaceConfig(): WorkspaceConfig | null {
-  try {
-    const configPath = join(homedir(), ".chipagent", "workspace.json");
-    if (!existsSync(configPath)) return null;
-    const content = readFileSync(configPath, "utf-8");
-    return JSON.parse(content) as WorkspaceConfig;
-  } catch {
-    return null;
-  }
-}
 
 export function parseFinishReport(content: string): Record<string, string> {
   const metrics: Record<string, string> = {};

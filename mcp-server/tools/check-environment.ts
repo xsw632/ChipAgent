@@ -1,8 +1,9 @@
+import { readWorkspaceConfig } from "../lib/workspace-config.ts";
+export { readWorkspaceConfig } from "../lib/workspace-config.ts";
 import { execSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -26,16 +27,6 @@ interface DockerResult {
   version: string | null;
 }
 
-interface WorkspaceConfig {
-  workspace_dir: string;
-  mcp_server_path: string;
-  backend_mode: string;
-  docker_image?: string;
-  docker_volumes?: string[];
-  docker_workdir?: string;
-  orfs_flow_path?: string;
-}
-
 interface EnvironmentResult {
   orfs: OrfsResult;
   sky130hd: Sky130hdResult;
@@ -45,21 +36,6 @@ interface EnvironmentResult {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
-/**
- * Read ~/.chipagent/workspace.json for workspace configuration.
- * Returns null if the file does not exist.
- */
-export function readWorkspaceConfig(): WorkspaceConfig | null {
-  try {
-    const configPath = join(homedir(), ".chipagent", "workspace.json");
-    if (!existsSync(configPath)) return null;
-    const content = readFileSync(configPath, "utf-8");
-    return JSON.parse(content) as WorkspaceConfig;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Build a list of candidate directories where ORFS might be installed,

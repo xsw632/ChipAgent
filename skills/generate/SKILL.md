@@ -31,7 +31,9 @@ Given a plain-English description of a digital hardware module, this command par
 
 ## Instructions
 
-**Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Use that directory as the base for all relative paths below.
+**Support root:** Use `<project-root>/.claude` for a local installation or `~/.claude` for a global installation. When working directly in the source repository, use the repository root.
+
+**Determine the project root directory** from the user's current working project (the directory containing `scripts/` and `chisel-project/`; `MyDesign/` is created on first use), not from the skill's installation location. Use that directory as the base for all relative paths below.
 
 ## Pipeline
 
@@ -52,7 +54,7 @@ WORKSPACE_DIR="$PROJECT_DIR/workspace"
 mkdir -p "$PROJECT_ROOT/$CONTAINER"
 # Create project folder and workspace
 mkdir -p "$WORKSPACE_DIR/generated" "$WORKSPACE_DIR/sim/logs"
-# Symlink chisel-project (three levels up from MyDesign/<Module>/)
+# Symlink chisel-project (two levels up from MyDesign/<Module>/)
 rm -f "$PROJECT_DIR/chisel-project"
 ln -s "../../chisel-project" "$PROJECT_DIR/chisel-project"
 
@@ -82,7 +84,7 @@ If the project folder already exists inside `MyDesign/`, skip creation and conti
 
 ### Step 1 -- Parse Requirements
 
-Read the requirement-parser agent definition at `agents/requirement-parser.md` (relative to project root) and follow its rules to extract a structured JSON spec from the user's hardware description (`$ARGUMENTS`).
+Read the requirement-parser agent definition at `<support-root>/agents/requirement-parser.md` (relative to support root) and follow its rules to extract a structured JSON spec from the user's hardware description (`$ARGUMENTS`).
 
 The agent returns a JSON object. For simple designs: `moduleName`, `type: "simple"`, `ports`, `operations`, `flags`, and `constraints`. For complex designs: `moduleName`, `type: "complex"`, `modules[]`, and `topModule`.
 
@@ -117,7 +119,7 @@ Only proceed to Step 2 after the user selects "Approve and generate".
 
 ### Step 2 -- Generate Chisel
 
-Read the chisel-generator agent definition at `agents/chisel-generator.md` (relative to project root) and follow its rules with the JSON spec to produce Chisel source files. There is no `/chip-agent:chisel-generate` sub-skill -- this step calls the agent directly (inline).
+Read the chisel-generator agent definition at `<support-root>/agents/chisel-generator.md` (relative to support root) and follow its rules with the JSON spec to produce Chisel source files. There is no `/chip-agent:chisel-generate` sub-skill -- this step calls the agent directly (inline).
 
 **For simple specs (type: "simple"):**
 

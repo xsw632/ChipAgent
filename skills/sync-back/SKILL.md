@@ -22,11 +22,10 @@ Compare files in a ChipAgent local project against the ChipAgent source reposito
 | `mcp-server/` | `.claude/mcp-server/` | direct 1:1 |
 | `scripts/` | `scripts/` | direct 1:1 |
 | `chisel-project/` | `chisel-project/` | direct 1:1 |
-| `hooks/` | `.claude/hooks/` | direct 1:1 |
-| `CLAUDE-For-Test.md` | `CLAUDE.md` | renamed |
+| `templates/CLAUDE.md` | `CLAUDE.md` | renamed |
 | (none) | `.claude/mcp-server-docker/` | target-only |
-| (none) | `.claude/mcp-server-docker-python/` | target-only |
-| (none) | `.claude/mcp-server-python/` | target-only |
+| `mcp-server-docker-python/` | `.claude/mcp-server-docker-python/` | direct 1:1 |
+| `mcp-server-python/` | `.claude/mcp-server-python/` | direct 1:1 |
 
 ## Execution Steps
 
@@ -39,7 +38,7 @@ If `$TARGET` not given, use the current working directory. If it doesn't look li
 
 ### Step 2: Scan All Mappings
 
-For each mapping, run `diff -rq` between source and target paths. Exclude `node_modules`, `target`, `.bloop`, `.metals` directories.
+For each mapping, run `diff -rq` between source and target paths. Exclude `node_modules`, `target`, `__pycache__`, `.bloop`, `.metals` directories.
 
 Collect results into categories:
 - **CHANGED** — file exists on both sides but differs
@@ -83,9 +82,9 @@ For each item user chose to sync:
 
 **Chisel-project:** `cp -r "$TARGET/chisel-project/{path}" "$SOURCE/chisel-project/{path}"`
 
-**CLAUDE.md:** `cp "$TARGET/CLAUDE.md" "$SOURCE/CLAUDE-For-Test.md"`
+**CLAUDE.md:** `cp "$TARGET/CLAUDE.md" "$SOURCE/templates/CLAUDE.md"`
 
-**Target-only dirs (mcp-server-docker-python, mcp-server-python):**
+**Python MCP servers (mcp-server-docker-python, mcp-server-python):**
 `cp -r "$TARGET/.claude/{dirname}" "$SOURCE/{dirname}"`
 
 ### Step 6: Verify

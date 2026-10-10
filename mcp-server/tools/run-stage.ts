@@ -1,38 +1,13 @@
-import { spawn, execSync } from "node:child_process";
+import { readWorkspaceConfig } from "../lib/workspace-config.ts";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-interface WorkspaceConfig {
-  workspace_dir: string;
-  mcp_server_path: string;
-  backend_mode: string;
-  docker_image?: string;
-  docker_volumes?: string[];
-  docker_workdir?: string;
-  orfs_flow_path?: string;
-  docker_results_dir?: string;
-}
-
 export const VALID_STAGES = ["synth", "floorplan", "place", "cts", "route", "finish"] as const;
 type Stage = (typeof VALID_STAGES)[number];
-
-/**
- * Read ~/.chipagent/workspace.json for workspace configuration.
- * Returns null if the file does not exist.
- */
-function readWorkspaceConfig(): WorkspaceConfig | null {
-  try {
-    const configPath = join(homedir(), ".chipagent", "workspace.json");
-    if (!existsSync(configPath)) return null;
-    const content = readFileSync(configPath, "utf-8");
-    return JSON.parse(content) as WorkspaceConfig;
-  } catch {
-    return null;
-  }
-}
 
 export function buildMakeArgs(
   stage: string,
@@ -110,7 +85,7 @@ export function registerRunStage(server: McpServer): void {
         let stdout = "";
         let stderr = "";
 
-        let proc: ReturnType<typeof spawn>;
+        let proc: ChildProcessByStdio<null, Readable, Readable>;
 
         if (workspaceConfig?.backend_mode === "docker") {
           const workspaceDir = workspaceConfig.workspace_dir;

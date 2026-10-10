@@ -37,7 +37,7 @@ Generate Verilog RTL from a local Chipyard installation by elaborating a Rocket 
 
 ## Instructions
 
-**Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Use that directory as the base for all relative paths below.
+**Determine the project root directory** from the user's current working project (the directory containing `scripts/` and `chisel-project/`; `MyDesign/` is created on first use), not from the skill's installation location. Use that directory as the base for all relative paths below.
 
 ## Pipeline
 

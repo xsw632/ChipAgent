@@ -23,7 +23,7 @@ import orfs_metrics
 
 mcp = FastMCP("chipagent-backend-docker")
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(os.environ.get("PROJECT_ROOT") or os.getcwd()).expanduser().resolve()
 
 
 # ---------------------------------------------------------------------------

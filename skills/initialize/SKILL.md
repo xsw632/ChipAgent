@@ -21,7 +21,7 @@ Detect the local toolchain environment and report which ChipAgent capabilities a
 
 ## Instructions
 
-1. **Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Use that directory as the base for all paths below.
+1. **Determine the project root directory** from the user's current working project (the directory containing `scripts/` and `chisel-project/`; `MyDesign/` is created on first use), not from the skill's installation location. Use that directory as the base for all paths below.
 
 2. **Run the environment detection script** via Bash:
    ```

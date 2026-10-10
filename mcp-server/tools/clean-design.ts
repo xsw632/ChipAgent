@@ -1,38 +1,23 @@
-import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { readWorkspaceConfig } from "../lib/workspace-config.ts";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-
-interface WorkspaceConfig {
-  workspace_dir: string;
-  mcp_server_path: string;
-  backend_mode: string;
-  docker_image?: string;
-  docker_volumes?: string[];
-  docker_workdir?: string;
-  orfs_flow_path?: string;
-}
-
-/**
- * Read ~/.chipagent/workspace.json for workspace configuration.
- * Returns null if the file does not exist.
- */
-function readWorkspaceConfig(): WorkspaceConfig | null {
-  try {
-    const configPath = join(homedir(), ".chipagent", "workspace.json");
-    if (!existsSync(configPath)) return null;
-    const content = readFileSync(configPath, "utf-8");
-    return JSON.parse(content) as WorkspaceConfig;
-  } catch {
-    return null;
-  }
-}
 
 function tailLines(text: string, n: number): string {
   const lines = text.split("\n");
   return lines.slice(-n). join("\n");
+}
+
+export function buildCleanArgs(
+  configMkPath: string,
+  orfsFlowPath: string,
+): { args: string[]; cwd: string; env: Record<string, string | undefined> } {
+  return {
+    args: ["clean_all"],
+    cwd: orfsFlowPath,
+    env: { ...process.env, DESIGN_CONFIG: configMkPath },
+  };
 }
 
 export function registerCleanDesign(server: McpServer): void {
@@ -55,7 +40,7 @@ export function registerCleanDesign(server: McpServer): void {
         let stdout = "";
         let stderr = "";
 
-        let proc: ReturnType<typeof spawn>;
+        let proc: ChildProcessByStdio<null, Readable, Readable>;
 
         if (workspaceConfig?.backend_mode === "docker") {
           // Docker mode: run clean_all inside the openroad/orfs container
@@ -80,9 +65,10 @@ export function registerCleanDesign(server: McpServer): void {
           });
         } else {
           // Local mode
-          proc = spawn("make", ["clean_all"], {
-            cwd: orfs_flow_path,
-            env: { ...process.env, DESIGN_CONFIG: config_mk_path },
+          const clean = buildCleanArgs(config_mk_path, orfs_flow_path);
+          proc = spawn("make", clean.args, {
+            cwd: clean.cwd,
+            env: clean.env,
             stdio: ["ignore", "pipe", "pipe"],
           });
         }

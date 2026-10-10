@@ -13,7 +13,7 @@ allowed-tools:
 
 # chip-agent:chipyard-docker
 
-Unified Chipyard frontend flow: generate RTL from the `ucbbar/chipyard-image` Docker image, run SRAM mapping analysis, stage all artifacts into the ChipAgent workspace, and hand off to `/chip-agent:chipyard-pnr`.
+Unified Chipyard frontend flow: generate RTL from the `ictmrc/chipyard-image:1.9.1-ubuntu-22.04` Docker image, run SRAM mapping analysis, stage all artifacts into the ChipAgent workspace, and hand off to `/chip-agent:chipyard-pnr`.
 
 ## Docker Strategy
 
@@ -69,11 +69,11 @@ Config: $CONFIG
 
 ### Step 1 -- Verify Environment
 
-**Use ucbbar/chipyard-image Docker to verify:**
+**Use ictmrc/chipyard-image:1.9.1-ubuntu-22.04 Docker to verify:**
 
 ```bash
 docker run --rm \
-  ictmrc/chipyard-image \
+  ictmrc/chipyard-image:1.9.1-ubuntu-22.04 \
   bash -c "
     echo 'Chipyard: /root/chipyard'
     test -f /root/chipyard/build.sbt && echo '  build.sbt: OK' || echo '  build.sbt: MISSING'
@@ -99,13 +99,13 @@ docker run --rm openroad/orfs:latest \
 
 ```bash
 docker run --rm \
-  ictmrc/chipyard-image \
+  ictmrc/chipyard-image:1.9.1-ubuntu-22.04 \
   bash -c "grep -r 'class ${CONFIG}\b' /root/chipyard/generators/ --include='*.scala' -l 2>/dev/null"
 ```
 
 If not found, list available configs:
 ```bash
-docker run --rm ictmrc/chipyard-image \
+docker run --rm ictmrc/chipyard-image:1.9.1-ubuntu-22.04 \
   bash -c "grep -r 'class \w\+Config extends Config' /root/chipyard/generators/chipyard/src/main/scala/config/ --include='*.scala' -h 2>/dev/null | sed 's/class /  - /;s/ extends.*//'"
 ```
 
@@ -120,7 +120,7 @@ PLUGIN_ROOT="/home/sh/snap/worklib/test/ChipAgent"
 docker run --rm \
   -v "${PLUGIN_ROOT}/MyDesign:/out" \
   -w /root/chipyard \
-  ictmrc/chipyard-image \
+  ictmrc/chipyard-image:1.9.1-ubuntu-22.04 \
   bash -c "
     export JAVA_TOOL_OPTIONS='-Dfile.encoding=UTF-8 -Xmx8G'
     export PATH=/root/chipyard/.conda-env/bin:\$PATH
@@ -137,7 +137,7 @@ docker run --rm \
 
 **Timeout:** 600000ms (10 minutes). Chipyard elaboration is slow.
 
-**Important:** The `ucbbar/chipyard-image` entrypoint is `chipyard/scripts/entrypoint.sh` which may run the harness simulator. Use `--entrypoint bash` to bypass it and run sbt directly.
+**Important:** The `ictmrc/chipyard-image:1.9.1-ubuntu-22.04` entrypoint is `chipyard/scripts/entrypoint.sh` which may run the harness simulator. Use `--entrypoint bash` to bypass it and run sbt directly.
 
 ### Step 4 -- Locate Output Artifacts
 
@@ -261,7 +261,7 @@ cat > "$PLUGIN_ROOT/MyDesign/${CONFIG}/workspace/spec.json" << SPECEOF
   "clock_period_ns": 10,
   "chipyard_config": "$CONFIG",
   "chipyard_path": "/root/chipyard",
-  "generated_from": "Docker ucbbar/chipyard-image"
+  "generated_from": "Docker ictmrc/chipyard-image:1.9.1-ubuntu-22.04"
 }
 SPECEOF
 ```
@@ -279,7 +279,7 @@ test -f "$PLUGIN_ROOT/MyDesign/${CONFIG}/workspace/spec.json" && echo "OK: spec.
 === Chipyard Flow Complete ===
 
 Config:        TinyRocketConfig
-Source:        Docker ucbbar/chipyard-image (sbt elaboration)
+Source:        Docker ictmrc/chipyard-image:1.9.1-ubuntu-22.04 (sbt elaboration)
 Staged to:     MyDesign/TinyRocketConfig/workspace/generated/
 
 Next step:

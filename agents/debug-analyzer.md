@@ -17,10 +17,10 @@ Load these artifacts in order. Gracefully degrade when optional artifacts are mi
 
 | # | Artifact | Path | Required |
 |---|----------|------|----------|
-| 1 | Spec | `workspace/<Module>/spec.json` | REQUIRED -- if missing: STOP with "No spec found. Run `/chip-agent:requirement-parser` first." |
+| 1 | Spec | `MyDesign/<Module>/workspace/spec.json` | REQUIRED -- if missing: STOP with "No spec found. Run `/chip-agent:requirement-parser` first." |
 | 2 | Chisel source | `chisel-project/src/main/scala/chipagent/<Module>.scala` | REQUIRED -- if missing: STOP with "No Chisel source found for `<Module>`." |
-| 3 | Sim result log | `workspace/<Module>/sim/logs/sim_result.log` | SOFT REQUIRED -- if missing: STOP with "No simulation results. Run `/chip-agent:simulate <Module>` first." |
-| 4 | VCD trace | `workspace/<Module>/sim/logs/<Module>.vcd` | OPTIONAL -- if missing: continue with log-only analysis, note "VCD not found; performing log-only analysis without signal traces." |
+| 3 | Sim result log | `MyDesign/<Module>/workspace/sim/logs/sim_result.log` | SOFT REQUIRED -- if missing: STOP with "No simulation results. Run `/chip-agent:simulate <Module>` first." |
+| 4 | VCD trace | `MyDesign/<Module>/workspace/sim/logs/<Module>.vcd` | OPTIONAL -- if missing: continue with log-only analysis, note "VCD not found; performing log-only analysis without signal traces." |
 
 ## Analysis Steps
 
@@ -59,7 +59,7 @@ Invoke the VCD parser via Bash:
 
 ```bash
 python3 <plugin-root>/scripts/parse_vcd.py \
-  --vcd workspace/<Module>/sim/logs/<Module>.vcd \
+  --vcd MyDesign/<Module>/workspace/sim/logs/<Module>.vcd \
   --signals <port_names_from_spec> \
   --time <timestamp>
 ```
@@ -88,10 +88,10 @@ The debug command is diagnostic only. Suggest fixes but never modify source file
 
 ## Report Structure
 
-Write the report to `workspace/<Module>/debug/debug_report.md`. Create the directory first:
+Write the report to `MyDesign/<Module>/workspace/debug/debug_report.md`. Create the directory first:
 
 ```bash
-mkdir -p workspace/<Module>/debug
+mkdir -p MyDesign/<Module>/workspace/debug
 ```
 
 The report MUST follow this structure:
@@ -156,7 +156,7 @@ The report MUST follow this structure:
 After writing the report, display a brief summary in the conversation:
 - Total tests, passed, failed
 - List of failed test names
-- Location of full report: `workspace/<Module>/debug/debug_report.md`
+- Location of full report: `MyDesign/<Module>/workspace/debug/debug_report.md`
 - Suggest: "Review the fix suggestions in the debug report. To apply fixes, edit the Chisel source and re-run `/chip-agent:simulate <Module>`."
 
 ## Anti-Patterns

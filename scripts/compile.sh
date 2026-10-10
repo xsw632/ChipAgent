@@ -7,44 +7,12 @@ if [ -n "$_COMMON_INIT_FAILED" ]; then
   exit 1
 fi
 
-# --- Path resolution ---
-# Three modes supported:
-#   1. Bare module name (e.g. ALU8)              → MyDesign/<Module>/...
-#   2. MyDesign/<Module> explicit path            → MyDesign/<Module>/...
-#   3. workspace/<Module> old path (compat)       → workspace/<Module>/generated (chisel-project at root)
 ARG="${1:-}"
-if [ -n "$ARG" ]; then
-  if [[ "$ARG" == "workspace/"* ]]; then
-    # Mode 3: old workspace/ path (backward compat)
-    case "$ARG" in
-      /*) WORKSPACE_DIR="$ARG" ;;
-      *)  WORKSPACE_DIR="$PLUGIN_ROOT/$ARG" ;;
-    esac
-    MODULE=$(basename "$WORKSPACE_DIR")
-    PROJECT_DIR="$PLUGIN_ROOT/chisel-project"
-    OUTPUT_DIR="$WORKSPACE_DIR/generated"
-  else
-    # Mode 1 or 2: bare name or MyDesign/<Module>
-    MODULE=$(basename "$ARG")
-    if [[ "$ARG" == */* ]]; then
-      # Explicit path like MyDesign/ALU8
-      case "$ARG" in
-        /*) PROJECT_DIR="$ARG/chisel-project" ;;
-        *)  PROJECT_DIR="$PLUGIN_ROOT/$ARG/chisel-project" ;;
-      esac
-    else
-      # Bare module name → MyDesign/<Module>
-      PROJECT_DIR="$PLUGIN_ROOT/MyDesign/$ARG/chisel-project"
-    fi
-    OUTPUT_DIR="$(dirname "$PROJECT_DIR")/workspace/generated"
-  fi
-else
-  echo "Usage: compile.sh <ModuleName>" >&2
-  echo "  e.g.  compile.sh ALU8           (→ MyDesign/ALU8/)" >&2
-  echo "  e.g.  compile.sh MyDesign/ALU8  (→ MyDesign/ALU8/)" >&2
-  echo "  (workspace/ALU8 also accepted for backward compat)" >&2
+if [ -z "$ARG" ]; then
+  echo "Usage: compile.sh <ModuleName | MyDesign/ModuleName | workspace/ModuleName>" >&2
   exit 1
 fi
+resolve_module_paths "$ARG"
 
 export SBT_OPTS="-Dsbt.supershell=false"
 

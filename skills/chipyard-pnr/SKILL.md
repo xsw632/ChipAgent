@@ -41,7 +41,7 @@ If still empty after initialization, default to `local`.
 | `local` | `skills/chipyard-pnr-local/SKILL.md` | Local ORFS via MCP tools |
 | `docker` | `skills/chipyard-pnr-docker/SKILL.md` | Docker containers (`openroad/orfs:latest`) |
 
-**Execution:** Read the appropriate skill file and follow its pipeline.
+**Execution:** In the source repository, read the skill path above. In an installed project, read the sibling command `<name>.md` from the same command directory as this file, then follow its pipeline.
 
 ## Configuration
 

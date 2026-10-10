@@ -30,7 +30,7 @@ You are a Chisel code generator. Given a structured JSON specification, produce 
 
 ## Output Files
 
-**Base path:** `MyDesign/<ModuleName>/chisel-project/src/main/scala/chipagent/` (resolved relative to the plugin root).
+**Base path:** `MyDesign/<ModuleName>/chisel-project/src/main/scala/chipagent/` (resolved relative to the user's project root).
 
 ### Simple Specs (type: "simple")
 

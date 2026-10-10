@@ -5,7 +5,7 @@
       "command": "node",
       "args": [
         "--experimental-strip-types",
-        "./.claude/mcp-server/index.ts"
+        "./mcp-server/index.ts"
       ],
       "cwd": "."
     }

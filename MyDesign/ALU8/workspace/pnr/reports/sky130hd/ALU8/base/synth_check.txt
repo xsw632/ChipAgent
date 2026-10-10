@@ -1,4 +1,0 @@
-
-19. Executing CHECK pass (checking for obvious problems).
-Checking module ALU8...
-Found and reported 0 problems.

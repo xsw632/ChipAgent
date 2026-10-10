@@ -12,14 +12,15 @@ const {
 } = require("fs");
 const { join, resolve } = require("path");
 const { spawnSync } = require("child_process");
+const { homedir } = require("os");
 
 const SOURCE = resolve(__dirname, "..");
-const HOME = process.env.HOME;
+const USER_HOME = homedir();
 const NODE_EXECUTABLE = process.execPath;
 const NPM_EXEC_PATH = process.env.npm_execpath;
 
-if (!HOME) {
-  console.error("ERROR: HOME is not set.");
+if (!USER_HOME) {
+  console.error("ERROR: Could not determine the user home directory.");
   process.exit(1);
 }
 
@@ -41,7 +42,7 @@ const localTarget = isLocal ? args[localIndex + 1] : null;
 const PROJECT_ROOT = (localTarget && !localTarget.startsWith("-"))
   ? resolve(localTarget)
   : process.cwd();
-const CLAUDE_DIR = isLocal ? join(PROJECT_ROOT, ".claude") : join(HOME, ".claude");
+const CLAUDE_DIR = isLocal ? join(PROJECT_ROOT, ".claude") : join(USER_HOME, ".claude");
 const COMMANDS_DEST = join(CLAUDE_DIR, "commands", "chip-agent");
 const SKILLS_DEST = join(CLAUDE_DIR, "skills");
 const AGENTS_DEST = join(CLAUDE_DIR, "agents");
@@ -123,7 +124,7 @@ function upsertMcpConfig() {
     return localConfigPath;
   }
 
-  const globalConfigPaths = [join(HOME, ".claude.json"), join(CLAUDE_DIR, "settings.json")];
+  const globalConfigPaths = [join(USER_HOME, ".claude.json"), join(CLAUDE_DIR, "settings.json")];
   const entry = {
     type: "stdio",
     command: "node",
@@ -208,59 +209,51 @@ for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
   }
 }
 
-const SUPPORT_ITEMS = ["mcp-server"];
+// Install source only; local dependencies and build outputs are reproducible.
+const COPY_EXCLUDES = new Set(["node_modules", "target", "__pycache__", ".bloop", ".metals"]);
+function copySource(src, dest, extraExcludes = []) {
+  if (resolve(src) === resolve(dest)) return;
+  const excludes = new Set([...COPY_EXCLUDES, ...extraExcludes]);
+  cpSync(src, dest, {
+    recursive: true,
+    filter: (path) => !excludes.has(path.split(/[\\/]/).pop()),
+  });
+}
+
+const SUPPORT_ITEMS = ["mcp-server", "mcp-server-python", "mcp-server-docker-python"];
 mkdirSync(SUPPORT_DEST, { recursive: true });
 
 for (const item of SUPPORT_ITEMS) {
   const src = join(SOURCE, item);
   if (!existsSync(src)) continue;
-  cpSync(src, join(SUPPORT_DEST, item), { recursive: true });
+  copySource(src, join(SUPPORT_DEST, item));
 }
 
-// scripts go to project root (local) or global .claude/ 
+// Project toolchain files always live beside MyDesign, in both install modes.
 const scriptsSrc = join(SOURCE, "scripts");
 if (existsSync(scriptsSrc)) {
   const scriptsDest = join(PROJECT_ROOT, "scripts");
-  cpSync(scriptsSrc, scriptsDest, { recursive: true });
+  copySource(scriptsSrc, scriptsDest, ["install.sh"]);
 }
 
-// chisel-project goes to project root (local) or .claude/ (global)
+// MyDesign/<Module>/chisel-project links to this shared project.
 const chiselSrc = join(SOURCE, "chisel-project");
 if (existsSync(chiselSrc)) {
-  const chiselDest = isLocal ? join(PROJECT_ROOT, "chisel-project") : join(SUPPORT_DEST, "chisel-project");
-  cpSync(chiselSrc, chiselDest, { recursive: true });
+  copySource(chiselSrc, join(PROJECT_ROOT, "chisel-project"));
 }
 
-// Merge hooks.json instead of overwriting (may coexist with trellis hooks)
-const hooksSrc = join(SOURCE, "hooks");
-const hooksDest = join(SUPPORT_DEST, "hooks");
-if (existsSync(hooksSrc)) {
-  mkdirSync(hooksDest, { recursive: true });
-  for (const f of readdirSync(hooksSrc, { withFileTypes: true })) {
-    if (f.name === "hooks.json") {
-      const existing = readJsonFile(join(hooksDest, "hooks.json"));
-      const incoming = readJsonFile(join(hooksSrc, "hooks.json"));
-      writeJsonFile(join(hooksDest, "hooks.json"), {
-        hooks: { ...(existing.hooks || {}), ...(incoming.hooks || {}) },
-      });
-    } else {
-      cpSync(join(hooksSrc, f.name), join(hooksDest, f.name), { recursive: f.isDirectory() });
-    }
-  }
-}
-
-// Agents go to .claude/agents/chip-agent/ for Claude Code auto-discovery
+// Agents go to .claude/agents/ for Claude Code auto-discovery.
 const agentsSrc = join(SOURCE, "agents");
 if (existsSync(agentsSrc)) {
   mkdirSync(AGENTS_DEST, { recursive: true });
   cpSync(agentsSrc, AGENTS_DEST, { recursive: true });
 }
 
-// Install CLAUDE-For-Test.md as CLAUDE.md to target project root (local) or HOME (global)
-const claudeTestSrc = join(SOURCE, "CLAUDE-For-Test.md");
+// Seed project instructions without replacing the user's existing CLAUDE.md.
+const claudeTestSrc = join(SOURCE, "templates", "CLAUDE.md");
 let claudeTestDest = null;
-if (existsSync(claudeTestSrc)) {
-  claudeTestDest = join(isLocal ? PROJECT_ROOT : HOME, "CLAUDE.md");
+if (existsSync(claudeTestSrc) && !existsSync(join(PROJECT_ROOT, "CLAUDE.md"))) {
+  claudeTestDest = join(PROJECT_ROOT, "CLAUDE.md");
   cpSync(claudeTestSrc, claudeTestDest);
 }
 

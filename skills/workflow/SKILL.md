@@ -44,7 +44,9 @@ Create the checklist and go on.
 
 ## Instructions
 
-**Determine the project root directory** by finding the nearest ancestor directory '.claude'. Use that directory as the base for all relative paths below.
+**Support root:** Use `<project-root>/.claude` for a local installation or `~/.claude` for a global installation. When working directly in the source repository, use the repository root.
+
+**Determine the project root directory** from the user's current working project (the directory containing `scripts/` and `chisel-project/`; `MyDesign/` is created on first use), not from the skill's installation location. Use that directory as the base for all relative paths below.
 
 ## Pipeline
 
@@ -93,11 +95,9 @@ echo "Project initialized: $PROJECT_DIR"
 
 If the project folder already exists inside `MyDesign/`, skip creation and continue.
 
-If the project folder already exists, skip creation and continue.
-
 ### Step 1 -- Parse Requirements
 
-Read the requirement-parser agent definition at `agents/requirement-parser.md` (relative to project root) and follow its rules to extract a structured JSON spec from the user's hardware description (`$ARGUMENTS`).Run the agentto return the json spec.
+Read the requirement-parser agent definition at `<support-root>/agents/requirement-parser.md` (relative to support root) and follow its rules to extract a structured JSON spec from the user's hardware description (`$ARGUMENTS`). Capture the JSON spec returned by the agent.
 
 The agent returns a JSON object. For simple designs: `moduleName`, `type: "simple"`, `ports`, `operations`, `flags`, and `constraints`. For complex designs: `moduleName`, `type: "complex"`, `modules[]`, and `topModule`.
 
@@ -132,7 +132,7 @@ Only proceed to Step 2 after the user selects "Approve and generate".
 
 ### Step 2 -- Generate Chisel
 
-Read the chisel-generator agent definition at `agents/chisel-generator.md` (relative to project root) and follow its rules with the JSON spec to produce Chisel source files. Run the agent to generate the Chisel source code.
+Read the chisel-generator agent definition at `<support-root>/agents/chisel-generator.md` (relative to support root) and follow its rules with the JSON spec to produce Chisel source files. Run the agent to generate the Chisel source code.
 
 **For simple specs (type: "simple"):**
 
@@ -205,7 +205,7 @@ Lint passed with N warnings (suppressed/non-blocking):
 
 ### Step 5 -- Generate Testbench
 
-Read the testbench-generator agent definition at `agents/testbench-generator.md` (relative to project root). Run the agent to generate the testbench.
+Read the testbench-generator agent definition at `<support-root>/agents/testbench-generator.md` (relative to support root). Run the agent to generate the testbench.
 
 ### Step 6 -- Simulate
 

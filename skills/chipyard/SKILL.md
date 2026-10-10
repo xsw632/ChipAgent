@@ -39,9 +39,9 @@ If still empty after initialization, default to `local`.
 | backend_mode | Skill to read | Description |
 |-------------|---------------|-------------|
 | `local` | `skills/chipyard-local/SKILL.md` | Local Chipyard installation via MCP tools |
-| `docker` | `skills/chipyard-docker/SKILL.md` | Docker containers (`ucbbar/chipyard-image`) |
+| `docker` | `skills/chipyard-docker/SKILL.md` | Docker containers (`ictmrc/chipyard-image:1.9.1-ubuntu-22.04`) |
 
-**Execution:** Read the appropriate skill file and follow its pipeline.
+**Execution:** In the source repository, read the skill path above. In an installed project, read the sibling command `<name>.md` from the same command directory as this file, then follow its pipeline.
 
 ## Configuration
 

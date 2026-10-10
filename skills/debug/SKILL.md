@@ -22,19 +22,21 @@ Analyze simulation failures for a hardware module by cross-referencing its works
 
 ## Instructions
 
+**Support root:** Use `<project-root>/.claude` for a local installation or `~/.claude` for a global installation. When working directly in the source repository, use the repository root.
+
 1. **Extract the module name** from `$ARGUMENTS`. If empty or blank, ask the user: "Which module should I debug? Please provide a PascalCase module name (e.g., ALU, Counter, SimpleRISCV)."
 
 2. **Validate the module name.** Must be PascalCase (starts with uppercase letter, contains only alphanumeric characters). If invalid, ask the user to provide a valid PascalCase name.
 
-3. **Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Store as `PROJECT_ROOT`.
+3. **Determine the project root directory** from the user's current working project (the directory containing `scripts/` and `chisel-project/`; `MyDesign/` is created on first use), not from the skill's installation location. Store as `PROJECT_ROOT`.
 
 4. **Check required artifacts exist:**
-   - `workspace/<ModuleName>/spec.json` -- if missing, STOP: "No spec found. Run `/chip-agent:requirement-parser` first."
+   - `MyDesign/<ModuleName>/workspace/spec.json` -- if missing, STOP: "No spec found. Run `/chip-agent:requirement-parser` first."
    - `chisel-project/src/main/scala/chipagent/<ModuleName>.scala` -- if missing, STOP: "No Chisel source found for `<ModuleName>`."
-   - `workspace/<ModuleName>/sim/logs/sim_result.log` -- if missing, STOP: "No simulation results. Run `/chip-agent:simulate <ModuleName>` first."
-   - `workspace/<ModuleName>/sim/logs/<ModuleName>.vcd` -- if missing, note that VCD is unavailable. Analysis will proceed in log-only mode.
+   - `MyDesign/<ModuleName>/workspace/sim/logs/sim_result.log` -- if missing, STOP: "No simulation results. Run `/chip-agent:simulate <ModuleName>` first."
+   - `MyDesign/<ModuleName>/workspace/sim/logs/<ModuleName>.vcd` -- if missing, note that VCD is unavailable. Analysis will proceed in log-only mode.
 
-5. **Read the debug-analyzer agent definition** at `agents/debug-analyzer.md` (relative to project root).
+5. **Read the debug-analyzer agent definition** at `<support-root>/agents/debug-analyzer.md` (relative to support root).
 
 6. **Follow the agent's analysis instructions** to:
    - Parse sim_result.log for failed tests
@@ -43,12 +45,12 @@ Analyze simulation failures for a hardware module by cross-referencing its works
    - Map failures to Chisel source code blocks
    - Generate fix suggestions
 
-7. **Write the debug report** to `workspace/<ModuleName>/debug/debug_report.md` following the agent's report structure. Create the directory first with `mkdir -p workspace/<ModuleName>/debug`.
+7. **Write the debug report** to `MyDesign/<ModuleName>/workspace/debug/debug_report.md` following the agent's report structure. Create the directory first with `mkdir -p MyDesign/<ModuleName>/workspace/debug`.
 
 8. **Display a summary** in conversation:
    - Total tests, passed, failed
    - List of failed test names
-   - Report location: `workspace/<ModuleName>/debug/debug_report.md`
+   - Report location: `MyDesign/<ModuleName>/workspace/debug/debug_report.md`
    - Next steps: "Review the fix suggestions in the debug report. To apply fixes, edit the Chisel source and re-run `/chip-agent:simulate <ModuleName>`."
 
 ## Input
@@ -57,5 +59,5 @@ Analyze simulation failures for a hardware module by cross-referencing its works
 
 ## Output
 
-- `workspace/<ModuleName>/debug/debug_report.md` -- structured failure analysis with signal traces, root cause analysis, and fix suggestions
+- `MyDesign/<ModuleName>/workspace/debug/debug_report.md` -- structured failure analysis with signal traces, root cause analysis, and fix suggestions
 - Conversation summary with key findings and next steps

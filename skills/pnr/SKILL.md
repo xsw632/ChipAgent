@@ -36,6 +36,8 @@ Physical implementation pipeline: synthesize compiled Verilog through ORFS make 
 
 ## Instructions
 
+**Support root:** Use `<project-root>/.claude` for a local installation or `~/.claude` for a global installation. When working directly in the source repository, use the repository root.
+
 **Determine the project root directory** by finding the nearest ancestor directory of `.claude`. Use that directory as the base for all relative paths below.
 
 ## Pipeline
@@ -195,7 +197,7 @@ Set `round_index = 0`. While `round_index < length of round_plans`:
 
    **5a. Execute round via pnr-round-executor agent:**
 
-   Spawn the `pnr-round-executor` agent (at `agents/pnr-round-executor.md`) with this input contract:
+   Spawn the `pnr-round-executor` agent (at `<support-root>/agents/pnr-round-executor.md`) with this input contract:
 
    ```
    module: $MODULE
@@ -316,7 +318,7 @@ Call `mcp__chipagent-backend__compare_runs` with:
 
 Use the best run's metrics for the report.
 
-Run the agent `pnr-report-formatter.md` (relative to project root) and follow the agent's rules to format a PPA summary report.
+Run the agent `pnr-report-formatter.md` (relative to support root) and follow the agent's rules to format a PPA summary report.
 
 Pass the agent these data accumulated from the best run's get_report responses:
 - From **synth** get_report: `cell_count`, `synth_area`

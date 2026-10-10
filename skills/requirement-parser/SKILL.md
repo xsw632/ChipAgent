@@ -1,6 +1,6 @@
 ---
 name: requirement-parser
-description: Parse natural language hardware descriptions into structured JSON specifications, writing the result to workspace/<ModuleName>/spec.json.
+description: Parse natural language hardware descriptions into structured JSON specifications, writing the result to MyDesign/<ModuleName>/workspace/spec.json.
 disable-model-invocation: true
 allowed-tools:
   - Read
@@ -22,11 +22,13 @@ Parse a natural language hardware description into a structured JSON specificati
 
 ## Instructions
 
+**Support root:** Use `<project-root>/.claude` for a local installation or `~/.claude` for a global installation. When working directly in the source repository, use the repository root.
+
 1. **Extract the hardware description** from `$ARGUMENTS`. If `$ARGUMENTS` is empty or blank, ask the user: "Please describe the hardware module you want to create. For example: 'A 32-bit ALU supporting ADD, SUB, AND, OR, XOR, and SLT operations with a zero flag output.'"
 
-2. **Determine the project root directory** by finding the nearest ancestor directory of this skill file that contains `.claude`. Use that directory as the base for all relative paths below.
+2. **Determine the project root directory** from the user's current working project (the directory containing `scripts/` and `chisel-project/`; `MyDesign/` is created on first use), not from the skill's installation location. Use that directory as the base for all relative paths below.
 
-3. **Read the requirement-parser agent definition** at `agents/requirement-parser.md` (relative to the project root). This agent contains the full parsing rules, schema definitions, and examples for both simple and complex hardware designs.
+3. **Read the requirement-parser agent definition** at `<support-root>/agents/requirement-parser.md` (relative to support root). This agent contains the full parsing rules, schema definitions, and examples for both simple and complex hardware designs.
 
 4. **Follow the agent's instructions** to parse `$ARGUMENTS` into a structured JSON specification. The agent returns ONLY the raw JSON -- no markdown fences, no explanation. Apply all parsing rules from the agent definition including:
    - Design complexity detection (simple vs complex)
@@ -45,12 +47,15 @@ Parse a natural language hardware description into a structured JSON specificati
 
 6. **Create the workspace directory structure** using Bash:
    ```
-   mkdir -p workspace/<moduleName>/generated workspace/<moduleName>/sim/logs
+   mkdir -p MyDesign/<moduleName>/workspace/generated MyDesign/<moduleName>/workspace/sim/logs
+   if [ ! -e MyDesign/<moduleName>/chisel-project ] && [ ! -L MyDesign/<moduleName>/chisel-project ]; then
+     ln -s ../../chisel-project MyDesign/<moduleName>/chisel-project
+   fi
    ```
 
 7. **Write the JSON spec to disk** using the Write tool. Write to:
    ```
-   workspace/<moduleName>/spec.json
+   MyDesign/<moduleName>/workspace/spec.json
    ```
    This step is CRITICAL. The requirement-parser agent returns JSON to conversation output only -- it does NOT write files itself. This skill MUST capture the JSON and write it to disk so that downstream skills (testbench, compile, etc.) can read it.
 
@@ -60,7 +65,7 @@ Parse a natural language hardware description into a structured JSON specificati
    - Port count: N inputs, M outputs
    - Operation count (if any)
    - Flag count (if any)
-   - File location: `workspace/<moduleName>/spec.json`
+   - File location: `MyDesign/<moduleName>/workspace/spec.json`
    - Next step: "Run `/chip-agent:testbench <ModuleName>` to generate a testbench, or `/chip-agent:compile <ModuleName>` to compile to Verilog."
 
 ## Input
@@ -69,4 +74,4 @@ Parse a natural language hardware description into a structured JSON specificati
 
 ## Output
 
-`workspace/<ModuleName>/spec.json` containing the structured JSON specification. The workspace directory tree is also created with `generated/` and `sim/logs/` subdirectories.
+`MyDesign/<ModuleName>/workspace/spec.json` containing the structured JSON specification. The workspace directory tree is also created with `generated/` and `sim/logs/` subdirectories.

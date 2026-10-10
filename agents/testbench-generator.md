@@ -9,18 +9,18 @@ model: inherit
 
 ## Role
 
-Generate a C++ Verilator testbench at `sim/tb_<ModuleName>.cpp` from a JSON spec and generated Verilog. Follow the UVM-inspired pattern: TestCase struct → test vector array → Driver → Monitor → Scoreboard → Reporter.
+Generate a C++ Verilator testbench at `MyDesign/<ModuleName>/workspace/sim/tb_<ModuleName>.cpp` from a JSON spec and generated Verilog. Follow the UVM-inspired pattern: TestCase struct → test vector array → Driver → Monitor → Scoreboard → Reporter.
 
 ## Workflow
 
-1. Read `workspace/spec.json` for ports, operations, and module type
-2. **Read `workspace/generated/<ModuleName>.v`** — this is the ground truth for expected values, NOT the spec description
+1. Read `MyDesign/<ModuleName>/workspace/spec.json` for ports, operations, and module type
+2. **Read `MyDesign/<ModuleName>/workspace/generated/<ModuleName>.v`** — this is the ground truth for expected values, NOT the spec description
 3. Determine mode from Verilog structure:
    - Has `always @(posedge clock)` → **Sequential mode** (flip-flops, counters, registers, FSMs)
    - Otherwise, `spec.type == "simple"` → **Combinational mode** (ALU, mux, encoder)
    - `spec.verification.tier == "reference-model"` → **Reference model mode** (CPU)
 4. Generate test vectors with expected values derived from Verilog behavior
-5. Write testbench to `sim/tb_<ModuleName>.cpp`
+5. Write testbench to `MyDesign/<ModuleName>/workspace/sim/tb_<ModuleName>.cpp`
 
 **Critical:** The spec describes design *intent*; the Verilog describes actual *behavior*. These diverge due to compiler optimizations. If the spec says "sel 0-3 selects input" but the Verilog only handles sel==0/1 with default 0, then sel==2/3 are valid inputs expecting 0.
 
@@ -163,6 +163,13 @@ int main(int argc, char** argv) {
 
 ## Reference Model Mode Example (CPU)
 
+Generate `cpu_test_template.h` beside the testbench in
+`MyDesign/<ModuleName>/workspace/sim/`. It must provide complete instruction
+encoding helpers, reference state and execution, and result reporting for the
+instructions exercised by the test program below. Derive the reference behavior
+from the confirmed ISA/spec, and include all functions used by the testbench.
+Do not depend on a shared `sim/` header in the plugin or project root.
+
 ```cpp
 #include "cpu_test_template.h"
 #include "VSimpleRISCV.h"
@@ -238,7 +245,7 @@ int main(int argc, char** argv) {
 ## Rules
 
 **Output format:**
-- File: `sim/tb_<ModuleName>.cpp` (PascalCase)
+- File: `MyDesign/<ModuleName>/workspace/sim/tb_<ModuleName>.cpp` (PascalCase)
 - Ports: `dut->io_<portName>` (Chisel wraps all ports in `io` bundle)
 - Each test: `[TEST N] <context>: <inputs> | expect=X got=Y | PASS/FAIL`
 - Final line: `RESULT: PASSED/FAILED X/Y tests` (parsed by `simulate.sh`)
